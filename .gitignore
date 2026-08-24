@@ -1,0 +1,25 @@
+# Pliki tymczasowe Pythona
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+
+# Środowisko przenośne i wirtualne
+python-embed/
+venv/
+env/
+ENV/
+
+# Baza danych (dane lokalne/warsztatowe)
+*.db
+*.sqlite3
+
+# Edytory i IDE
+.vscode/
+.idea/
+
+# Pliki tymczasowe i logi
+*.log
+*.tmp
+temp/
+scratch/

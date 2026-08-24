@@ -1,0 +1,15 @@
+{
+  "DB_PATH": "rejestr_usterek.db",
+  "HOST": "0.0.0.0",
+  "PORT": 5050,
+  "SECRET_BACKUP_DIR": "",
+  "SMTP": {
+    "ENABLED": false,
+    "SERVER": "smtp.twojafirma.pl",
+    "PORT": 587,
+    "USE_TLS": true,
+    "USER": "rejestr-usterek@twojafirma.pl",
+    "PASSWORD": "",
+    "SENDER_NAME": "Rejestr Usterek — Powiadomienia"
+  }
+}

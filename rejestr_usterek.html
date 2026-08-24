@@ -1,0 +1,2164 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Rejestr Usterek — Kontrola Linii Produkcyjnej</title>
+<style>
+  :root {
+    --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --font-mono: ui-monospace, SFMono-Regular, "Roboto Mono", Menlo, Consolas, monospace;
+
+    /* Motyw Jasny (Domyślny) */
+    --bg-app: #F1F5F9;
+    --bg-card: #FFFFFF;
+    --bg-card-subtle: #F8FAFC;
+    --border: #E2E8F0;
+    --border-focus: #3B82F6;
+    
+    --text-main: #0F172A;
+    --text-muted: #64748B;
+    --text-dim: #94A3B8;
+
+    --navy-header: #0F172A;
+    --navy-sub: #1E293B;
+
+    --amber: #F59E0B;
+    --amber-bg: #FEF3C7;
+    --amber-text: #B45309;
+
+    --green: #10B981;
+    --green-bg: #D1FAE5;
+    --green-text: #047857;
+
+    --red: #EF4444;
+    --red-bg: #FEE2E2;
+    --red-text: #B91C1C;
+
+    --blue: #3B82F6;
+    --blue-bg: #DBEAFE;
+    --blue-text: #1D4ED8;
+
+    --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+    --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
+    --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1);
+    --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.15), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+
+    --radius-sm: 6px;
+    --radius-md: 8px;
+    --radius-lg: 12px;
+  }
+
+  [data-theme="dark"] {
+    --bg-app: #0B0F17;
+    --bg-card: #151D2A;
+    --bg-card-subtle: #1C2636;
+    --border: #263345;
+    --border-focus: #60A5FA;
+    
+    --text-main: #F8FAFC;
+    --text-muted: #94A3B8;
+    --text-dim: #64748B;
+
+    --navy-header: #0B0F17;
+    --navy-sub: #151D2A;
+
+    --amber-bg: rgba(245, 158, 11, 0.15);
+    --amber-text: #FBBF24;
+
+    --green-bg: rgba(16, 185, 129, 0.15);
+    --green-text: #34D399;
+
+    --red-bg: rgba(239, 68, 68, 0.15);
+    --red-text: #F87171;
+
+    --blue-bg: rgba(59, 130, 246, 0.15);
+    --blue-text: #60A5FA;
+
+    --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.3);
+    --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.4);
+    --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.5);
+    --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.6);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: var(--font-sans);
+    background-color: var(--bg-app);
+    color: var(--text-main);
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ════════════ NAGŁÓWEK ════════════ */
+  header {
+    background: var(--navy-header);
+    color: #FFFFFF;
+    padding: 12px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    border-bottom: 3px solid var(--amber);
+    position: sticky;
+    top: 0;
+    z-index: 40;
+    box-shadow: var(--shadow-md);
+  }
+
+  .header-brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .pulse-lamp {
+    width: 13px;
+    height: 13px;
+    border-radius: 50%;
+    background: var(--green);
+    box-shadow: 0 0 10px var(--green);
+    transition: all 0.3s ease;
+    flex-shrink: 0;
+  }
+  .pulse-lamp.offline {
+    background: var(--red);
+    box-shadow: 0 0 10px var(--red);
+  }
+  .header-titles h1 {
+    font-size: 17px;
+    font-weight: 700;
+    letter-spacing: -0.2px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .header-titles .subtitle {
+    font-size: 12px;
+    color: #94A3B8;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .header-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .tech-select-box {
+    display: flex;
+    align-items: center;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: var(--radius-md);
+    padding: 4px 10px;
+    gap: 8px;
+    font-size: 13px;
+  }
+  .tech-select-box select {
+    background: transparent;
+    color: #FFFFFF;
+    border: none;
+    outline: none;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .tech-select-box select option {
+    background: #1E293B;
+    color: #FFFFFF;
+  }
+
+  .btn-h {
+    background: rgba(255, 255, 255, 0.08);
+    color: #F8FAFC;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: var(--radius-md);
+    padding: 6px 12px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    transition: all 0.2s ease;
+  }
+  .btn-h:hover {
+    background: rgba(255, 255, 255, 0.18);
+    border-color: rgba(255, 255, 255, 0.3);
+  }
+
+  /* ════════════ UKŁAD GŁÓWNY (GRID) ════════════ */
+  .layout-container {
+    display: grid;
+    grid-template-columns: 390px 1fr;
+    gap: 20px;
+    padding: 20px 24px;
+    max-width: 1800px;
+    margin: 0 auto;
+    align-items: start;
+  }
+
+  @media (max-width: 1100px) {
+    .layout-container {
+      grid-template-columns: 1fr;
+      padding: 14px;
+    }
+  }
+
+  .card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 18px;
+    box-shadow: var(--shadow-sm);
+  }
+
+  .card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-bottom: 12px;
+    margin-bottom: 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .card-title {
+    font-size: 14px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  /* ════════════ FORMULARZ ════════════ */
+  .form-group {
+    margin-bottom: 13px;
+  }
+  .form-group label {
+    display: block;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-muted);
+    margin-bottom: 5px;
+  }
+  .form-group label span {
+    font-weight: 400;
+    color: var(--text-dim);
+  }
+  
+  .form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+
+  input[type="text"], input[type="password"], select, textarea {
+    width: 100%;
+    padding: 8px 11px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: var(--bg-card-subtle);
+    color: var(--text-main);
+    font-family: inherit;
+    font-size: 13.5px;
+    outline: none;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  }
+  input[type="text"]:focus, input[type="password"]:focus, select:focus, textarea:focus {
+    border-color: var(--border-focus);
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+  }
+  textarea {
+    resize: vertical;
+    min-height: 58px;
+  }
+
+  /* ── Przycisk dodawania usterki ── */
+  .btn-submit {
+    width: 100%;
+    background: #0284C7;
+    color: #FFFFFF;
+    border: none;
+    border-radius: var(--radius-md);
+    padding: 10px 16px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    margin-top: 14px;
+    transition: background 0.2s ease;
+  }
+  .btn-submit:hover {
+    background: #0369A1;
+  }
+  .btn-cancel-edit {
+    width: 100%;
+    background: transparent;
+    color: var(--text-muted);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 8px 16px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    margin-top: 8px;
+    display: none;
+  }
+  .btn-cancel-edit:hover {
+    background: var(--bg-card-subtle);
+    color: var(--text-main);
+  }
+
+  /* ── Sekcja Zdjęć w formularzu ── */
+  .photo-section {
+    margin-top: 14px;
+    padding: 12px;
+    border-radius: var(--radius-md);
+    background: var(--bg-card-subtle);
+    border: 1px dashed var(--border);
+  }
+  .photo-section-title {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+  }
+  .photo-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+  .photo-slot {
+    position: relative;
+    aspect-ratio: 4/3;
+    border-radius: var(--radius-sm);
+    background: var(--bg-app);
+    border: 1px solid var(--border);
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .photo-slot img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    cursor: pointer;
+  }
+  .photo-slot .btn-del-photo {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    background: rgba(0, 0, 0, 0.7);
+    color: #FFF;
+    border: none;
+    border-radius: 50%;
+    width: 22px;
+    height: 22px;
+    font-size: 12px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s ease;
+  }
+  .photo-slot .btn-del-photo:hover {
+    background: var(--red);
+  }
+  .photo-upload-actions {
+    display: flex;
+    gap: 8px;
+  }
+  .btn-photo-action {
+    flex: 1;
+    padding: 6px 10px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-main);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    transition: all 0.15s ease;
+  }
+  .btn-photo-action:hover {
+    border-color: var(--blue);
+    color: var(--blue);
+  }
+
+  /* ── Sekcja Dokumentów w formularzu ── */
+  .doc-section {
+    margin-top: 10px;
+    padding: 12px;
+    border-radius: var(--radius-md);
+    background: var(--bg-card-subtle);
+    border: 1px dashed var(--border);
+  }
+  .doc-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 5px 8px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    margin-bottom: 6px;
+    font-size: 12px;
+  }
+  .doc-item-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 200px;
+    font-weight: 500;
+  }
+
+  /* ════════════ PANEL PRAWY (TABELA I STATYSTYKI) ════════════ */
+  .stats-bar {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+  .stat-card {
+    background: var(--bg-card-subtle);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 10px 14px;
+    display: flex;
+    flex-direction: column;
+  }
+  .stat-val {
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--text-main);
+    line-height: 1.1;
+  }
+  .stat-lbl {
+    font-size: 11px;
+    text-transform: uppercase;
+    font-weight: 600;
+    color: var(--text-muted);
+    margin-top: 4px;
+  }
+
+  .toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 14px;
+    align-items: center;
+  }
+  .toolbar-search {
+    flex: 2;
+    min-width: 220px;
+    position: relative;
+  }
+  .toolbar-search input {
+    padding-left: 32px;
+  }
+  .toolbar-search svg {
+    position: absolute;
+    left: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--text-dim);
+  }
+  .toolbar-select {
+    flex: 1;
+    min-width: 140px;
+  }
+
+  /* ── Tabela ── */
+  .table-responsive {
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    text-align: left;
+  }
+  thead {
+    background: var(--bg-card-subtle);
+    border-bottom: 2px solid var(--border);
+  }
+  th {
+    padding: 10px 12px;
+    font-size: 11.5px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    color: var(--text-muted);
+    white-space: nowrap;
+  }
+  tbody tr {
+    border-bottom: 1px solid var(--border);
+    transition: background 0.15s ease;
+    cursor: pointer;
+  }
+  tbody tr:hover {
+    background: var(--bg-card-subtle);
+  }
+  td {
+    padding: 11px 12px;
+    vertical-align: top;
+  }
+
+  /* Badge statusu */
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-size: 11.5px;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+  .badge-open {
+    background: var(--red-bg);
+    color: var(--red-text);
+  }
+  .badge-open .dot {
+    width: 7px; height: 7px; border-radius: 50%; background: var(--red);
+  }
+  .badge-fixed {
+    background: var(--green-bg);
+    color: var(--green-text);
+  }
+  .badge-fixed .dot {
+    width: 7px; height: 7px; border-radius: 50%; background: var(--green);
+  }
+
+  .tag-pill {
+    display: inline-block;
+    padding: 2px 7px;
+    background: var(--bg-card-subtle);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    font-size: 11.5px;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+  }
+
+  .action-btns {
+    display: flex;
+    gap: 6px;
+  }
+  .btn-table-icon {
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    color: var(--text-muted);
+    transition: all 0.15s ease;
+  }
+  .btn-table-icon:hover {
+    background: var(--bg-card-subtle);
+    color: var(--text-main);
+    border-color: var(--text-muted);
+  }
+  .btn-table-icon.del:hover {
+    color: var(--red);
+    border-color: var(--red);
+  }
+  .btn-quick-fix {
+    padding: 3px 8px;
+    background: var(--green-bg);
+    color: var(--green-text);
+    border: 1px solid rgba(16, 185, 129, 0.4);
+    border-radius: var(--radius-sm);
+    font-size: 11.5px;
+    font-weight: 600;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .btn-quick-fix:hover {
+    background: var(--green);
+    color: #FFF;
+  }
+
+  /* ════════════ MODALE (POPUPY) ════════════ */
+  .modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.65);
+    backdrop-filter: blur(3px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    padding: 16px;
+  }
+  .modal-box {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    width: 100%;
+    max-width: 680px;
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+    box-shadow: var(--shadow-xl);
+    overflow: hidden;
+    animation: modalPop 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .modal-box.large {
+    max-width: 900px;
+  }
+  @keyframes modalPop {
+    from { opacity: 0; transform: scale(0.96); }
+    to { opacity: 1; transform: scale(1); }
+  }
+  .modal-header {
+    background: var(--navy-header);
+    color: #FFFFFF;
+    padding: 14px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .modal-header h3 {
+    font-size: 15px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .btn-close-modal {
+    background: transparent;
+    border: none;
+    color: #94A3B8;
+    font-size: 20px;
+    cursor: pointer;
+    line-height: 1;
+  }
+  .btn-close-modal:hover {
+    color: #FFFFFF;
+  }
+  .modal-body {
+    padding: 20px;
+    overflow-y: auto;
+  }
+  .modal-tabs {
+    display: flex;
+    background: var(--bg-card-subtle);
+    border-bottom: 1px solid var(--border);
+  }
+  .modal-tab-btn {
+    flex: 1;
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    padding: 11px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-muted);
+    cursor: pointer;
+  }
+  .modal-tab-btn.active {
+    color: var(--blue);
+    border-bottom-color: var(--blue);
+    background: var(--bg-card);
+  }
+
+  /* ── Lightbox do zdjęć ── */
+  .lightbox-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.9);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 200;
+    padding: 20px;
+  }
+  .lightbox-img {
+    max-width: 90vw;
+    max-height: 80vh;
+    object-fit: contain;
+    border-radius: var(--radius-md);
+    box-shadow: 0 0 30px rgba(0,0,0,0.8);
+  }
+  .lightbox-controls {
+    display: flex;
+    gap: 12px;
+    margin-top: 14px;
+  }
+
+  /* Notyfikacje Toast */
+  .toast {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    background: var(--navy-header);
+    color: #FFFFFF;
+    border-left: 4px solid var(--blue);
+    padding: 12px 18px;
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-lg);
+    font-size: 13px;
+    z-index: 300;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    animation: toastSlide 0.25s ease;
+  }
+  @keyframes toastSlide {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+</style>
+</head>
+<body>
+
+<!-- ════════════ NAGŁÓWEK APLIKACJI ════════════ -->
+<header>
+  <div class="header-brand">
+    <div class="pulse-lamp" id="conn-lamp" title="Status połączenia"></div>
+    <div class="header-titles">
+      <h1>Rejestr Usterek <span style="font-size:12px; font-weight:400; opacity:0.8;">— Linia Produkcyjna</span></h1>
+      <div class="subtitle">
+        <span id="conn-text">Łączenie z bazą...</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="header-actions">
+    <!-- Szybki wybór technika -->
+    <div class="tech-select-box">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+      <span>Technik:</span>
+      <select id="sel-active-user" title="Wybierz aktualnego technika"></select>
+    </div>
+
+    <!-- Przyciski narzędzi -->
+    <button class="btn-h" id="btn-open-manage-lists" title="Zarządzaj słownikami (Klienci, Modele, Projekty, Typy)">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      Słowniki
+    </button>
+
+    <button class="btn-h" id="btn-open-users-panel" title="Konta i uprawnienia">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+      Użytkownicy
+    </button>
+
+    <button class="btn-h" id="btn-backup-menu" title="Kopia zapasowa / import">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      Kopia
+    </button>
+
+    <!-- Przełącznik Motywu Ciemny / Jasny -->
+    <button class="btn-h" id="btn-toggle-theme" title="Przełącz motyw ciemny/jasny">
+      <span id="theme-icon">🌙</span>
+    </button>
+  </div>
+</header>
+
+<!-- ════════════ GŁÓWNY UKŁAD ════════════ -->
+<main class="layout-container">
+
+  <!-- ── LEWA KOLUMNA: FORMULARZ NOWEJ/EDYTOWANEJ USTERKI ── -->
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title" id="form-card-title">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        <span id="txt-form-heading">Nowa Usterka</span>
+      </div>
+    </div>
+
+    <form id="form-defect">
+      <!-- Klient -->
+      <div class="form-group">
+        <label for="f-klient">Klient *</label>
+        <select id="f-klient" required></select>
+      </div>
+
+      <!-- Model -->
+      <div class="form-group">
+        <label for="f-model">Model samochodu bazowego *</label>
+        <select id="f-model" required></select>
+      </div>
+
+      <!-- Projekt i VIN -->
+      <div class="form-row">
+        <div class="form-group">
+          <label for="f-projekt">Numer projektu</label>
+          <select id="f-projekt"></select>
+        </div>
+        <div class="form-group">
+          <label for="f-vin">VIN / Nr nadwozia <span>(opcja)</span></label>
+          <input type="text" id="f-vin" placeholder="np. WDB...">
+        </div>
+      </div>
+
+      <!-- Typ usterki i Element -->
+      <div class="form-row">
+        <div class="form-group">
+          <label for="f-typ">Typ usterki *</label>
+          <select id="f-typ" required></select>
+        </div>
+        <div class="form-group">
+          <label for="f-element">Element / urządzenie</label>
+          <input type="text" id="f-element" placeholder="np. gniazdo 230V nr 2, HVAC...">
+        </div>
+      </div>
+
+      <!-- Opis problemu -->
+      <div class="form-group">
+        <label for="f-opis-problem">Opis problemu *</label>
+        <textarea id="f-opis-problem" placeholder="Co zaobserwowano podczas kontroli?" required></textarea>
+      </div>
+
+      <!-- Opis naprawy -->
+      <div class="form-group">
+        <label for="f-opis-naprawa">Opis naprawy <span>(opcjonalnie)</span></label>
+        <textarea id="f-opis-naprawa" placeholder="Co wykonano, aby usunąć usterkę?"></textarea>
+      </div>
+
+      <!-- Status i Kto naprawił -->
+      <div class="form-row">
+        <div class="form-group">
+          <label for="f-status">Status</label>
+          <select id="f-status">
+            <option value="open">Otwarta</option>
+            <option value="fixed">Naprawiona</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="f-fixed-by">Naprawione przez</label>
+          <select id="f-fixed-by">
+            <option value="">— brak —</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- ── ZDJĘCIA (MAX 3) ── -->
+      <div class="photo-section">
+        <div class="photo-section-title">
+          <span>📸 Zdjęcia usterki (max 3)</span>
+          <span id="photo-count-badge" style="font-weight:400; color:var(--text-dim);">0 / 3</span>
+        </div>
+        
+        <div class="photo-grid" id="form-photo-grid">
+          <!-- Renderowane sloty zdjęć -->
+        </div>
+
+        <div class="photo-upload-actions">
+          <button type="button" class="btn-photo-action" id="btn-add-photo-file">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            Wybierz plik
+          </button>
+          <button type="button" class="btn-photo-action" id="btn-paste-photo" title="Wklej ze schowka (Ctrl+V)">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>
+            Wklej (Ctrl+V)
+          </button>
+          <input type="file" id="photo-file-input" accept="image/*" style="display:none">
+        </div>
+      </div>
+
+      <!-- ── ZAŁĄCZNIKI DOKUMENTÓW (PDF, VSWR, HVAC) ── -->
+      <div class="doc-section">
+        <div class="photo-section-title">
+          <span>📎 Załączniki / Raporty (PDF, CSV)</span>
+          <button type="button" class="btn-photo-action" id="btn-add-doc-file" style="padding:2px 8px; font-size:11px;">+ Dodaj plik</button>
+          <input type="file" id="doc-file-input" style="display:none">
+        </div>
+        <div id="form-doc-list">
+          <!-- Lista załączonych dokumentów -->
+        </div>
+      </div>
+
+      <!-- Przyciski zapisu -->
+      <button type="submit" class="btn-submit" id="btn-save-defect">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+        Zapisz usterkę
+      </button>
+      <button type="button" class="btn-cancel-edit" id="btn-cancel-edit">Anuluj edycję</button>
+    </form>
+  </div>
+
+  <!-- ── PRAWA KOLUMNA: TABELA I FILTRY ── -->
+  <div class="card">
+    <!-- Statystyki -->
+    <div class="stats-bar">
+      <div class="stat-card">
+        <div class="stat-val" id="stat-total">0</div>
+        <div class="stat-lbl">Wszystkie usterki</div>
+      </div>
+      <div class="stat-card" style="border-left: 3px solid var(--red);">
+        <div class="stat-val" id="stat-open" style="color:var(--red-text)">0</div>
+        <div class="stat-lbl">Otwarte</div>
+      </div>
+      <div class="stat-card" style="border-left: 3px solid var(--green);">
+        <div class="stat-val" id="stat-fixed" style="color:var(--green-text)">0</div>
+        <div class="stat-lbl">Naprawione</div>
+      </div>
+    </div>
+
+    <!-- Pasek filtrów i wyszukiwarka -->
+    <div class="toolbar">
+      <div class="toolbar-search">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input type="text" id="q-search" placeholder="Szukaj: klient, projekt, VIN, element, opis, technik...">
+      </div>
+
+      <select class="toolbar-select" id="q-klient">
+        <option value="">Wszyscy klienci</option>
+      </select>
+
+      <select class="toolbar-select" id="q-typ">
+        <option value="">Wszystkie typy</option>
+      </select>
+
+      <select class="toolbar-select" id="q-status">
+        <option value="">Wszystkie statusy</option>
+        <option value="open">Tylko Otwarte</option>
+        <option value="fixed">Tylko Naprawione</option>
+      </select>
+
+      <button class="btn-h" id="btn-export-csv" style="color:var(--text-main); border-color:var(--border);">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        CSV
+      </button>
+    </div>
+
+    <!-- Tabela z usterkami -->
+    <div class="table-responsive">
+      <table>
+        <thead>
+          <tr>
+            <th>Data / Zgłosił</th>
+            <th>Klient i Pojazd</th>
+            <th>Projekt / VIN</th>
+            <th>Typ i Element</th>
+            <th>Opis problemu / Naprawa</th>
+            <th>Pliki</th>
+            <th>Status</th>
+            <th style="text-align:right">Akcje</th>
+          </tr>
+        </thead>
+        <tbody id="records-tbody">
+          <!-- Wiersze generowane dynamicznie w JS -->
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</main>
+
+<!-- ════════════ MODAL: SZCZEGÓŁY USTERKI (PODGLĄD / LIGHTBOX) ════════════ -->
+<div class="modal-backdrop" id="modal-detail" style="display:none">
+  <div class="modal-box large">
+    <div class="modal-header">
+      <h3 id="md-title">Szczegóły usterki</h3>
+      <button class="btn-close-modal" onclick="closeModal('modal-detail')">✕</button>
+    </div>
+    <div class="modal-body" id="md-body">
+      <!-- Zawartość szczegółowa usterki -->
+    </div>
+  </div>
+</div>
+
+<!-- ════════════ MODAL: ZARZĄDZANIE SŁOWNIKAMI ════════════ -->
+<div class="modal-backdrop" id="modal-lists" style="display:none">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h3>⚙ Zarządzanie słownikami</h3>
+      <button class="btn-close-modal" onclick="closeModal('modal-lists')">✕</button>
+    </div>
+    <div class="modal-tabs">
+      <button class="modal-tab-btn active" data-tab="klienci">Klienci</button>
+      <button class="modal-tab-btn" data-tab="modele">Modele</button>
+      <button class="modal-tab-btn" data-tab="typy">Typy usterek</button>
+      <button class="modal-tab-btn" data-tab="projekty">Projekty wg klienta</button>
+    </div>
+    <div class="modal-body" id="modal-lists-body">
+      <!-- Wypełniane dynamicznie -->
+    </div>
+  </div>
+</div>
+
+<!-- ════════════ MODAL: ZARZĄDZANIE UŻYTKOWNIKAMI ════════════ -->
+<div class="modal-backdrop" id="modal-users" style="display:none">
+  <div class="modal-box large">
+    <div class="modal-header">
+      <h3>👥 Użytkownicy i Uprawnienia</h3>
+      <button class="btn-close-modal" onclick="closeModal('modal-users')">✕</button>
+    </div>
+    <div class="modal-body" id="modal-users-body">
+      <!-- Lista użytkowników i formularz nowego usera -->
+    </div>
+  </div>
+</div>
+
+<!-- ════════════ MODAL: KOPIA ZAPASOWA / IMPORT ════════════ -->
+<div class="modal-backdrop" id="modal-backup" style="display:none">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h3>💾 Kopia zapasowa i Konserwacja</h3>
+      <button class="btn-close-modal" onclick="closeModal('modal-backup')">✕</button>
+    </div>
+    <div class="modal-body" style="display:flex; flex-direction:column; gap:14px;">
+      <div style="background:var(--bg-card-subtle); padding:14px; border-radius:var(--radius-md); border:1px solid var(--border);">
+        <h4 style="font-size:14px; margin-bottom:4px;">Pobierz kopię zapasową</h4>
+        <p style="font-size:12px; color:var(--text-muted); margin-bottom:10px;">Zapisuje pełny zrzut bazy danych (rekordy i słowniki) do bezpiecznego pliku JSON.</p>
+        <button class="btn-submit" id="btn-do-backup-export" style="margin-top:0;">⬇ Eksportuj JSON</button>
+      </div>
+
+      <div style="background:var(--bg-card-subtle); padding:14px; border-radius:var(--radius-md); border:1px solid var(--border);">
+        <h4 style="font-size:14px; margin-bottom:4px;">Wczytaj kopię zapasową</h4>
+        <p style="font-size:12px; color:var(--text-muted); margin-bottom:10px;">Wczytuje usterki i listy z pliku JSON (opcja scalenia z obecnymi lub pełnego zastąpienia).</p>
+        <div style="display:flex; gap:10px;">
+          <button class="btn-photo-action" id="btn-do-backup-merge">Scal z bazą (Merge)</button>
+          <button class="btn-photo-action" id="btn-do-backup-replace" style="color:var(--red);">Zastąp całą bazę</button>
+        </div>
+        <input type="file" id="import-json-file" accept="application/json" style="display:none">
+      </div>
+
+      <div style="background:var(--bg-card-subtle); padding:14px; border-radius:var(--radius-md); border:1px solid var(--border);">
+        <h4 style="font-size:14px; margin-bottom:4px;">Optymalizacja zdjęć w bazie</h4>
+        <p style="font-size:12px; color:var(--text-muted); margin-bottom:10px;">Przeskalowuje i kompresuje zdjęcia archiwalne oraz odzyskuje wolne miejsce na serwerze (VACUUM).</p>
+        <button class="btn-photo-action" id="btn-do-optimize-db">⚡ Uruchom optymalizację</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════ FULLSCREEN LIGHTBOX ZDJĘCIA ════════════ -->
+<div class="lightbox-backdrop" id="lightbox" style="display:none" onclick="closeLightbox()">
+  <img class="lightbox-img" id="lightbox-img" src="" onclick="event.stopPropagation()">
+  <div class="lightbox-controls" onclick="event.stopPropagation()">
+    <button class="btn-h" id="btn-lightbox-download">⬇ Pobierz oryginalne zdjęcie</button>
+    <button class="btn-h" onclick="closeLightbox()">✕ Zamknij</button>
+  </div>
+</div>
+
+<!-- ════════════ SKRYPT JAVASCRIPT APLIKACJI ════════════ -->
+<script>
+/* ── STAN APLIKACJI ── */
+let STATE = {
+  records: [],
+  lists: { klienci: [], modele: [], typy: [], projektyByKlient: {} },
+  users: [],
+  activeUser: localStorage.getItem('ru_active_user') || 'Technik Główny',
+  authToken: localStorage.getItem('ru_auth_token') || '',
+  editingRecordId: null,
+  pendingPhotos: [],      // [{filename, data: base64}]
+  pendingDocs: [],        // [{filename, data: base64, filesize}]
+  activeTabLists: 'klienci',
+  theme: localStorage.getItem('ru_theme') || 'light'
+};
+
+const ADD_NEW_OPTION = '__add_new__';
+
+/* ── INICJALIZACJA ── */
+document.addEventListener('DOMContentLoaded', () => {
+  applyTheme(STATE.theme);
+  setupEventListeners();
+  loadAllData();
+  setInterval(loadAllData, 5000); // Polling co 5s
+});
+
+/* ── MOTYW CIEMNY / JASNY ── */
+function applyTheme(theme) {
+  document.documentElement.setAttribute('data-theme', theme);
+  const icon = document.getElementById('theme-icon');
+  if (icon) icon.textContent = theme === 'dark' ? '☀️' : '🌙';
+  localStorage.setItem('ru_theme', theme);
+}
+
+function toggleTheme() {
+  STATE.theme = STATE.theme === 'dark' ? 'light' : 'dark';
+  applyTheme(STATE.theme);
+}
+
+/* ── KOMUNIKACJA Z API ── */
+async function apiCall(endpoint, method = 'GET', body = null) {
+  const headers = { 'Content-Type': 'application/json' };
+  if (STATE.authToken) {
+    headers['Authorization'] = `Bearer ${STATE.authToken}`;
+  }
+  const opts = { method, headers };
+  if (body) opts.body = JSON.stringify(body);
+
+  const res = await fetch(endpoint, opts);
+  if (!res.ok) {
+    let err = 'Błąd serwera';
+    try { const j = await res.json(); err = j.error || err; } catch(e){}
+    throw new Error(err);
+  }
+  return res.json();
+}
+
+/* ── ŁADOWANIE DANYCH ── */
+async function loadAllData() {
+  try {
+    const [recs, lists, users] = await Promise.all([
+      apiCall('/api/records'),
+      apiCall('/api/lists'),
+      apiCall('/api/users/list').catch(() => [])
+    ]);
+
+    STATE.records = recs || [];
+    STATE.lists = Object.assign({ klienci: [], modele: [], typy: [], projektyByKlient: {} }, lists);
+    STATE.users = users || [];
+
+    setOnlineStatus(true);
+    renderActiveUserPicker();
+    renderFormDropdowns();
+    renderStats();
+    renderRecordsTable();
+  } catch (err) {
+    setOnlineStatus(false);
+  }
+}
+
+function setOnlineStatus(isOnline) {
+  const lamp = document.getElementById('conn-lamp');
+  const txt = document.getElementById('conn-text');
+  if (isOnline) {
+    lamp.classList.remove('offline');
+    txt.textContent = `Połączono z bazą (${STATE.records.length} usterek)`;
+  } else {
+    lamp.classList.add('offline');
+    txt.textContent = `Brak połączenia z serwerem`;
+  }
+}
+
+/* ── RENDERY I DROPDOWNY ── */
+function renderActiveUserPicker() {
+  const sel = document.getElementById('sel-active-user');
+  const fixedBySel = document.getElementById('f-fixed-by');
+  const cur = STATE.activeUser;
+
+  let opts = '';
+  if (STATE.users.length === 0) {
+    opts = `<option value="${cur}">${cur}</option>`;
+  } else {
+    opts = STATE.users.map(u => `<option value="${u.full_name}" ${u.full_name === cur ? 'selected' : ''}>${u.full_name} (${u.role})</option>`).join('');
+  }
+  sel.innerHTML = opts;
+
+  // Lista do 'Naprawione przez' w formularzu
+  let fixedOpts = '<option value="">— brak —</option>';
+  if (STATE.users.length === 0) {
+    fixedOpts += `<option value="${cur}">${cur}</option>`;
+  } else {
+    fixedOpts += STATE.users.map(u => `<option value="${u.full_name}">${u.full_name}</option>`).join('');
+  }
+  const curFixed = fixedBySel.value;
+  fixedBySel.innerHTML = fixedOpts;
+  if (curFixed) fixedBySel.value = curFixed;
+}
+
+function populateSelect(id, items, defaultPrompt) {
+  const sel = document.getElementById(id);
+  const cur = sel.value;
+  let html = `<option value="">— wybierz —</option>`;
+  (items || []).forEach(it => {
+    html += `<option value="${escapeHtml(it)}">${escapeHtml(it)}</option>`;
+  });
+  html += `<option value="${ADD_NEW_OPTION}">+ Dodaj nową pozycję...</option>`;
+  sel.innerHTML = html;
+  if (cur && (items || []).includes(cur)) sel.value = cur;
+}
+
+function renderFormDropdowns() {
+  populateSelect('f-klient', STATE.lists.klienci);
+  populateSelect('f-model', STATE.lists.modele);
+  populateSelect('f-typ', STATE.lists.typy);
+
+  // Filtry w toolbarze
+  const qKlient = document.getElementById('q-klient');
+  const curQK = qKlient.value;
+  qKlient.innerHTML = `<option value="">Wszyscy klienci</option>` + (STATE.lists.klienci || []).map(k => `<option value="${escapeHtml(k)}">${escapeHtml(k)}</option>`).join('');
+  qKlient.value = curQK;
+
+  const qTyp = document.getElementById('q-typ');
+  const curQT = qTyp.value;
+  qTyp.innerHTML = `<option value="">Wszystkie typy</option>` + (STATE.lists.typy || []).map(t => `<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join('');
+  qTyp.value = curQT;
+
+  updateProjectDropdown();
+}
+
+function updateProjectDropdown() {
+  const k = document.getElementById('f-klient').value;
+  const projList = (STATE.lists.projektyByKlient && STATE.lists.projektyByKlient[k]) || [];
+  populateSelect('f-projekt', projList);
+}
+
+/* ── STATYSTYKI ── */
+function renderStats() {
+  const total = STATE.records.length;
+  const open = STATE.records.filter(r => r.status === 'open').length;
+  const fixed = STATE.records.filter(r => r.status === 'fixed').length;
+
+  document.getElementById('stat-total').textContent = total;
+  document.getElementById('stat-open').textContent = open;
+  document.getElementById('stat-fixed').textContent = fixed;
+}
+
+/* ── RENDER TABELI REKORDÓW ── */
+function renderRecordsTable() {
+  const tbody = document.getElementById('records-tbody');
+  const qSearch = (document.getElementById('q-search').value || '').toLowerCase().trim();
+  const qKlient = document.getElementById('q-klient').value;
+  const qTyp = document.getElementById('q-typ').value;
+  const qStatus = document.getElementById('q-status').value;
+
+  const filtered = STATE.records.filter(r => {
+    if (qKlient && r.klient !== qKlient) return false;
+    if (qTyp && r.typ !== qTyp) return false;
+    if (qStatus && r.status !== qStatus) return false;
+    if (qSearch) {
+      const hay = `${r.klient} ${r.model} ${r.projekt} ${r.vin} ${r.element} ${r.opisProblem} ${r.opisNaprawa} ${r.created_by} ${r.fixed_by}`.toLowerCase();
+      if (!hay.includes(qSearch)) return false;
+    }
+    return true;
+  });
+
+  if (filtered.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; padding:30px; color:var(--text-muted);">Brak usterek spełniających podane kryteria wyszukiwania.</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = filtered.map(r => {
+    const isFixed = r.status === 'fixed';
+    const dateFormatted = formatDateTime(r.created);
+    
+    return `
+      <tr onclick="openRecordDetail('${r.id}')">
+        <td>
+          <div style="font-weight:600;">${dateFormatted}</div>
+          <div style="font-size:11.5px; color:var(--text-muted);">${escapeHtml(r.created_by || 'Technik')}</div>
+        </td>
+        <td>
+          <div style="font-weight:600; color:var(--text-main);">${escapeHtml(r.klient)}</div>
+          <div style="font-size:12px; color:var(--text-muted);">${escapeHtml(r.model)}</div>
+        </td>
+        <td>
+          <span class="tag-pill">${escapeHtml(r.projekt || '—')}</span>
+          ${r.vin ? `<div style="font-size:11.5px; color:var(--text-dim); margin-top:2px;">VIN: ${escapeHtml(r.vin)}</div>` : ''}
+        </td>
+        <td>
+          <div style="font-weight:500;">${escapeHtml(r.typ)}</div>
+          <div style="font-size:11.5px; color:var(--text-muted);">${escapeHtml(r.element || '—')}</div>
+        </td>
+        <td style="max-width:260px;">
+          <div style="font-weight:500; overflow:hidden; text-overflow:ellipsis; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical;">${escapeHtml(r.opisProblem)}</div>
+          ${r.opisNaprawa ? `<div style="font-size:11.5px; color:var(--green-text); margin-top:3px; overflow:hidden; text-overflow:ellipsis; display:-webkit-box; -webkit-line-clamp:1; -webkit-box-orient:vertical;">🔧 ${escapeHtml(r.opisNaprawa)}</div>` : ''}
+        </td>
+        <td>
+          <div id="badge-files-${r.id}" style="font-size:12px; color:var(--text-dim);">...</div>
+        </td>
+        <td onclick="event.stopPropagation()">
+          <span class="badge ${isFixed ? 'badge-fixed' : 'badge-open'}">
+            <span class="dot"></span>
+            ${isFixed ? 'Naprawiona' : 'Otwarta'}
+          </span>
+          ${!isFixed ? `
+            <div style="margin-top:6px;">
+              <button class="btn-quick-fix" onclick="quickMarkFixed('${r.id}')">✓ Oznacz naprawę</button>
+            </div>
+          ` : `
+            <div style="font-size:11px; color:var(--text-muted); margin-top:4px;">
+              ${escapeHtml(r.fixed_by || '')}
+            </div>
+          `}
+        </td>
+        <td onclick="event.stopPropagation()" style="text-align:right">
+          <div class="action-btns" style="justify-content:flex-end;">
+            <button class="btn-table-icon" title="Edytuj usterkę" onclick="startEditRecord('${r.id}')">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+            </button>
+            <button class="btn-table-icon del" title="Usuń usterkę" onclick="deleteRecordConfirm('${r.id}')">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+            </button>
+          </div>
+        </td>
+      </tr>
+    `;
+  }).join('');
+
+  // W tle pobierz liczby zdjęć/plików dla wierszy
+  filtered.forEach(r => fetchRecordFilesCount(r.id));
+}
+
+async function fetchRecordFilesCount(recId) {
+  try {
+    const [photos, docs] = await Promise.all([
+      apiCall(`/api/records/${recId}/photos`),
+      apiCall(`/api/records/${recId}/documents`)
+    ]);
+    const el = document.getElementById(`badge-files-${recId}`);
+    if (el) {
+      let tags = [];
+      if (photos && photos.length > 0) tags.push(`📷 ${photos.length}`);
+      if (docs && docs.length > 0) tags.push(`📎 ${docs.length}`);
+      el.innerHTML = tags.length > 0 ? tags.join(' ') : `<span style="opacity:0.4">—</span>`;
+    }
+  } catch(e){}
+}
+
+/* ── FORMULARZ: OBSŁUGA ZDJĘĆ I DOKUMENTÓW ── */
+function renderPendingPhotos() {
+  const grid = document.getElementById('form-photo-grid');
+  const countBadge = document.getElementById('photo-count-badge');
+  countBadge.textContent = `${STATE.pendingPhotos.length} / 3`;
+
+  grid.innerHTML = STATE.pendingPhotos.map((p, idx) => `
+    <div class="photo-slot">
+      <img src="data:image/jpeg;base64,${p.data}" onclick="openLightbox('data:image/jpeg;base64,${p.data}')">
+      <button type="button" class="btn-del-photo" onclick="removePendingPhoto(${idx})">✕</button>
+    </div>
+  `).join('');
+}
+
+function removePendingPhoto(idx) {
+  STATE.pendingPhotos.splice(idx, 1);
+  renderPendingPhotos();
+}
+
+function renderPendingDocs() {
+  const list = document.getElementById('form-doc-list');
+  if (STATE.pendingDocs.length === 0) {
+    list.innerHTML = `<div style="font-size:11.5px; color:var(--text-dim); padding:4px 0;">Brak załączonych plików.</div>`;
+    return;
+  }
+  list.innerHTML = STATE.pendingDocs.map((d, idx) => `
+    <div class="doc-item">
+      <div class="doc-item-name">📄 ${escapeHtml(d.filename)} (${formatBytes(d.filesize || d.data.length * 0.75)})</div>
+      <button type="button" class="btn-del-photo" style="position:static; width:18px; height:18px; font-size:10px;" onclick="removePendingDoc(${idx})">✕</button>
+    </div>
+  `).join('');
+}
+
+function removePendingDoc(idx) {
+  STATE.pendingDocs.splice(idx, 1);
+  renderPendingDocs();
+}
+
+/* ── ZAPISYWANIE USTERKI ── */
+async function handleDefectSubmit(e) {
+  e.preventDefault();
+  const klient = document.getElementById('f-klient').value;
+  const model = document.getElementById('f-model').value;
+  const projekt = document.getElementById('f-projekt').value;
+  const vin = document.getElementById('f-vin').value.trim();
+  const typ = document.getElementById('f-typ').value;
+  const element = document.getElementById('f-element').value.trim();
+  const opisProblem = document.getElementById('f-opis-problem').value.trim();
+  const opisNaprawa = document.getElementById('f-opis-naprawa').value.trim();
+  const status = document.getElementById('f-status').value;
+  const fixedBy = document.getElementById('f-fixed-by').value;
+
+  if (!klient || !model || !typ || !opisProblem) {
+    showToast('Wypełnij wszystkie wymagane pola (*)', 'error');
+    return;
+  }
+
+  const recId = STATE.editingRecordId || generateUUID();
+  const payload = {
+    id: recId,
+    klient,
+    model,
+    projekt,
+    vin,
+    typ,
+    element,
+    opisProblem,
+    opisNaprawa,
+    status,
+    created_by: STATE.activeUser,
+    fixed_by: status === 'fixed' ? (fixedBy || STATE.activeUser) : '',
+    fixed_at: status === 'fixed' ? new Date().toISOString() : null
+  };
+
+  try {
+    if (STATE.editingRecordId) {
+      await apiCall(`/api/records/${recId}`, 'PUT', payload);
+      showToast('Usterka zaktualizowana!');
+    } else {
+      payload.created = new Date().toISOString();
+      await apiCall('/api/records', 'POST', payload);
+      showToast('Usterka została zarejestrowana!');
+    }
+
+    // Wyślij dodane zdjęcia
+    for (const p of STATE.pendingPhotos) {
+      if (p.isNew) {
+        await apiCall(`/api/records/${recId}/photos`, 'POST', { filename: p.filename, data: p.data });
+      }
+    }
+
+    // Wyślij dodane dokumenty
+    for (const d of STATE.pendingDocs) {
+      if (d.isNew) {
+        await apiCall(`/api/records/${recId}/documents`, 'POST', { filename: d.filename, data: d.data });
+      }
+    }
+
+    resetForm();
+    await loadAllData();
+  } catch (err) {
+    showToast(`Błąd zapisu: ${err.message}`, 'error');
+  }
+}
+
+function resetForm() {
+  STATE.editingRecordId = null;
+  STATE.pendingPhotos = [];
+  STATE.pendingDocs = [];
+  document.getElementById('form-defect').reset();
+  document.getElementById('txt-form-heading').textContent = 'Nowa Usterka';
+  document.getElementById('btn-save-defect').textContent = 'Zapisz usterkę';
+  document.getElementById('btn-cancel-edit').style.display = 'none';
+  renderPendingPhotos();
+  renderPendingDocs();
+}
+
+/* ── EDYCJA REKORDU ── */
+async function startEditRecord(recId) {
+  const r = STATE.records.find(x => x.id === recId);
+  if (!r) return;
+
+  STATE.editingRecordId = recId;
+  document.getElementById('txt-form-heading').textContent = 'Edycja Usterki';
+  document.getElementById('btn-save-defect').textContent = 'Zapisz zmiany';
+  document.getElementById('btn-cancel-edit').style.display = 'block';
+
+  document.getElementById('f-klient').value = r.klient;
+  updateProjectDropdown();
+  document.getElementById('f-model').value = r.model;
+  document.getElementById('f-projekt').value = r.projekt;
+  document.getElementById('f-vin').value = r.vin || '';
+  document.getElementById('f-typ').value = r.typ;
+  document.getElementById('f-element').value = r.element || '';
+  document.getElementById('f-opis-problem').value = r.opisProblem;
+  document.getElementById('f-opis-naprawa').value = r.opisNaprawa || '';
+  document.getElementById('f-status').value = r.status;
+  document.getElementById('f-fixed-by').value = r.fixed_by || '';
+
+  // Pobierz istniejące zdjęcia i pliki
+  try {
+    const [photos, docs] = await Promise.all([
+      apiCall(`/api/records/${recId}/photos`),
+      apiCall(`/api/records/${recId}/documents`)
+    ]);
+
+    STATE.pendingPhotos = [];
+    for (const ph of photos) {
+      const full = await apiCall(`/api/photos/${ph.id}`);
+      STATE.pendingPhotos.push({ id: ph.id, filename: ph.filename, data: full.data, isNew: false });
+    }
+    STATE.pendingDocs = (docs || []).map(d => ({ id: d.id, filename: d.filename, filesize: d.filesize, isNew: false }));
+
+    renderPendingPhotos();
+    renderPendingDocs();
+  } catch(e){}
+
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+/* ── SZYBKIE OZNACZENIE NAPRAWY ── */
+async function quickMarkFixed(recId) {
+  const technician = STATE.activeUser;
+  try {
+    await apiCall(`/api/records/${recId}/status`, 'PATCH', {
+      status: 'fixed',
+      fixed_by: technician,
+      fixed_at: new Date().toISOString()
+    });
+    showToast(`Oznaczono jako naprawioną (${technician})`);
+    await loadAllData();
+  } catch (err) {
+    showToast(`Błąd: ${err.message}`, 'error');
+  }
+}
+
+/* ── USUWANIE REKORDU ── */
+async function deleteRecordConfirm(recId) {
+  if (!confirm('Czy na pewno chcesz usunąć ten wpis usterki wraz ze wszystkimi zdjęciami i załącznikami?')) return;
+  try {
+    await apiCall(`/api/records/${recId}`, 'DELETE');
+    showToast('Usterka usunięta.');
+    if (STATE.editingRecordId === recId) resetForm();
+    await loadAllData();
+  } catch (err) {
+    showToast(`Błąd: ${err.message}`, 'error');
+  }
+}
+
+/* ── PODGLĄD SZCZEGÓŁÓW (MODAL DETAIL) ── */
+async function openRecordDetail(recId) {
+  const r = STATE.records.find(x => x.id === recId);
+  if (!r) return;
+
+  const isFixed = r.status === 'fixed';
+  document.getElementById('md-title').textContent = `Usterka: ${r.klient} — ${r.model}`;
+
+  const body = document.getElementById('md-body');
+  body.innerHTML = `
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+      <span class="badge ${isFixed ? 'badge-fixed' : 'badge-open'}" style="font-size:13px; padding:6px 14px;">
+        <span class="dot"></span>
+        ${isFixed ? 'Usterka Naprawiona' : 'Usterka Otwarta'}
+      </span>
+      <div style="font-size:12px; color:var(--text-muted);">
+        Zgłoszono: <b>${formatDateTime(r.created)}</b> przez <b>${escapeHtml(r.created_by || 'Technik')}</b>
+      </div>
+    </div>
+
+    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:10px; background:var(--bg-card-subtle); padding:14px; border-radius:var(--radius-md); border:1px solid var(--border); margin-bottom:16px;">
+      <div><span style="font-size:11px; color:var(--text-muted); text-transform:uppercase;">Projekt:</span><div style="font-weight:600;">${escapeHtml(r.projekt || '—')}</div></div>
+      <div><span style="font-size:11px; color:var(--text-muted); text-transform:uppercase;">VIN:</span><div style="font-weight:600;">${escapeHtml(r.vin || '—')}</div></div>
+      <div><span style="font-size:11px; color:var(--text-muted); text-transform:uppercase;">Typ usterki:</span><div style="font-weight:600;">${escapeHtml(r.typ)}</div></div>
+      <div><span style="font-size:11px; color:var(--text-muted); text-transform:uppercase;">Element:</span><div style="font-weight:600;">${escapeHtml(r.element || '—')}</div></div>
+    </div>
+
+    <div style="margin-bottom:14px;">
+      <label style="font-size:12px; font-weight:700; color:var(--text-muted); text-transform:uppercase;">Opis problemu</label>
+      <div style="background:var(--bg-card-subtle); padding:12px; border-radius:var(--radius-md); border:1px solid var(--border); white-space:pre-wrap; margin-top:4px;">${escapeHtml(r.opisProblem)}</div>
+    </div>
+
+    <div style="margin-bottom:16px;">
+      <label style="font-size:12px; font-weight:700; color:var(--text-muted); text-transform:uppercase;">Opis naprawy</label>
+      <div style="background:var(--bg-card-subtle); padding:12px; border-radius:var(--radius-md); border:1px solid var(--border); white-space:pre-wrap; margin-top:4px;">${r.opisNaprawa ? escapeHtml(r.opisNaprawa) : '<span style="color:var(--text-dim); font-style:italic;">Brak opisu naprawy</span>'}</div>
+      ${r.fixed_at ? `<div style="font-size:11.5px; color:var(--green-text); margin-top:6px;">✓ Naprawiono: ${formatDateTime(r.fixed_at)} przez <b>${escapeHtml(r.fixed_by || 'Technik')}</b></div>` : ''}
+    </div>
+
+    <!-- Galeria zdjęć -->
+    <div style="margin-bottom:16px;">
+      <label style="font-size:12px; font-weight:700; color:var(--text-muted); text-transform:uppercase;">📸 Zdjęcia (${r.id})</label>
+      <div id="detail-photos-grid" style="display:grid; grid-template-columns:repeat(3, 1fr); gap:10px; margin-top:6px;">
+        <div style="font-size:12px; color:var(--text-dim);">Ładowanie zdjęć...</div>
+      </div>
+    </div>
+
+    <!-- Lista załączników -->
+    <div style="margin-bottom:16px;">
+      <label style="font-size:12px; font-weight:700; color:var(--text-muted); text-transform:uppercase;">📎 Dokumenty i Raporty</label>
+      <div id="detail-docs-list" style="margin-top:6px;">
+        <div style="font-size:12px; color:var(--text-dim);">Ładowanie dokumentów...</div>
+      </div>
+    </div>
+
+    <div style="display:flex; justify-content:flex-end; gap:10px; border-top:1px solid var(--border); padding-top:14px;">
+      <button class="btn-photo-action" onclick="closeModal('modal-detail'); startEditRecord('${r.id}')">✏ Edytuj usterkę</button>
+      <button class="btn-submit" style="width:auto; margin-top:0;" onclick="closeModal('modal-detail')">Zamknij</button>
+    </div>
+  `;
+
+  openModal('modal-detail');
+
+  // Pobierz i wyrenderuj zdjęcia
+  apiCall(`/api/records/${recId}/photos`).then(async photos => {
+    const pGrid = document.getElementById('detail-photos-grid');
+    if (!photos || photos.length === 0) {
+      pGrid.innerHTML = `<div style="font-size:12px; color:var(--text-dim); grid-column:span 3;">Brak załączonych zdjęć.</div>`;
+      return;
+    }
+    pGrid.innerHTML = '';
+    for (const ph of photos) {
+      const full = await apiCall(`/api/photos/${ph.id}`);
+      const div = document.createElement('div');
+      div.className = 'photo-slot';
+      div.innerHTML = `<img src="data:image/jpeg;base64,${full.data}" onclick="openLightbox('data:image/jpeg;base64,${full.data}')">`;
+      pGrid.appendChild(div);
+    }
+  });
+
+  // Pobierz i wyrenderuj dokumenty
+  apiCall(`/api/records/${recId}/documents`).then(docs => {
+    const dList = document.getElementById('detail-docs-list');
+    if (!docs || docs.length === 0) {
+      dList.innerHTML = `<div style="font-size:12px; color:var(--text-dim);">Brak załączonych plików.</div>`;
+      return;
+    }
+    dList.innerHTML = docs.map(d => `
+      <div class="doc-item" style="padding:8px 12px;">
+        <div><b>📄 ${escapeHtml(d.filename)}</b> <span style="color:var(--text-muted); font-size:11px;">(${formatBytes(d.filesize)})</span></div>
+        <button class="btn-quick-fix" onclick="downloadDocument('${d.id}', '${escapeHtml(d.filename)}')">⬇ Pobierz</button>
+      </div>
+    `).join('');
+  });
+}
+
+async function downloadDocument(docId, filename) {
+  try {
+    const doc = await apiCall(`/api/documents/${docId}`);
+    const a = document.createElement('a');
+    a.href = `data:application/octet-stream;base64,${doc.data}`;
+    a.download = filename;
+    a.click();
+  } catch(e) {
+    showToast('Błąd pobierania pliku', 'error');
+  }
+}
+
+/* ── ZARZĄDZANIE SŁOWNIKAMI (MODAL) ── */
+function renderListsManager() {
+  const tab = STATE.activeTabLists;
+  const body = document.getElementById('modal-lists-body');
+
+  document.querySelectorAll('.modal-tab-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.tab === tab);
+  });
+
+  if (tab === 'projekty') {
+    const clients = STATE.lists.klienci || [];
+    const activeK = STATE.listsActiveClient || clients[0] || '';
+    const projList = (STATE.lists.projektyByKlient && STATE.lists.projektyByKlient[activeK]) || [];
+
+    body.innerHTML = `
+      <div style="margin-bottom:12px;">
+        <label style="font-size:12px; font-weight:600; color:var(--text-muted);">Wybierz klienta:</label>
+        <select id="sel-manage-proj-client" style="margin-top:4px;">
+          ${clients.map(c => `<option value="${escapeHtml(c)}" ${c === activeK ? 'selected' : ''}>${escapeHtml(c)}</option>`).join('')}
+        </select>
+      </div>
+      <div style="max-height:260px; overflow-y:auto; margin-bottom:12px;">
+        ${projList.map((p, idx) => `
+          <div style="display:flex; gap:8px; margin-bottom:6px;">
+            <input type="text" value="${escapeHtml(p)}" id="inp-proj-${idx}">
+            <button class="btn-photo-action" style="flex:none" onclick="saveProjectItem('${activeK}', ${idx})">Zapisz</button>
+            <button class="btn-del-photo" style="position:static; flex:none" onclick="deleteProjectItem('${activeK}', ${idx})">✕</button>
+          </div>
+        `).join('')}
+      </div>
+      <div style="display:flex; gap:8px; border-top:1px dashed var(--border); padding-top:12px;">
+        <input type="text" id="inp-new-proj" placeholder="Nowy numer projektu (np. PS011899)...">
+        <button class="btn-submit" style="width:auto; margin-top:0;" onclick="addProjectItem('${activeK}')">+ Dodaj</button>
+      </div>
+    `;
+
+    document.getElementById('sel-manage-proj-client').onchange = (e) => {
+      STATE.listsActiveClient = e.target.value;
+      renderListsManager();
+    };
+    return;
+  }
+
+  // Zakładki proste: Klienci, Modele, Typy
+  const listArr = STATE.lists[tab] || [];
+  body.innerHTML = `
+    <div style="max-height:280px; overflow-y:auto; margin-bottom:12px;">
+      ${listArr.map((item, idx) => `
+        <div style="display:flex; gap:8px; margin-bottom:6px;">
+          <input type="text" value="${escapeHtml(item)}" id="inp-list-${idx}">
+          <button class="btn-photo-action" style="flex:none" onclick="saveListItem('${tab}', ${idx})">Zapisz</button>
+          <button class="btn-del-photo" style="position:static; flex:none" onclick="deleteListItem('${tab}', ${idx})">✕</button>
+        </div>
+      `).join('')}
+    </div>
+    <div style="display:flex; gap:8px; border-top:1px dashed var(--border); padding-top:12px;">
+      <input type="text" id="inp-new-item" placeholder="Nowa pozycja...">
+      <button class="btn-submit" style="width:auto; margin-top:0;" onclick="addListItem('${tab}')">+ Dodaj</button>
+    </div>
+  `;
+}
+
+async function addListItem(tab) {
+  const inp = document.getElementById('inp-new-item');
+  const val = (inp.value || '').trim();
+  if (!val) return;
+  STATE.lists[tab] = STATE.lists[tab] || [];
+  if (!STATE.lists[tab].includes(val)) {
+    STATE.lists[tab].push(val);
+    await apiCall('/api/lists', 'PUT', STATE.lists);
+    showToast('Dodano pozycję.');
+    renderListsManager();
+    renderFormDropdowns();
+  }
+}
+
+async function saveListItem(tab, idx) {
+  const val = (document.getElementById(`inp-list-${idx}`).value || '').trim();
+  if (!val) return;
+  STATE.lists[tab][idx] = val;
+  await apiCall('/api/lists', 'PUT', STATE.lists);
+  showToast('Zaktualizowano.');
+  renderListsManager();
+  renderFormDropdowns();
+}
+
+async function deleteListItem(tab, idx) {
+  if (!confirm('Usunąć tę pozycję ze słownika?')) return;
+  STATE.lists[tab].splice(idx, 1);
+  await apiCall('/api/lists', 'PUT', STATE.lists);
+  showToast('Pozycja usunięta.');
+  renderListsManager();
+  renderFormDropdowns();
+}
+
+async function addProjectItem(client) {
+  const inp = document.getElementById('inp-new-proj');
+  const val = (inp.value || '').trim();
+  if (!val || !client) return;
+  STATE.lists.projektyByKlient = STATE.lists.projektyByKlient || {};
+  STATE.lists.projektyByKlient[client] = STATE.lists.projektyByKlient[client] || [];
+  if (!STATE.lists.projektyByKlient[client].includes(val)) {
+    STATE.lists.projektyByKlient[client].push(val);
+    await apiCall('/api/lists', 'PUT', STATE.lists);
+    showToast('Dodano projekt.');
+    renderListsManager();
+    renderFormDropdowns();
+  }
+}
+
+async function saveProjectItem(client, idx) {
+  const val = (document.getElementById(`inp-proj-${idx}`).value || '').trim();
+  if (!val) return;
+  STATE.lists.projektyByKlient[client][idx] = val;
+  await apiCall('/api/lists', 'PUT', STATE.lists);
+  showToast('Zaktualizowano.');
+  renderListsManager();
+  renderFormDropdowns();
+}
+
+async function deleteProjectItem(client, idx) {
+  if (!confirm('Usunąć ten projekt?')) return;
+  STATE.lists.projektyByKlient[client].splice(idx, 1);
+  await apiCall('/api/lists', 'PUT', STATE.lists);
+  showToast('Projekt usunięty.');
+  renderListsManager();
+  renderFormDropdowns();
+}
+
+/* ── ZARZĄDZANIE UŻYTKOWNIKAMI (MODAL) ── */
+async function renderUsersPanel() {
+  const body = document.getElementById('modal-users-body');
+  try {
+    const users = await apiCall('/api/users');
+    body.innerHTML = `
+      <div style="margin-bottom:18px;">
+        <h4 style="font-size:13px; font-weight:700; text-transform:uppercase; color:var(--text-muted); margin-bottom:8px;">Lista użytkowników i ról</h4>
+        <div style="border:1px solid var(--border); border-radius:var(--radius-md); overflow:hidden;">
+          <table style="width:100%; font-size:12.5px;">
+            <thead style="background:var(--bg-card-subtle);">
+              <tr>
+                <th style="padding:8px 10px;">Login</th>
+                <th style="padding:8px 10px;">Imię i Nazwisko</th>
+                <th style="padding:8px 10px;">Rola</th>
+                <th style="padding:8px 10px;">Status</th>
+                <th style="padding:8px 10px; text-align:right;">Akcje</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${users.map(u => `
+                <tr style="border-bottom:1px solid var(--border);">
+                  <td style="padding:8px 10px; font-weight:600;">${escapeHtml(u.username)}</td>
+                  <td style="padding:8px 10px;">${escapeHtml(u.full_name)}</td>
+                  <td style="padding:8px 10px;"><span class="tag-pill">${escapeHtml(u.role)}</span></td>
+                  <td style="padding:8px 10px;">${u.is_active ? '<span style="color:var(--green-text)">Aktywny</span>' : '<span style="color:var(--red-text)">Zablokowany</span>'}</td>
+                  <td style="padding:8px 10px; text-align:right;">
+                    <button class="btn-photo-action" style="padding:2px 6px; font-size:11px; display:inline-flex;" onclick="adminResetPwPrompt('${u.id}', '${escapeHtml(u.username)}')">Reset hasła</button>
+                    ${u.role !== 'admin' ? `<button class="btn-del-photo" style="display:inline-flex; position:static;" onclick="deleteUserConfirm('${u.id}')">✕</button>` : ''}
+                  </td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div style="background:var(--bg-card-subtle); padding:14px; border-radius:var(--radius-md); border:1px solid var(--border);">
+        <h4 style="font-size:13px; font-weight:700; color:var(--text-main); margin-bottom:10px;">+ Dodaj nowego użytkownika / technika</h4>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:10px;">
+          <div><label style="font-size:11px;">Login *</label><input type="text" id="nu-login" placeholder="np. j.kowalski"></div>
+          <div><label style="font-size:11px;">Imię i Nazwisko *</label><input type="text" id="nu-name" placeholder="np. Jan Kowalski"></div>
+          <div><label style="font-size:11px;">Hasło początkowe *</label><input type="password" id="nu-pass" placeholder="min. 4 znaki"></div>
+          <div>
+            <label style="font-size:11px;">Rola</label>
+            <select id="nu-role">
+              <option value="technik">Technik (rejestracja i naprawy)</option>
+              <option value="admin">Administrator (pełny dostęp)</option>
+              <option value="podglad">Podgląd (tylko odczyt)</option>
+            </select>
+          </div>
+        </div>
+        <button class="btn-submit" style="width:auto; margin-top:0;" onclick="createUserSubmit()">Utwórz konto</button>
+      </div>
+    `;
+  } catch (err) {
+    body.innerHTML = `<div style="color:var(--red); padding:16px;">Wymagane uprawnienia administratora, aby zarządzać użytkownikami.</div>`;
+  }
+}
+
+async function createUserSubmit() {
+  const username = document.getElementById('nu-login').value.trim();
+  const full_name = document.getElementById('nu-name').value.trim();
+  const password = document.getElementById('nu-pass').value;
+  const role = document.getElementById('nu-role').value;
+
+  if (!username || !full_name || !password) {
+    alert('Uzupełnij wszystkie wymagane pola');
+    return;
+  }
+  try {
+    await apiCall('/api/users', 'POST', { username, full_name, password, role });
+    showToast('Użytkownik utworzony!');
+    renderUsersPanel();
+    loadAllData();
+  } catch (err) {
+    alert(err.message);
+  }
+}
+
+async function adminResetPwPrompt(userId, username) {
+  const newPw = prompt(`Podaj nowe hasło dla użytkownika ${username}:`);
+  if (!newPw) return;
+  try {
+    await apiCall(`/api/users/${userId}/reset-password`, 'POST', { new_password: newPw });
+    showToast('Hasło zostało zmienione.');
+  } catch (err) {
+    alert(err.message);
+  }
+}
+
+async function deleteUserConfirm(userId) {
+  if (!confirm('Usunąć tego użytkownika?')) return;
+  try {
+    await apiCall(`/api/users/${userId}`, 'DELETE');
+    showToast('Użytkownik usunięty.');
+    renderUsersPanel();
+    loadAllData();
+  } catch (err) {
+    alert(err.message);
+  }
+}
+
+/* ── LIGHTBOX ── */
+function openLightbox(src) {
+  document.getElementById('lightbox-img').src = src;
+  document.getElementById('lightbox').style.display = 'flex';
+  document.getElementById('btn-lightbox-download').onclick = () => {
+    const a = document.createElement('a');
+    a.href = src;
+    a.download = `foto_usterka_${Date.now()}.jpg`;
+    a.click();
+  };
+}
+
+function closeLightbox() {
+  document.getElementById('lightbox').style.display = 'none';
+}
+
+/* ── MODALE POMOCNICZE ── */
+function openModal(id) { document.getElementById(id).style.display = 'flex'; }
+function closeModal(id) { document.getElementById(id).style.display = 'none'; }
+
+/* ── OBSŁUGA ZDARZEŃ I EVENT LISTENERY ── */
+function setupEventListeners() {
+  // Przełącznik motywu
+  document.getElementById('btn-toggle-theme').onclick = toggleTheme;
+
+  // Aktywny użytkownik w headerze
+  document.getElementById('sel-active-user').onchange = (e) => {
+    STATE.activeUser = e.target.value;
+    localStorage.setItem('ru_active_user', STATE.activeUser);
+    showToast(`Aktywny technik: ${STATE.activeUser}`);
+    renderActiveUserPicker();
+  };
+
+  // Formularz submit
+  document.getElementById('form-defect').onsubmit = handleDefectSubmit;
+  document.getElementById('btn-cancel-edit').onclick = resetForm;
+
+  // Zmiana klienta -> aktualizacja projektów
+  document.getElementById('f-klient').onchange = (e) => {
+    if (e.target.value === ADD_NEW_OPTION) {
+      handleQuickAdd('klienci', 'f-klient');
+      return;
+    }
+    updateProjectDropdown();
+  };
+
+  document.getElementById('f-model').onchange = (e) => {
+    if (e.target.value === ADD_NEW_OPTION) handleQuickAdd('modele', 'f-model');
+  };
+
+  document.getElementById('f-typ').onchange = (e) => {
+    if (e.target.value === ADD_NEW_OPTION) handleQuickAdd('typy', 'f-typ');
+  };
+
+  document.getElementById('f-projekt').onchange = (e) => {
+    if (e.target.value === ADD_NEW_OPTION) {
+      const k = document.getElementById('f-klient').value;
+      if (!k) { alert('Najpierw wybierz klienta!'); e.target.value = ''; return; }
+      const np = prompt(`Podaj nowy numer projektu dla klienta "${k}":`);
+      if (np && np.trim()) {
+        addProjectItem(k, np.trim()).then(() => {
+          updateProjectDropdown();
+          document.getElementById('f-projekt').value = np.trim();
+        });
+      } else {
+        e.target.value = '';
+      }
+    }
+  };
+
+  // Dodawanie zdjęć z pliku
+  const pInput = document.getElementById('photo-file-input');
+  document.getElementById('btn-add-photo-file').onclick = () => pInput.click();
+  pInput.onchange = (e) => {
+    const file = e.target.files[0];
+    if (file) handleImageFile(file);
+    pInput.value = '';
+  };
+
+  // Wklejanie ze schowka (przycisk i Ctrl+V w oknie)
+  document.getElementById('btn-paste-photo').onclick = () => {
+    navigator.clipboard.read().then(items => {
+      for (const item of items) {
+        for (const type of item.types) {
+          if (type.startsWith('image/')) {
+            item.getType(type).then(blob => handleImageFile(blob));
+            return;
+          }
+        }
+      }
+      showToast('W schowku nie znaleziono obrazu', 'error');
+    }).catch(() => showToast('Użyj skrótu Ctrl+V na stronie'));
+  };
+
+  window.addEventListener('paste', (e) => {
+    const items = (e.clipboardData || e.originalEvent.clipboardData).items;
+    for (const item of items) {
+      if (item.kind === 'file' && item.type.startsWith('image/')) {
+        handleImageFile(item.getAsFile());
+        break;
+      }
+    }
+  });
+
+  // Dodawanie dokumentów
+  const dInput = document.getElementById('doc-file-input');
+  document.getElementById('btn-add-doc-file').onclick = () => dInput.click();
+  dInput.onchange = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const b64 = reader.result.split(',')[1];
+        STATE.pendingDocs.push({ filename: file.name, data: b64, filesize: file.size, isNew: true });
+        renderPendingDocs();
+      };
+      reader.readAsDataURL(file);
+    }
+    dInput.value = '';
+  };
+
+  // Modale w headerze
+  document.getElementById('btn-open-manage-lists').onclick = () => {
+    openModal('modal-lists');
+    renderListsManager();
+  };
+  document.querySelectorAll('.modal-tab-btn').forEach(btn => {
+    btn.onclick = () => {
+      STATE.activeTabLists = btn.dataset.tab;
+      renderListsManager();
+    };
+  });
+
+  document.getElementById('btn-open-users-panel').onclick = () => {
+    openModal('modal-users');
+    renderUsersPanel();
+  };
+
+  document.getElementById('btn-backup-menu').onclick = () => {
+    openModal('modal-backup');
+  };
+
+  // Filtry live search
+  document.getElementById('q-search').oninput = renderRecordsTable;
+  document.getElementById('q-klient').onchange = renderRecordsTable;
+  document.getElementById('q-typ').onchange = renderRecordsTable;
+  document.getElementById('q-status').onchange = renderRecordsTable;
+
+  // Eksport CSV
+  document.getElementById('btn-export-csv').onclick = exportCSV;
+
+  // Kopia zapasowa - akcje
+  document.getElementById('btn-do-backup-export').onclick = () => {
+    const backupData = { records: STATE.records, lists: STATE.lists, export_date: new Date().toISOString() };
+    const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `rejestr_usterek_kopia_${new Date().toISOString().slice(0,10)}.json`;
+    a.click();
+  };
+
+  const importFile = document.getElementById('import-json-file');
+  document.getElementById('btn-do-backup-merge').onclick = () => {
+    importFile.dataset.mode = 'merge';
+    importFile.click();
+  };
+  document.getElementById('btn-do-backup-replace').onclick = () => {
+    if (!confirm('UWAGA! Zastąpienie skasuje bieżące dane i wgra kopię. Czy kontynuować?')) return;
+    importFile.dataset.mode = 'replace';
+    importFile.click();
+  };
+  importFile.onchange = (e) => {
+    const file = e.target.files[0];
+    const mode = importFile.dataset.mode || 'merge';
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = async () => {
+        try {
+          const parsed = JSON.parse(reader.result);
+          const res = await apiCall(`/api/import?mode=${mode}`, 'POST', parsed);
+          showToast(`Import zakończony sukcesem (wgrano ${res.imported} rekordów).`);
+          closeModal('modal-backup');
+          loadAllData();
+        } catch(err) {
+          alert('Błąd importu pliku JSON: ' + err.message);
+        }
+      };
+      reader.readAsText(file);
+    }
+    importFile.value = '';
+  };
+
+  document.getElementById('btn-do-optimize-db').onclick = async () => {
+    if (!confirm('Uruchomić optymalizację zdjęć i odzyskiwanie wolnego miejsca w bazie SQLite?')) return;
+    try {
+      showToast('Optymalizacja w toku...');
+      const res = await apiCall('/api/admin/optimize-photos', 'POST');
+      alert(`Sukces!\nZoptymalizowano zdjęć: ${res.updated_photos}\nOdzyskano: ${res.saved_percent}% miejsca w bazie.`);
+    } catch(e) {
+      alert('Błąd optymalizacji: ' + e.message);
+    }
+  };
+}
+
+function handleQuickAdd(listKey, selectId) {
+  const val = prompt(`Wprowadź nową pozycję:`);
+  if (val && val.trim()) {
+    STATE.lists[listKey] = STATE.lists[listKey] || [];
+    if (!STATE.lists[listKey].includes(val.trim())) {
+      STATE.lists[listKey].push(val.trim());
+      apiCall('/api/lists', 'PUT', STATE.lists).then(() => {
+        renderFormDropdowns();
+        document.getElementById(selectId).value = val.trim();
+        if (selectId === 'f-klient') updateProjectDropdown();
+      });
+    }
+  } else {
+    document.getElementById(selectId).value = '';
+  }
+}
+
+function handleImageFile(file) {
+  if (STATE.pendingPhotos.length >= 3) {
+    alert('Maksymalnie 3 zdjęcia na usterkę.');
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = () => {
+    const b64 = reader.result.split(',')[1];
+    STATE.pendingPhotos.push({ filename: file.name || 'foto.jpg', data: b64, isNew: true });
+    renderPendingPhotos();
+    showToast('Zdjęcie dodane!');
+  };
+  reader.readAsDataURL(file);
+}
+
+/* ── EKSPORT CSV ── */
+function exportCSV() {
+  const rows = [
+    ["Data","Klient","Model","Projekt","VIN","Typ","Element","Opis problemu","Opis naprawy","Status","Zgłosił","Naprawił","Data naprawy"]
+  ];
+  STATE.records.forEach(r => {
+    rows.push([
+      r.created || '',
+      r.klient || '',
+      r.model || '',
+      r.projekt || '',
+      r.vin || '',
+      r.typ || '',
+      r.element || '',
+      r.opisProblem || '',
+      r.opisNaprawa || '',
+      r.status === 'fixed' ? 'Naprawiona' : 'Otwarta',
+      r.created_by || '',
+      r.fixed_by || '',
+      r.fixed_at || ''
+    ]);
+  });
+  const csvContent = "\uFEFF" + rows.map(e => e.map(f => `"${String(f).replace(/"/g, '""')}"`).join(",")).join("\n");
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `rejestr_usterek_${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+}
+
+/* ── NARZĘDZIA POMOCNICZE ── */
+function formatDateTime(iso) {
+  if (!iso) return '—';
+  try {
+    const d = new Date(iso);
+    return `${pad(d.getDate())}.${pad(d.getMonth()+1)}.${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  } catch(e) { return iso; }
+}
+function pad(n) { return n < 10 ? '0' + n : n; }
+function formatBytes(bytes) {
+  if (!bytes) return '0 B';
+  const k = 1024;
+  const dm = 1;
+  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+}
+function escapeHtml(str) {
+  return String(str || '').replace(/[&<>"']/g, m => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' })[m]);
+}
+function generateUUID() {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+    const r = Math.random() * 16 | 0;
+    return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+  });
+}
+function showToast(msg, type = 'info') {
+  const existing = document.querySelector('.toast');
+  if (existing) existing.remove();
+  const t = document.createElement('div');
+  t.className = 'toast';
+  if (type === 'error') t.style.borderLeftColor = 'var(--red)';
+  t.innerHTML = `<span>${escapeHtml(msg)}</span>`;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 3200);
+}
+</script>
+</body>
+</html>

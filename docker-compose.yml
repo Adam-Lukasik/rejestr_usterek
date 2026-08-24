@@ -1,0 +1,18 @@
+version: '3.8'
+
+services:
+  rejestr-usterek-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: rejestr_usterek_app
+    restart: unless-stopped
+    ports:
+      - "5050:5050"
+    volumes:
+      # Mapowanie folderu bieżącego: dzięki temu baza .db, pliki oraz kod app.py 
+      # znajdują się wprost na dysku NAS i można je aktualizować bez udziału informatyka
+      - ./:/app
+    environment:
+      - TZ=Europe/Warsaw
+      - PYTHONUNBUFFERED=1
