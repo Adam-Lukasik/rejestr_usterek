@@ -624,6 +624,7 @@ def update_user(user_id):
         return jsonify({"error": "Wymagane uprawnienia administratora."}), 403
 
     data = request.get_json() or {}
+    username = (data.get("username") or "").strip()
     full_name = (data.get("full_name") or "").strip()
     email = (data.get("email") or "").strip()
     role = data.get("role", "technik")
@@ -631,6 +632,8 @@ def update_user(user_id):
 
     if not full_name:
         return jsonify({"error": "Pole 'Imię i Nazwisko' jest wymagane."}), 400
+    if not username:
+        return jsonify({"error": "Pole 'Login' jest wymagane."}), 400
     if role not in ("admin", "technik", "podglad"):
         return jsonify({"error": "Nieprawidłowa rola."}), 400
 
@@ -641,13 +644,26 @@ def update_user(user_id):
         conn.close()
         return jsonify({"error": "Nie możesz odebrać sobie uprawnień administratora ani zablokować własnego konta."}), 400
 
+    # Sprawdzenie czy nowy login nie jest już zajęty przez inne konto
+    cursor.execute("SELECT id FROM users WHERE username = ? AND id != ?", (username, user_id))
+    if cursor.fetchone():
+        conn.close()
+        return jsonify({"error": f"Login '{username}' jest już zajęty przez innego użytkownika."}), 409
+
     cursor.execute("""
         UPDATE users
-        SET full_name = ?, email = ?, role = ?, is_active = ?
+        SET username = ?, full_name = ?, email = ?, role = ?, is_active = ?
         WHERE id = ?
-    """, (full_name, email, role, is_active, user_id))
+    """, (username, full_name, email, role, is_active, user_id))
     conn.commit()
     conn.close()
+
+    # Jeśli zmieniono dane bieżącego zalogowanego admina, zaktualizuj też kontekst sesji
+    if current_user["id"] == user_id:
+        current_user["username"] = username
+        current_user["full_name"] = full_name
+        current_user["role"] = role
+
     return jsonify({"status": "ok"})
 
 @app.route("/api/users/<user_id>/reset-password", methods=["POST"])
@@ -943,9 +959,9 @@ def add_photo(rec_id):
     conn = get_db_connection()
     count = conn.execute(
         "SELECT COUNT(*) FROM photos WHERE record_id=?", (rec_id,)).fetchone()[0]
-    if count >= 3:
+    if count >= 6:
         conn.close()
-        return jsonify({"error": "Maksymalnie 3 zdjęcia na usterkę."}), 400
+        return jsonify({"error": "Maksymalnie 6 zdjęć na usterkę."}), 400
     photo_id = str(_uuid.uuid4())
     raw = base64.b64decode(data.get("data", ""))
     img_data = optimize_image_bytes(raw)

@@ -81,6 +81,30 @@ RED   = "#D64545"
 DIM   = "#5B6572"
 NAVY  = "#1B2430"
 AMBER = "#D97706"
+
+def _get_theme_palette(is_dark=False):
+    """Zwraca dopasowane kolory dla trybu jasnego i ciemnego (kontrast, czytelność, tagi)."""
+    if is_dark:
+        return {
+            "dim": "#94A3B8",        # jasny szary do etykiet opisowych w dark mode
+            "navy": "#93C5FD",       # jasny błękit dla nagłówka użytkownika
+            "green": "#4ADE80",      # jasna czytelna zieleń (Status: Naprawiona)
+            "open": "#F87171",       # jasny koral / wyrazista czerwień (Status: Otwarta w dark mode)
+            "amber": "#F87171",      # kompatybilność
+            "link": "#60A5FA",       # jasny błękit do linków/plików
+        }
+    else:
+        return {
+            "dim": "#5B6572",
+            "navy": "#1B2430",
+            "green": "#16A34A",      # wyrazista zieleń (Status: Naprawiona)
+            "open": "#B91C1C",       # ciemna, szlachetna czerwień ostrzegawcza (Status: Otwarta)
+            "amber": "#B91C1C",      # kompatybilność
+            "link": "#1A6EC7",
+        }
+
+def _get_link_color():
+    return "#60A5FA" if UI.get("theme") == "dark" else "#1A6EC7"
 THUMB_SIZE = (px(300), px(225))          # rozmiar miniaturki w formularzu
 PANEL_PREVIEW_SIZE = (px(580), px(360))  # bazowy rozmiar dopasowanego zdjęcia w panelu szczegółów
 
@@ -262,46 +286,77 @@ def _make_pdf_thumb(data_bytes, size=None):
     except Exception:
         return None
 
-def _wrap_to_pixels(text, max_px, max_lines=2, font=None):
-    """Zawija tekst do podanej liczby pikseli z podziałem na słowa."""
-    text = " ".join((text or "").split())
-    if not text:
-        return text
-    if not font:
+_TREE_FONT = None
+
+def _get_tree_font():
+    """Zwraca obiekt Font odpowiadający czcionce tabeli dla precyzyjnych pomiarów szerokości tekstu."""
+    global _TREE_FONT
+    if _TREE_FONT is None:
         try:
             from tkinter import font as tkfont
-            font = tkfont.nametofont("TkDefaultFont")
+            _TREE_FONT = tkfont.Font(font=FONT_REGULAR)
         except Exception:
-            pass
-    if not font or font.measure(text) <= max_px:
-        return text
+            try:
+                from tkinter import font as tkfont
+                _TREE_FONT = tkfont.nametofont("TkDefaultFont")
+            except Exception:
+                _TREE_FONT = None
+    return _TREE_FONT
 
-    words = text.split(" ")
+def _wrap_to_pixels(text, max_px, max_lines=3, font=None):
+    """Zawija tekst do podanej liczby pikseli z podziałem na słowa, zachowaniem akapitów i limitem do max_lines wierszy."""
+    if not text:
+        return ""
+    if not font:
+        font = _get_tree_font()
+    
+    paragraphs = str(text).replace("\r\n", "\n").replace("\r", "\n").split("\n")
     lines = []
-    curr = ""
-    for i, w in enumerate(words):
-        cand = f"{curr} {w}".strip() if curr else w
-        if font.measure(cand) <= max_px:
-            curr = cand
-        else:
-            if curr:
-                lines.append(curr)
-                if len(lines) == max_lines - 1:
-                    rest = " ".join(words[i:])
-                    while rest and font.measure(rest + "…") > max_px:
-                        rest = rest[:-1]
-                    lines.append((rest.rstrip() + "…") if rest != " ".join(words[i:]) else rest)
-                    curr = ""
-                    break
-                curr = w
+    
+    for raw_p in paragraphs:
+        p = " ".join(raw_p.split())
+        if not p:
+            if raw_p == "" and len(paragraphs) > 1 and len(lines) < max_lines:
+                lines.append("")
+            continue
+
+        if not font or font.measure(p) <= max_px:
+            lines.append(p)
+            if len(lines) >= max_lines:
+                break
+            continue
+
+        words = p.split(" ")
+        curr = ""
+        for i, w in enumerate(words):
+            cand = f"{curr} {w}".strip() if curr else w
+            if font.measure(cand) <= max_px:
+                curr = cand
             else:
-                part = w
-                while part and font.measure(part) > max_px:
-                    part = part[:-1]
-                lines.append(part)
-                curr = w[len(part):]
-    if curr and len(lines) < max_lines:
-        lines.append(curr)
+                if curr:
+                    lines.append(curr)
+                    if len(lines) == max_lines - 1:
+                        rest = " ".join(words[i:])
+                        while rest and font.measure(rest + "…") > max_px:
+                            rest = rest[:-1]
+                        lines.append((rest.rstrip() + "…") if rest != " ".join(words[i:]) else rest)
+                        curr = ""
+                        break
+                    curr = w
+                else:
+                    part = w
+                    while part and font.measure(part) > max_px:
+                        part = part[:-1]
+                    lines.append(part)
+                    curr = w[len(part):]
+                    if len(lines) >= max_lines:
+                        break
+        if curr and len(lines) < max_lines:
+            lines.append(curr)
+            
+        if len(lines) >= max_lines:
+            break
+
     return "\n".join(lines[:max_lines])
 
 def _open_full(parent, photos_list, start_idx):
@@ -451,9 +506,10 @@ class _LoginDlg(tk.Toplevel):
         super().__init__(parent)
         self.title("Logowanie — Rejestr Usterek")
         self._on_success = on_success
-        w, h = px(420), px(460)
+        pal = _get_theme_palette(UI.get("theme") == "dark")
+        w, h = px(430), px(510)
         self.geometry(f"{w}x{h}")
-        self.minsize(px(380), px(420))
+        self.minsize(px(390), px(470))
         self.resizable(True, True)
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
@@ -469,7 +525,7 @@ class _LoginDlg(tk.Toplevel):
         frm.pack(fill="both", expand=True)
 
         ttk.Label(frm, text="Rejestr Usterek", font=FONT_TITLE).pack(pady=(0, 2))
-        ttk.Label(frm, text="Zaloguj się, aby kontynuować", font=FONT_MUTED, foreground=DIM).pack(pady=(0, 16))
+        ttk.Label(frm, text="Zaloguj się, aby kontynuować", font=FONT_MUTED, foreground=pal["dim"]).pack(pady=(0, 16))
 
         ttk.Label(frm, text="Login:", font=FONT_LABEL).pack(anchor="w")
         self._user_var = tk.StringVar(value=UI.get("last_username", ""))
@@ -491,39 +547,32 @@ class _LoginDlg(tk.Toplevel):
         sub_frm = ttk.Frame(frm)
         sub_frm.pack(fill="x")
         btn_reset = ttk.Label(sub_frm, text="Nie pamiętam hasła", font=FONT_SMALL,
-                              foreground="#1a6ec7", cursor="hand2")
+                              foreground=_get_link_color(), cursor="hand2")
         btn_reset.pack(side="left")
         btn_reset.bind("<Button-1>", lambda _: _ResetPasswordDlg(self))
 
-        # Opcje połączenia z serwerem (QNAP / Lokalny)
+        # Opcje połączenia z serwerem (QNAP / LAN / Lokalny) — zawsze otwarte
         curr_srv = UI.get("server_url", "")
         if not curr_srv and 'API' in globals() and getattr(API, 'base', '') and not API.base.startswith("http://127.0.0.1"):
             curr_srv = API.base
         self._server_var = tk.StringVar(value=curr_srv)
-        server_toggle_frm = ttk.Frame(frm)
-        server_toggle_frm.pack(fill="x", pady=(10, 0))
-        self._server_lbl = ttk.Label(server_toggle_frm, text="⚙ Serwer sieciowy (QNAP / LAN)",
-                                     font=FONT_SMALL, foreground="#2a75d3", cursor="hand2")
-        self._server_lbl.pack(side="left")
 
-        self._server_box = ttk.Frame(frm)
-        ttk.Label(self._server_box, text="Adres URL (np. http://192.168.8.30:5050 lub puste dla lokalnego):",
-                  font=("Segoe UI", 8), foreground=DIM).pack(anchor="w", pady=(4, 1))
-        self._server_entry = ttk.Entry(self._server_box, textvariable=self._server_var, font=FONT_SMALL)
+        srv_lf = ttk.LabelFrame(frm, text="⚙ Serwer sieciowy (QNAP / LAN)", padding=(12, 8))
+        srv_lf.pack(fill="x", pady=(14, 0))
+
+        ttk.Label(srv_lf, text="Adres URL (zostaw puste dla bazy lokalnej na tym komputerze):",
+                  font=("Segoe UI", 8), foreground=pal["dim"]).pack(anchor="w", pady=(0, 3))
+        self._server_entry = ttk.Entry(srv_lf, textvariable=self._server_var, font=FONT_REGULAR)
         self._server_entry.pack(fill="x")
+        self._server_entry.bind("<Return>", lambda _: self._login())
 
-        self._server_open = False
-        def toggle_server(_=None):
-            if self._server_open:
-                self._server_box.pack_forget()
-                self._server_open = False
-            else:
-                self._server_box.pack(fill="x", pady=(2, 0))
-                self._server_open = True
+        self._user_entry.bind("<Return>", lambda _: self._pw_entry.focus())
+        self._pw_entry.bind("<Return>", lambda _: self._login())
 
-        self._server_lbl.bind("<Button-1>", toggle_server)
-        if self._server_var.get():
-            toggle_server()
+        if self._user_var.get():
+            self._pw_entry.focus()
+        else:
+            self._user_entry.focus()
 
         self._user_entry.bind("<Return>", lambda _: self._pw_entry.focus())
         self._pw_entry.bind("<Return>", lambda _: self._login())
@@ -873,8 +922,8 @@ class _UserManagementDlg(tk.Toplevel):
         btn_row.pack(fill="x", pady=(10, 0))
 
         ttk.Button(btn_row, text="✎ Edytuj dane", command=self._edit_user).pack(side="left", padx=(0, 6))
-        ttk.Button(btn_row, text="🔑 Resetuj hasło pracownikowi", command=self._reset_pw).pack(side="left", padx=(0, 6))
-        ttk.Button(btn_row, text="🔒 Zablokuj / Odblokuj", command=self._toggle_active).pack(side="left", padx=(0, 6))
+        ttk.Button(btn_row, text="🔑 Resetuj hasło", command=self._reset_pw).pack(side="left", padx=(0, 6))
+        ttk.Button(btn_row, text="🔄 Aktywuj / Dezaktywuj", command=self._toggle_active).pack(side="left", padx=(0, 6))
         ttk.Button(btn_row, text="✕ Usuń konto", command=self._delete_user).pack(side="left")
         ttk.Button(btn_row, text="Zamknij", command=self.destroy).pack(side="right")
 
@@ -886,7 +935,7 @@ class _UserManagementDlg(tk.Toplevel):
             self._users = API.get("/api/users")
             for u in self._users:
                 role_pl = ROLE_PL.get(u.get("role"), u.get("role"))
-                status_pl = "Aktywny" if u.get("is_active") else "Zablokowany"
+                status_pl = "Aktywny" if u.get("is_active") else "Nieaktywny"
                 created_dt = u.get("created_at", "")[:16].replace("T", " ")
                 self._tree.insert("", "end", iid=u["id"], values=(
                     u.get("username", ""),
@@ -938,6 +987,7 @@ class _UserManagementDlg(tk.Toplevel):
         new_active = not bool(u.get("is_active"))
         try:
             API.put(f"/api/users/{u['id']}", {
+                "username": u["username"],
                 "full_name": u["full_name"],
                 "email": u["email"] or "",
                 "role": u["role"],
@@ -955,7 +1005,7 @@ class _UserManagementDlg(tk.Toplevel):
         if not u:
             messagebox.showinfo(self.title(), "Zaznacz użytkownika.", parent=self); return
         if not messagebox.askyesno(self.title(),
-                f"Czy na pewno chcesz usunąć konto:\n{u['full_name']} ({u['username']})?", parent=self):
+                f"Czy na pewno chcesz usunąć konto użytkownika:\n{u['full_name']} ({u['username']})?", parent=self):
             return
         try:
             API.delete(f"/api/users/{u['id']}")
@@ -975,9 +1025,9 @@ class _UserEditDlg(tk.Toplevel):
         self._user = user or {}
         self._on_save = on_save
         self.title("Nowy użytkownik" if mode == "add" else f"Edycja: {self._user.get('username')}")
-        w, h = (px(440), px(520)) if mode == "add" else (px(440), px(440))
+        w, h = (px(450), px(540)) if mode == "add" else (px(450), px(490))
         self.geometry(f"{w}x{h}")
-        self.minsize(px(380), px(440) if mode == "add" else px(360))
+        self.minsize(px(380), px(440) if mode == "add" else px(400))
         self.resizable(True, True)
         self.transient(parent)
         self.grab_set()
@@ -992,8 +1042,6 @@ class _UserEditDlg(tk.Toplevel):
         self._login_var = tk.StringVar(value=self._user.get("username", ""))
         self._login_entry = ttk.Entry(content_frm, textvariable=self._login_var, font=FONT_REGULAR)
         self._login_entry.pack(fill="x", pady=(2, 8))
-        if mode == "edit":
-            self._login_entry.configure(state="disabled")
 
         ttk.Label(content_frm, text="Imię i Nazwisko:", font=FONT_LABEL).pack(anchor="w")
         self._name_var = tk.StringVar(value=self._user.get("full_name", ""))
@@ -1011,6 +1059,13 @@ class _UserEditDlg(tk.Toplevel):
                                values=["Technik", "Administrator", "Podgląd"])
         role_cb.pack(fill="x", pady=(2, 8))
 
+        ttk.Label(content_frm, text="Status konta:", font=FONT_LABEL).pack(anchor="w")
+        is_act = self._user.get("is_active", 1) if mode == "edit" else 1
+        self._status_var = tk.StringVar(value="Aktywny" if is_act else "Nieaktywny")
+        status_cb = ttk.Combobox(content_frm, textvariable=self._status_var, state="readonly",
+                                 values=["Aktywny", "Nieaktywny"])
+        status_cb.pack(fill="x", pady=(2, 8))
+
         if mode == "add":
             ttk.Label(content_frm, text="Początkowe hasło (min. 4 znaki):", font=FONT_LABEL).pack(anchor="w")
             self._pw_var = tk.StringVar()
@@ -1027,6 +1082,10 @@ class _UserEditDlg(tk.Toplevel):
         btn_box = ttk.Frame(frm)
         btn_box.pack(fill="x", pady=(10, 0), side="bottom")
 
+        if mode == "edit":
+            btn_del = ttk.Button(btn_box, text="✕ Usuń", command=self._delete_self)
+            btn_del.pack(side="left", padx=(0, 6))
+
         btn_save = ttk.Button(btn_box, text="✓ Zapisz użytkownika" if mode == "add" else "✓ Zapisz zmiany",
                               command=self._save)
         btn_save.pack(side="left", fill="x", expand=True, padx=(0, 6))
@@ -1034,10 +1093,23 @@ class _UserEditDlg(tk.Toplevel):
         btn_cancel = ttk.Button(btn_box, text="Anuluj", command=self.destroy)
         btn_cancel.pack(side="right")
 
-        if mode == "add":
-            self._login_entry.focus()
-        else:
-            self._name_entry.focus()
+        self._login_entry.focus()
+
+    def _delete_self(self):
+        login = self._user.get("username", "")
+        name = self._user.get("full_name", "")
+        if not messagebox.askyesno(self.title(),
+                f"Czy na pewno chcesz usunąć konto użytkownika:\n{name} ({login})?", parent=self):
+            return
+        try:
+            API.delete(f"/api/users/{self._user['id']}")
+            if self._on_save: self._on_save()
+            self.destroy()
+        except Exception as e:
+            err = "Nie udało się usunąć użytkownika."
+            try: err = e.response.json().get("error", err)
+            except Exception: pass
+            messagebox.showerror(self.title(), err, parent=self)
 
     def _save(self):
         login = self._login_var.get().strip()
@@ -1045,6 +1117,7 @@ class _UserEditDlg(tk.Toplevel):
         email = self._email_var.get().strip()
         role_map = {"Technik": "technik", "Administrator": "admin", "Podgląd": "podglad"}
         role = role_map.get(self._role_var.get(), "technik")
+        is_active = 1 if self._status_var.get() == "Aktywny" else 0
 
         if not login or not name:
             messagebox.showwarning(self.title(), "Uzupełnij Login oraz Imię i Nazwisko.", parent=self); return
@@ -1059,14 +1132,16 @@ class _UserEditDlg(tk.Toplevel):
                     "full_name": name,
                     "email": email,
                     "role": role,
+                    "is_active": is_active,
                     "password": pw
                 })
             else:
                 API.put(f"/api/users/{self._user['id']}", {
+                    "username": login,
                     "full_name": name,
                     "email": email,
                     "role": role,
-                    "is_active": self._user.get("is_active", 1)
+                    "is_active": is_active
                 })
             if self._on_save: self._on_save()
             self.destroy()
@@ -1182,7 +1257,7 @@ class _ProjDlg(tk.Toplevel):
 # WIDGET GALERII ZDJĘĆ
 # ═══════════════════════════════════════════════════════════════════
 class PhotoGallery(ttk.Frame):
-    MAX = 3
+    MAX = 6
 
     def __init__(self, parent, mode="panel", **kw):
         super().__init__(parent, **kw)
@@ -1295,7 +1370,7 @@ class PhotoGallery(ttk.Frame):
 
     def _pick_file(self):
         if len(self._photos) >= self.MAX:
-            messagebox.showwarning(APP_TITLE, f"Maksymalnie {self.MAX} zdjęcia na usterkę."); return
+            messagebox.showwarning(APP_TITLE, f"Maksymalnie {self.MAX} zdjęć na usterkę."); return
         path = filedialog.askopenfilename(
             title="Wybierz zdjęcie",
             filetypes=[("Obrazy","*.jpg *.jpeg *.png *.bmp *.gif *.webp"),
@@ -1312,7 +1387,7 @@ class PhotoGallery(ttk.Frame):
 
     def _paste_image(self):
         if len(self._photos) >= self.MAX:
-            messagebox.showwarning(APP_TITLE, f"Maksymalnie {self.MAX} zdjęcia na usterkę."); return
+            messagebox.showwarning(APP_TITLE, f"Maksymalnie {self.MAX} zdjęć na usterkę."); return
         if not _PIL:
             messagebox.showwarning(APP_TITLE, "Wklejanie wymaga biblioteki Pillow.\nZainstaluj: pip install pillow"); return
         try:
@@ -1368,9 +1443,10 @@ class PhotoGallery(ttk.Frame):
             self._refresh_panel_ui()
 
     def _refresh_form_ui(self):
+        pal = _get_theme_palette(UI.get("theme") == "dark")
         if not self._photos:
-            ttk.Label(self._body_frame, text="Brak zdjęć (maksymalnie 3)",
-                      font=FONT_MUTED, foreground=DIM).pack(anchor="w", pady=4)
+            ttk.Label(self._body_frame, text="Brak zdjęć (maksymalnie 6)",
+                      font=FONT_MUTED, foreground=pal["dim"]).pack(anchor="w", pady=4)
             return
         row = ttk.Frame(self._body_frame)
         row.pack(fill="x", pady=2)
@@ -1384,7 +1460,7 @@ class PhotoGallery(ttk.Frame):
                 lbl.bind("<Button-1>", lambda e, i=idx: _open_full(self.winfo_toplevel(), self._photos, i))
             else:
                 lbl = ttk.Label(card, text=f"📷 {p['filename'][:15]}",
-                                font=FONT_REGULAR, foreground="#1a6ec7", cursor="hand2")
+                                font=FONT_REGULAR, foreground=_get_link_color(), cursor="hand2")
                 lbl.pack()
                 lbl.bind("<Button-1>", lambda e, i=idx: _open_full(self.winfo_toplevel(), self._photos, i))
 
@@ -1393,15 +1469,16 @@ class PhotoGallery(ttk.Frame):
                            command=lambda i=idx: self._delete_photo(i)).pack(pady=(2,0))
 
     def _refresh_panel_ui(self):
+        pal = _get_theme_palette(UI.get("theme") == "dark")
         n = len(self._photos)
         if n == 0:
             self._nav_frame.pack_forget()
             ttk.Label(self._body_frame, text="Brak zdjęć",
-                      font=FONT_MUTED, foreground=DIM).pack(anchor="w", pady=4)
+                      font=FONT_MUTED, foreground=pal["dim"]).pack(anchor="w", pady=4)
             return
 
         self._nav_frame.pack(side="right")
-        self._counter_lbl.config(text=f" {self._current_idx + 1} / {n} ")
+        self._counter_lbl.config(text=f" {self._current_idx + 1} / {n} ", foreground=pal["dim"])
         for w in (self._prev_btn, self._counter_lbl, self._next_btn): w.pack_forget()
         if n > 1:
             self._prev_btn.pack(side="left", padx=(0, 2))
@@ -1433,7 +1510,7 @@ class PhotoGallery(ttk.Frame):
         fn_row = ttk.Frame(card)
         fn_row.pack(fill="x", pady=(2, 0))
         fn_lbl = ttk.Label(fn_row, text=f"🔍 {p['filename']} (kliknij, aby powiększyć)",
-                           font=FONT_MUTED, foreground="#1a6ec7", cursor="hand2")
+                           font=FONT_MUTED, foreground=_get_link_color(), cursor="hand2")
         fn_lbl.pack(side="left")
         fn_lbl.bind("<Button-1>", lambda e: _open_full(self.winfo_toplevel(), self._photos, self._current_idx))
 
@@ -1458,8 +1535,9 @@ class DocGallery(ttk.Frame):
 
         self._hdr = ttk.Frame(self)
         self._hdr.pack(fill="x")
-        ttk.Label(self._hdr, text="Dokumenty / Załączniki", font=FONT_LABEL,
-                  foreground=DIM).pack(side="left")
+        self._title_lbl = ttk.Label(self._hdr, text="Dokumenty / Załączniki", font=FONT_LABEL,
+                                    foreground=_get_theme_palette(UI.get("theme") == "dark")["dim"])
+        self._title_lbl.pack(side="left")
 
         if self._mode == "form":
             self._add_btn = ttk.Button(self._hdr, text="＋ Dodaj plik", width=12,
@@ -1568,12 +1646,16 @@ class DocGallery(ttk.Frame):
         self._refresh_ui()
 
     def _refresh_ui(self):
+        pal = _get_theme_palette(UI.get("theme") == "dark")
+        if hasattr(self, '_title_lbl'):
+            self._title_lbl.configure(foreground=pal["dim"])
+
         for w in self._list_frame.winfo_children(): w.destroy()
         self._thumb_refs.clear()
 
         if not self._docs:
             ttk.Label(self._list_frame, text="Brak dokumentów",
-                      font=FONT_MUTED, foreground=DIM).pack(anchor="w", pady=2)
+                      font=FONT_MUTED, foreground=pal["dim"]).pack(anchor="w", pady=2)
             return
 
         pdf_docs = [d for d in self._docs if d.get("thumb")]
@@ -1595,11 +1677,11 @@ class DocGallery(ttk.Frame):
                 name = d["filename"]
                 if len(name) > 20: name = name[:17] + "…"
                 lbl = ttk.Label(card, text=f"📄 {name}", font=FONT_REGULAR,
-                                cursor="hand2", foreground="#1a6ec7")
+                                cursor="hand2", foreground=_get_link_color())
                 lbl.pack(anchor="center")
                 lbl.bind("<Button-1>", lambda e, i=idx: self._open_doc(i))
                 ttk.Label(card, text=_fmt_size(d.get("filesize", 0)),
-                          font=FONT_MUTED, foreground=DIM).pack(anchor="center")
+                          font=FONT_MUTED, foreground=pal["dim"]).pack(anchor="center")
 
                 if not self._readonly:
                     ttk.Button(card, text="✕ Usuń", width=8,
@@ -1613,11 +1695,11 @@ class DocGallery(ttk.Frame):
                 row  = ttk.Frame(self._list_frame)
                 row.pack(fill="x", pady=2)
                 lbl = ttk.Label(row, text=f"{icon} {d['filename']}",
-                                font=FONT_REGULAR, cursor="hand2", foreground="#1a6ec7")
+                                font=FONT_REGULAR, cursor="hand2", foreground=_get_link_color())
                 lbl.pack(side="left")
                 lbl.bind("<Button-1>", lambda e, i=idx: self._open_doc(i))
                 ttk.Label(row, text=f"  {_fmt_size(d.get('filesize', 0))}",
-                          font=FONT_MUTED, foreground=DIM).pack(side="left")
+                          font=FONT_MUTED, foreground=pal["dim"]).pack(side="left")
                 if not self._readonly:
                     ttk.Button(row, text="✕", width=3,
                                command=lambda i=idx: self._delete_doc(i)).pack(side="right")
@@ -1642,7 +1724,9 @@ class App:
         self._last_prob_w = 0
         self._resize_job = None
 
+        self._dim_labels = []
         self._build()
+        self._apply_theme()
         self._reload()
         self._poll()
 
@@ -1784,10 +1868,11 @@ class App:
                               stretch=(c == "prob"),
                               minwidth=w if c == "status" else px(40))
 
-        self._tree_style.configure("Treeview", font=FONT_REGULAR, rowheight=px(52))
+        pal = _get_theme_palette(UI.get("theme") == "dark")
+        self._tree_style.configure("Treeview", font=FONT_REGULAR, rowheight=px(32))
         self._tree_style.configure("Treeview.Heading", font=FONT_LABEL)
-        self._tree.tag_configure("open",  foreground="#996600")
-        self._tree.tag_configure("fixed", foreground=GREEN)
+        self._tree.tag_configure("open",  foreground=pal["open"])
+        self._tree.tag_configure("fixed", foreground=pal["green"])
         self._tree.grid(row=0, column=0, sticky="nsew")
         self._tree.bind("<<TreeviewSelect>>", lambda _: self._on_select())
         self._tree.bind("<Double-1>",          self._on_double_click)
@@ -1845,14 +1930,20 @@ class App:
         meta_grid.columnconfigure(0, weight=1)
         meta_grid.columnconfigure(1, weight=1)
 
+        pal = _get_theme_palette(UI.get("theme") == "dark")
+
         f_cb = ttk.Frame(meta_grid)
         f_cb.grid(row=0, column=0, sticky="nw", padx=(0, px(8)))
-        ttk.Label(f_cb, text="Zgłosił:", font=FONT_LABEL, foreground=DIM).pack(anchor="w")
+        l_cb = ttk.Label(f_cb, text="Zgłosił:", font=FONT_LABEL, foreground=pal["dim"])
+        l_cb.pack(anchor="w")
+        self._dim_labels.append(l_cb)
         ttk.Label(f_cb, textvariable=self._dv["created_by"], font=FONT_REGULAR).pack(anchor="w")
 
         f_fb = ttk.Frame(meta_grid)
         f_fb.grid(row=0, column=1, sticky="nw", padx=(px(8), 0))
-        ttk.Label(f_fb, text="Naprawił:", font=FONT_LABEL, foreground=DIM).pack(anchor="w")
+        l_fb = ttk.Label(f_fb, text="Naprawił:", font=FONT_LABEL, foreground=pal["dim"])
+        l_fb.pack(anchor="w")
+        self._dim_labels.append(l_fb)
         ttk.Label(f_fb, textvariable=self._dv["fixed_by"], font=FONT_REGULAR).pack(anchor="w")
 
         ttk.Separator(detail).pack(fill="x", pady=(6,6))
@@ -1865,13 +1956,17 @@ class App:
 
         f_typ = ttk.Frame(grid)
         f_typ.grid(row=0, column=0, sticky="nw", padx=(0,px(16)), pady=(2,0))
-        ttk.Label(f_typ, text="Typ usterki", font=FONT_LABEL, foreground=DIM).pack(anchor="w")
+        l_typ = ttk.Label(f_typ, text="Typ usterki", font=FONT_LABEL, foreground=pal["dim"])
+        l_typ.pack(anchor="w")
+        self._dim_labels.append(l_typ)
         self._det_typ_lbl = ttk.Label(f_typ, textvariable=self._dv["typ"], font=FONT_REGULAR, justify="left")
         self._det_typ_lbl.pack(anchor="w")
 
         f_elem = ttk.Frame(grid)
         f_elem.grid(row=0, column=1, sticky="nw", padx=(0,px(16)), pady=(2,0))
-        ttk.Label(f_elem, text="Element", font=FONT_LABEL, foreground=DIM).pack(anchor="w")
+        l_elem = ttk.Label(f_elem, text="Element", font=FONT_LABEL, foreground=pal["dim"])
+        l_elem.pack(anchor="w")
+        self._dim_labels.append(l_elem)
         self._det_elem_lbl = ttk.Label(f_elem, textvariable=self._dv["elem"], font=FONT_REGULAR, justify="left")
         self._det_elem_lbl.pack(anchor="w")
 
@@ -1879,7 +1974,9 @@ class App:
 
         # Opisy
         def _lbl(t):
-            ttk.Label(detail, text=t, font=FONT_LABEL, foreground=DIM).pack(anchor="w", pady=(4,0))
+            lbl_w = ttk.Label(detail, text=t, font=FONT_LABEL, foreground=pal["dim"])
+            lbl_w.pack(anchor="w", pady=(4,0))
+            self._dim_labels.append(lbl_w)
 
         _lbl("Opis problemu")
         self._det_prob_lbl = ttk.Label(detail, textvariable=self._dv["prob"],
@@ -2092,7 +2189,7 @@ class App:
             if tree_w > px(300):
                 fixed_w = sum(self._tree.column(c, "width") for c in
                               ("data","klient","model","projekt","typ","status"))
-                calc_w = tree_w - fixed_w - px(16)
+                calc_w = tree_w - fixed_w - px(20)
                 if calc_w > px(150):
                     return calc_w
         except Exception:
@@ -2104,14 +2201,14 @@ class App:
                 screen_w = self.root.winfo_screenwidth()
             est_tree_w = int(screen_w * 0.6)
             fixed_w = px(130 + 110 + 100 + 90 + 110 + 95)
-            est_prob = est_tree_w - fixed_w
+            est_prob = est_tree_w - fixed_w - px(20)
             if est_prob > px(150):
                 return est_prob
         except Exception:
             pass
 
         col_w = self._tree.column("prob", "width")
-        return max(px(200), col_w)
+        return max(px(200), col_w - px(20))
 
     def _on_tree_resize(self, event):
         w = event.width
@@ -2161,18 +2258,18 @@ class App:
         avail_px = self._get_prob_col_width()
         self._last_prob_w = self._tree.column("prob", "width")
 
-        font = None
-        try:
-            from tkinter import font as tkfont
-            font = tkfont.nametofont("TkDefaultFont")
-        except Exception:
-            pass
+        font = _get_tree_font()
 
-        has_multiline = False
+        max_lines_needed = 1
+        rendered_items = []
         for r in rows:
-            prob_wrapped = _wrap_to_pixels(r.get("opisProblem",""), avail_px, max_lines=2, font=font)
-            if "\n" in prob_wrapped:
-                has_multiline = True
+            prob_wrapped = _wrap_to_pixels(r.get("opisProblem",""), avail_px, max_lines=3, font=font)
+            lines_cnt = prob_wrapped.count("\n") + 1 if prob_wrapped else 1
+            if lines_cnt > max_lines_needed:
+                max_lines_needed = lines_cnt
+            rendered_items.append((r, prob_wrapped))
+
+        for r, prob_wrapped in rendered_items:
             self._tree.insert("","end", iid=r["id"], tags=(r.get("status","open"),),
                 values=(self._fmt_dt(r.get("created","")),
                         r.get("klient",""), r.get("model",""),
@@ -2180,7 +2277,14 @@ class App:
                         prob_wrapped,
                         STATUS_PL.get(r.get("status","open"),r.get("status",""))))
 
-        target_rowheight = px(52) if has_multiline else px(32)
+        # Dynamiczne dopasowanie wysokości wierszy tabeli (1 wiersz = px(32), 2 wiersze = px(52), 3 wiersze = px(72))
+        if max_lines_needed == 1:
+            target_rowheight = px(32)
+        elif max_lines_needed == 2:
+            target_rowheight = px(52)
+        else:
+            target_rowheight = px(72)
+
         self._tree_style.configure("Treeview", font=FONT_REGULAR, rowheight=target_rowheight)
         self._tree_style.configure("Treeview.Heading", font=FONT_LABEL)
 
@@ -2644,16 +2748,60 @@ class App:
         except Exception as e:
             messagebox.showerror(APP_TITLE, f"Błąd importu na serwer:\n{e}")
 
+    def _apply_theme(self):
+        dark = (UI.get("theme") == "dark")
+        pal = _get_theme_palette(dark)
+
+        if hasattr(self, '_user_badge'):
+            self._user_badge.configure(foreground=pal["navy"])
+        if hasattr(self, '_conn_lbl'):
+            self._conn_lbl.configure(foreground=pal["green"] if self._conn_var.get().startswith("●") else RED)
+
+        if hasattr(self, '_tree'):
+            self._tree.tag_configure("open",  foreground=pal["open"])
+            self._tree.tag_configure("fixed", foreground=pal["green"])
+
+        if hasattr(self, '_dim_labels'):
+            for lbl in self._dim_labels:
+                try: lbl.configure(foreground=pal["dim"])
+                except Exception: pass
+
+        if hasattr(self, '_tree_style'):
+            self._tree_style.configure("Treeview", font=FONT_REGULAR)
+            self._tree_style.configure("Treeview.Heading", font=FONT_LABEL)
+
+        if hasattr(self, '_panel_gallery'):
+            try: self._panel_gallery._refresh_ui()
+            except Exception: pass
+
+        if hasattr(self, '_panel_docs'):
+            try: self._panel_docs._refresh_ui()
+            except Exception: pass
+
+        if hasattr(self, '_form_gallery'):
+            try: self._form_gallery._refresh_ui()
+            except Exception: pass
+
+        if hasattr(self, '_form_docs'):
+            try: self._form_docs._refresh_ui()
+            except Exception: pass
+
+        self._render()
+
     def _toggle_theme(self):
         if not _BOOT: return
         dark = self._dark_var.get()
         UI["theme"] = "dark" if dark else "light"
         _save_cfg(UI)
-        try: self.root.style.theme_use("darkly" if dark else "litera")
-        except Exception: pass
+        try:
+            self.root.style.theme_use("darkly" if dark else "litera")
+        except Exception:
+            pass
+        self._apply_theme()
 
     # ── przeładowanie danych i polling ─────────────────────────────
     def _reload(self, force=False):
+        pal = _get_theme_palette(UI.get("theme") == "dark")
         try:
             self._records = API.get("/api/records")
             self._lists   = API.get("/api/lists")
@@ -2663,7 +2811,7 @@ class App:
                 self._users_list = []
 
             self._conn_var.set("● Połączono")
-            self._conn_lbl.configure(foreground=GREEN)
+            self._conn_lbl.configure(foreground=pal["green"])
             self._rebuild_combos()
             self._render()
         except Exception:

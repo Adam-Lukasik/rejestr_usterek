@@ -1,5 +1,5 @@
 {
-  "theme": "light",
+  "theme": "dark",
   "window_size": [
     1647,
     820
@@ -8,7 +8,7 @@
   "last_model": "MAN TGE 2024",
   "last_projekt": "PS011871",
   "last_username": "admin",
-  "remember_user": true,
-  "auth_token": "XqfjtEzkDcutL1xr7piiiZhugHA5iw06Txwmb0zk7K0",
+  "remember_user": false,
+  "auth_token": "",
   "server_url": ""
 }
