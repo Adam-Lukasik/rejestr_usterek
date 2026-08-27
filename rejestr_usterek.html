@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Rejestr Usterek — Kontrola Linii Produkcyjnej</title>
+<title>Rejestr Usterek v5.0 — Kontrola Linii Produkcyjnej</title>
 <style>
   :root {
     --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -1539,8 +1539,11 @@ async function openRecordDetail(recId) {
     </div>
 
     <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:10px; background:var(--bg-card-subtle); padding:14px; border-radius:var(--radius-md); border:1px solid var(--border); margin-bottom:16px;">
-      <div><span style="font-size:11px; color:var(--text-muted); text-transform:uppercase;">Projekt:</span><div style="font-weight:600;">${escapeHtml(r.projekt || '—')}</div></div>
-      <div><span style="font-size:11px; color:var(--text-muted); text-transform:uppercase;">VIN:</span><div style="font-weight:600;">${escapeHtml(r.vin || '—')}</div></div>
+      <div>
+        <span style="font-size:11px; color:var(--text-muted); text-transform:uppercase;">Projekt(y) (PS):</span>
+        <div style="font-weight:700; font-size:14px; color:var(--primary);">${escapeHtml(r.projekt || '—')}</div>
+        <div style="font-size:11px; color:var(--text-muted);">${escapeHtml(r.klient || '')} • ${escapeHtml(r.model || '')}</div>
+      </div>
       <div><span style="font-size:11px; color:var(--text-muted); text-transform:uppercase;">Typ usterki:</span><div style="font-weight:600;">${escapeHtml(r.typ)}</div></div>
       <div><span style="font-size:11px; color:var(--text-muted); text-transform:uppercase;">Element:</span><div style="font-weight:600;">${escapeHtml(r.element || '—')}</div></div>
     </div>
@@ -1550,27 +1553,27 @@ async function openRecordDetail(recId) {
       <div style="background:var(--bg-card-subtle); padding:12px; border-radius:var(--radius-md); border:1px solid var(--border); white-space:pre-wrap; margin-top:4px;">${escapeHtml(r.opisProblem)}</div>
     </div>
 
+    <!-- Galeria zdjęć problemu -->
     <div style="margin-bottom:16px;">
-      <label style="font-size:12px; font-weight:700; color:var(--text-muted); text-transform:uppercase;">Opis naprawy</label>
-      <div style="background:var(--bg-card-subtle); padding:12px; border-radius:var(--radius-md); border:1px solid var(--border); white-space:pre-wrap; margin-top:4px;">${r.opisNaprawa ? escapeHtml(r.opisNaprawa) : '<span style="color:var(--text-dim); font-style:italic;">Brak opisu naprawy</span>'}</div>
-      ${r.fixed_at ? `<div style="font-size:11.5px; color:var(--green-text); margin-top:6px;">✓ Naprawiono: ${formatDateTime(r.fixed_at)} przez <b>${escapeHtml(r.fixed_by || 'Technik')}</b></div>` : ''}
-    </div>
-
-    <!-- Galeria zdjęć -->
-    <div style="margin-bottom:16px;">
-      <label style="font-size:12px; font-weight:700; color:var(--text-muted); text-transform:uppercase;">📸 Zdjęcia (${r.id})</label>
+      <label style="font-size:12px; font-weight:700; color:var(--text-muted); text-transform:uppercase;">📸 Zdjęcia problemu</label>
       <div id="detail-photos-grid" style="display:grid; grid-template-columns:repeat(3, 1fr); gap:10px; margin-top:6px;">
         <div style="font-size:12px; color:var(--text-dim);">Ładowanie zdjęć...</div>
       </div>
     </div>
 
-    <!-- Lista załączników -->
+    <!-- Sekcja Wariantów Rozwiązań -->
     <div style="margin-bottom:16px;">
-      <label style="font-size:12px; font-weight:700; color:var(--text-muted); text-transform:uppercase;">📎 Dokumenty i Raporty</label>
-      <div id="detail-docs-list" style="margin-top:6px;">
-        <div style="font-size:12px; color:var(--text-dim);">Ładowanie dokumentów...</div>
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+        <label style="font-size:12px; font-weight:700; color:var(--text-muted); text-transform:uppercase;">💡 Warianty rozwiązań i przyczyn</label>
+        <button type="button" class="btn-quick-fix" onclick="addSolutionPrompt('${r.id}')">＋ Dodaj wariant</button>
       </div>
+      <div id="detail-solutions-container" style="display:flex; flex-direction:column; gap:10px;">
+        <div style="font-size:12px; color:var(--text-dim);">Ładowanie wariantów...</div>
+      </div>
+      ${r.fixed_at ? `<div style="font-size:11.5px; color:var(--green-text); margin-top:10px;">✓ Oznaczono jako naprawioną: ${formatDateTime(r.fixed_at)} przez <b>${escapeHtml(r.fixed_by || 'Technik')}</b></div>` : ''}
     </div>
+
+
 
     <div style="display:flex; justify-content:flex-end; gap:10px; border-top:1px solid var(--border); padding-top:14px;">
       <button class="btn-photo-action" onclick="closeModal('modal-detail'); startEditRecord('${r.id}')">✏ Edytuj usterkę</button>
@@ -1580,11 +1583,11 @@ async function openRecordDetail(recId) {
 
   openModal('modal-detail');
 
-  // Pobierz i wyrenderuj zdjęcia
+  // Pobierz i wyrenderuj zdjęcia problemu
   apiCall(`/api/records/${recId}/photos`).then(async photos => {
     const pGrid = document.getElementById('detail-photos-grid');
     if (!photos || photos.length === 0) {
-      pGrid.innerHTML = `<div style="font-size:12px; color:var(--text-dim); grid-column:span 3;">Brak załączonych zdjęć.</div>`;
+      pGrid.innerHTML = `<div style="font-size:12px; color:var(--text-dim); grid-column:span 3;">Brak zdjęć problemu.</div>`;
       return;
     }
     pGrid.innerHTML = '';
@@ -1596,6 +1599,9 @@ async function openRecordDetail(recId) {
       pGrid.appendChild(div);
     }
   });
+
+  // Pobierz i wyrenderuj warianty rozwiązań
+  loadSolutionsForDetail(recId);
 
   // Pobierz i wyrenderuj dokumenty
   apiCall(`/api/records/${recId}/documents`).then(docs => {
@@ -2198,6 +2204,327 @@ function showToast(msg, type = 'info') {
   document.body.appendChild(t);
   setTimeout(() => t.remove(), 3200);
 }
+
+/* ── OBSŁUGA WARIANTÓW ROZWIĄZAŃ (SOLUTIONS) ── */
+async function loadSolutionsForDetail(recId) {
+  const container = document.getElementById('detail-solutions-container');
+  if (!container) return;
+  try {
+    const solutions = await apiCall(`/api/records/${recId}/solutions`);
+    if (!solutions || solutions.length === 0) {
+      container.innerHTML = `<div style="font-size:12px; color:var(--text-dim); background:var(--bg-card-subtle); padding:12px; border-radius:var(--radius-md); border:1px solid var(--border);">Brak wprowadzonych wariantów rozwiązań. Kliknij „＋ Dodaj wariant”, aby dodać przyczynę i opis naprawy.</div>`;
+      return;
+    }
+
+    container.innerHTML = '';
+    for (const sol of solutions) {
+      const card = document.createElement('div');
+      card.style.cssText = 'background:var(--bg-card-subtle); border:1px solid var(--border); border-radius:var(--radius-md); padding:12px; margin-bottom:8px;';
+      card.innerHTML = `
+        <div style="border-bottom:1px solid var(--border); padding-bottom:6px; margin-bottom:10px; display:flex; justify-content:space-between; align-items:center;">
+          <b style="font-size:13px; color:var(--text-main);">Wariant ${sol.numer}: ${escapeHtml(sol.tytul)}</b>
+          <div style="display:flex; gap:6px;">
+            <button type="button" class="btn-quick-fix" style="padding:2px 8px; font-size:11px;" onclick="uploadSolutionPhoto('${sol.id}', '${recId}')">📷 Dodaj foto</button>
+            <button type="button" class="btn-quick-fix" style="padding:2px 8px; font-size:11px; color:var(--red);" onclick="deleteSolution('${sol.id}', '${recId}')">✕ Usuń</button>
+          </div>
+        </div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
+          <!-- Lewa kolumna: Zdjęcia wariantu -->
+          <div>
+            <div style="font-size:11px; font-weight:700; color:var(--text-muted); text-transform:uppercase; margin-bottom:6px;">Zdjęcia</div>
+            <div id="sol-photos-${sol.id}" style="display:flex; gap:8px; flex-wrap:wrap;">
+              <div style="font-size:11px; color:var(--text-dim);">Ładowanie zdjęć...</div>
+            </div>
+          </div>
+          <!-- Prawa kolumna: Opis naprawy -->
+          <div>
+            <div style="font-size:11px; font-weight:700; color:var(--text-muted); text-transform:uppercase; margin-bottom:6px;">Opis naprawy</div>
+            <div style="font-size:12.5px; white-space:pre-wrap; line-height:1.4; color:var(--text-main); margin-bottom:6px;">${escapeHtml(sol.opis || '(brak opisu)')}</div>
+            ${sol.created_by ? `<div style="font-size:11px; color:var(--text-muted);">Wprowadził: <b>${escapeHtml(sol.created_by)}</b> (${formatDateTime(sol.created)})</div>` : ''}
+          </div>
+        </div>
+      `;
+      container.appendChild(card);
+
+      // Pobierz zdjęcia wariantu
+      apiCall(`/api/solutions/${sol.id}/photos`).then(async pMetas => {
+        const phBox = document.getElementById(`sol-photos-${sol.id}`);
+        if (!phBox) return;
+        if (!pMetas || pMetas.length === 0) {
+          phBox.innerHTML = `<span style="font-size:11px; color:var(--text-dim); font-style:italic;">Brak zdjęć dla tego wariantu.</span>`;
+          return;
+        }
+        phBox.innerHTML = '';
+        for (const pm of pMetas) {
+          const full = await apiCall(`/api/solution-photos/${pm.id}`);
+          const pDiv = document.createElement('div');
+          pDiv.style.cssText = 'position:relative; width:90px; height:70px; border-radius:4px; overflow:hidden; border:1px solid var(--border); cursor:pointer; background:#000;';
+          pDiv.innerHTML = `
+            <img src="data:image/jpeg;base64,${full.data}" style="width:100%; height:100%; object-fit:cover;" onclick="openLightbox('data:image/jpeg;base64,${full.data}')">
+            <button type="button" style="position:absolute; top:2px; right:2px; background:rgba(0,0,0,0.7); color:#fff; border:none; border-radius:50%; width:16px; height:16px; font-size:9px; cursor:pointer;" onclick="deleteSolutionPhoto('${pm.id}', '${recId}')">✕</button>
+          `;
+          phBox.appendChild(pDiv);
+        }
+      });
+    }
+  } catch(e) {
+    container.innerHTML = `<div style="font-size:12px; color:var(--red);">Błąd ładowania wariantów: ${escapeHtml(e.message)}</div>`;
+  }
+}
+
+async function addSolutionPrompt(recId) {
+  const tytul = prompt('Wpisz tytuł wariantu rozwiązania (np. "Uszkodzony mikrofon", "Przetarty kabel"):');
+  if (!tytul || !tytul.trim()) return;
+  const opis = prompt('Wpisz szczegółowy opis rozwiązania / przyczyny:') || '';
+  try {
+    await apiCall(`/api/records/${recId}/solutions`, 'POST', {
+      tytul: tytul.trim(),
+      opis: opis.trim(),
+      created_by: STATE.activeUser
+    });
+    showToast('Wariant rozwiązania został dodany!');
+    loadSolutionsForDetail(recId);
+  } catch(e) {
+    showToast(`Błąd dodawania wariantu: ${e.message}`, 'error');
+  }
+}
+
+async function deleteSolution(solId, recId) {
+  if (!confirm('Czy na pewno chcesz usunąć ten wariant rozwiązania wraz z jego zdjęciami?')) return;
+  try {
+    await apiCall(`/api/solutions/${solId}`, 'DELETE');
+    showToast('Wariant usunięty');
+    loadSolutionsForDetail(recId);
+  } catch(e) {
+    showToast(`Błąd usuwania wariantu: ${e.message}`, 'error');
+  }
+}
+
+async function uploadSolutionPhoto(solId, recId) {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'image/*';
+  input.onchange = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const b64 = reader.result.split(',')[1];
+      try {
+        await apiCall(`/api/solutions/${solId}/photos`, 'POST', {
+          filename: file.name,
+          data: b64
+        });
+        showToast('Zdjęcie dodane do wariantu!');
+        loadSolutionsForDetail(recId);
+      } catch(err) {
+        showToast(`Błąd wgrywania zdjęcia: ${err.message}`, 'error');
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+  input.click();
+}
+
+async function deleteSolutionPhoto(photoId, recId) {
+  if (!confirm('Usunąć to zdjęcie z wariantu?')) return;
+  try {
+    await apiCall(`/api/solution-photos/${photoId}`, 'DELETE');
+    showToast('Zdjęcie usunięte');
+    loadSolutionsForDetail(recId);
+  } catch(e) {
+    showToast(`Błąd usuwania: ${e.message}`, 'error');
+  }
+}
+
+
+async function loadSolutionsForDetail(recId) {
+  const container = document.getElementById('detail-solutions-container');
+  if (!container) return;
+  try {
+    const solutions = await apiCall(`/api/records/${recId}/solutions`);
+    if (!solutions || solutions.length === 0) {
+      container.innerHTML = `<div style="font-size:12px; color:var(--text-dim);">Brak wariantów rozwiązań. Kliknij "+ Dodaj wariant" aby dodać nowe rozwiązanie.</div>`;
+      return;
+    }
+    container.innerHTML = '';
+    for (const sol of solutions) {
+      const card = document.createElement('div');
+      card.style.cssText = 'background:var(--bg-card-subtle); border:1px solid var(--border); border-radius:var(--radius-md); padding:12px; margin-bottom:10px;';
+      card.innerHTML = `
+        <div style="border-bottom:1px solid var(--border); padding-bottom:6px; margin-bottom:10px; display:flex; justify-content:space-between; align-items:center;">
+          <b style="font-size:13px; color:var(--text-main);">Wariant ${sol.numer}: ${escapeHtml(sol.tytul)}</b>
+          <div style="display:flex; gap:6px;">
+            <button type="button" class="btn-quick-fix" style="padding:2px 8px; font-size:11px;" onclick="uploadSolutionPhoto('${sol.id}', '${recId}')">📷 Foto</button>
+            <button type="button" class="btn-quick-fix" style="padding:2px 8px; font-size:11px;" onclick="uploadSolutionDoc('${sol.id}', '${recId}')">📄 Plik</button>
+            <button type="button" class="btn-quick-fix" style="padding:2px 8px; font-size:11px; color:var(--red);" onclick="deleteSolution('${sol.id}', '${recId}')">✕ Usuń</button>
+          </div>
+        </div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
+          <!-- Lewa kolumna: Zdjęcia wariantu -->
+          <div>
+            <div style="font-size:11px; font-weight:700; color:var(--text-muted); text-transform:uppercase; margin-bottom:6px;">Zdjęcia</div>
+            <div id="sol-photos-${sol.id}" style="display:flex; gap:8px; flex-wrap:wrap;">
+              <div style="font-size:11px; color:var(--text-dim);">Ładowanie zdjęć...</div>
+            </div>
+          </div>
+          <!-- Prawa kolumna: Opis naprawy + Dokumenty -->
+          <div>
+            <div style="font-size:11px; font-weight:700; color:var(--text-muted); text-transform:uppercase; margin-bottom:4px;">Opis naprawy</div>
+            <div style="font-size:12.5px; white-space:pre-wrap; line-height:1.4; color:var(--text-main); margin-bottom:8px;">${escapeHtml(sol.opis || '(brak opisu)')}</div>
+            ${sol.created_by ? `<div style="font-size:11px; color:var(--text-muted); margin-bottom:8px;">Wprowadził: <b>${escapeHtml(sol.created_by)}</b> (${formatDateTime(sol.created)})</div>` : ''}
+            
+            <div style="border-top:1px solid var(--border); padding-top:6px; margin-top:6px;">
+              <div style="font-size:11px; font-weight:700; color:var(--text-muted); text-transform:uppercase; margin-bottom:4px;">Dokumenty / Załączniki</div>
+              <div id="sol-docs-${sol.id}">
+                <div style="font-size:11px; color:var(--text-dim);">Ładowanie dokumentów...</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+      container.appendChild(card);
+
+      // Wczytaj zdjęcia wariantu
+      apiCall(`/api/solutions/${sol.id}/photos`).then(async photos => {
+        const phCont = document.getElementById(`sol-photos-${sol.id}`);
+        if (!photos || photos.length === 0) {
+          phCont.innerHTML = `<div style="font-size:11px; color:var(--text-dim);">Brak zdjęć</div>`;
+          return;
+        }
+        phCont.innerHTML = '';
+        for (const p of photos) {
+          const full = await apiCall(`/api/solution-photos/${p.id}`);
+          const img = document.createElement('img');
+          img.src = `data:image/jpeg;base64,${full.data}`;
+          img.style.cssText = 'width:70px; height:55px; object-fit:cover; border-radius:4px; border:1px solid var(--border); cursor:pointer;';
+          img.onclick = () => openLightbox(`data:image/jpeg;base64,${full.data}`);
+          phCont.appendChild(img);
+        }
+      });
+
+      // Wczytaj dokumenty wariantu
+      apiCall(`/api/solutions/${sol.id}/documents`).then(docs => {
+        const docCont = document.getElementById(`sol-docs-${sol.id}`);
+        if (!docs || docs.length === 0) {
+          docCont.innerHTML = `<div style="font-size:11px; color:var(--text-dim);">Brak dokumentów</div>`;
+          return;
+        }
+        docCont.innerHTML = docs.map(d => `
+          <div style="display:flex; justify-content:space-between; align-items:center; font-size:11.5px; padding:2px 0;">
+            <span style="color:var(--primary); cursor:pointer;" onclick="downloadSolutionDoc('${d.id}', '${escapeHtml(d.filename)}')">📄 ${escapeHtml(d.filename)} <small style="color:var(--text-muted);">(${formatBytes(d.filesize)})</small></span>
+            <button type="button" style="background:none; border:none; color:var(--red); cursor:pointer; font-size:10px;" onclick="deleteSolutionDoc('${d.id}', '${recId}')">✕</button>
+          </div>
+        `).join('');
+      });
+    }
+  } catch(e) {
+    container.innerHTML = `<div style="font-size:12px; color:var(--red);">Błąd wczytywania wariantów.</div>`;
+  }
+}
+
+async function downloadSolutionDoc(docId, filename) {
+  try {
+    const doc = await apiCall(`/api/solution-documents/${docId}`);
+    const a = document.createElement('a');
+    a.href = `data:application/octet-stream;base64,${doc.data}`;
+    a.download = filename;
+    a.click();
+  } catch(e) {
+    showToast('Błąd pobierania pliku', 'error');
+  }
+}
+
+async function uploadSolutionDoc(solId, recId) {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.onchange = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const b64 = reader.result.split(',')[1];
+      try {
+        await apiCall(`/api/solutions/${solId}/documents`, 'POST', {
+          filename: file.name,
+          data: b64
+        });
+        showToast('Dokument dodany do wariantu');
+        loadSolutionsForDetail(recId);
+      } catch(err) {
+        showToast(`Błąd: ${err.message}`, 'error');
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+  input.click();
+}
+
+async function deleteSolutionDoc(docId, recId) {
+  if (!confirm('Czy na pewno chcesz usunąć ten dokument?')) return;
+  try {
+    await apiCall(`/api/solution-documents/${docId}`, 'DELETE');
+    showToast('Dokument usunięty');
+    loadSolutionsForDetail(recId);
+  } catch(e) {
+    showToast('Błąd usuwania dokumentu', 'error');
+  }
+}
+
+async function addSolutionPrompt(recId) {
+  const tytul = prompt('Podaj tytuł wariantu rozwiązania (np. "Uszkodzony mikrofon"):');
+  if (!tytul || !tytul.trim()) return;
+  const opis = prompt('Podaj opis naprawy / diagnozy dla tego wariantu:');
+  try {
+    await apiCall(`/api/records/${recId}/solutions`, 'POST', {
+      tytul: tytul.trim(),
+      opis: (opis || '').trim(),
+      created_by: STATE.activeUser
+    });
+    showToast('Dodano nowy wariant rozwiązania!');
+    loadSolutionsForDetail(recId);
+  } catch(e) {
+    showToast(`Błąd: ${e.message}`, 'error');
+  }
+}
+
+async function deleteSolution(solId, recId) {
+  if (!confirm('Czy na pewno chcesz usunąć ten wariant rozwiązania wraz ze zdjęciami i dokumentami?')) return;
+  try {
+    await apiCall(`/api/solutions/${solId}`, 'DELETE');
+    showToast('Wariant rozwiązania został usunięty.');
+    loadSolutionsForDetail(recId);
+  } catch(e) {
+    showToast(`Błąd: ${e.message}`, 'error');
+  }
+}
+
+async function uploadSolutionPhoto(solId, recId) {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'image/*';
+  input.onchange = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const b64 = reader.result.split(',')[1];
+      try {
+        await apiCall(`/api/solutions/${solId}/photos`, 'POST', {
+          filename: file.name,
+          data: b64
+        });
+        showToast('Zdjęcie dodane do wariantu');
+        loadSolutionsForDetail(recId);
+      } catch(err) {
+        showToast(`Błąd: ${err.message}`, 'error');
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+  input.click();
+}
+
 </script>
 </body>
 </html>

@@ -71,7 +71,8 @@ import requests
 import tempfile
 
 # ═══════════════════════════════════════════════════════════════════
-APP_TITLE = "Rejestr Usterek"
+APP_VERSION = "v5.0"
+APP_TITLE   = f"Rejestr Usterek {APP_VERSION}"
 BASE_DIR  = Path(__file__).resolve().parent
 CFG_FILE  = BASE_DIR / "desktop_config.json"
 DB_PATH   = BASE_DIR / "rejestr_usterek.db"
@@ -287,6 +288,114 @@ def _make_pdf_thumb(data_bytes, size=None):
         return None
 
 _TREE_FONT = None
+
+
+def _get_project_meta_text(proj_str, lists_dict):
+    if not proj_str:
+        return "💡 Wybierz lub wpisz numer projektu PS"
+    projs = [p.strip() for p in proj_str.replace(';', ',').split(',') if p.strip()]
+    if not projs:
+        return "💡 Wybierz lub wpisz numer projektu PS"
+    clients = set()
+    projs_by_k = lists_dict.get("projektyByKlient", {})
+    for p in projs:
+        for k, p_list in projs_by_k.items():
+            if p in p_list:
+                short_k = k.split(' - ')[0] if ' - ' in k else k
+                clients.add(short_k)
+    modele = lists_dict.get("modele", [])
+    model_str = modele[0] if modele else "MAN TGE 2024"
+    if clients:
+        c_str = ", ".join(sorted(clients))
+        return f"💡 Klient: {c_str}  •  Model: {model_str}"
+    else:
+        return f"💡 Model: {model_str}"
+
+
+class _MultiProjectDlg(tk.Toplevel):
+    """Dialog wielokrotnego wyboru projektów (PS) z podziałem na klientów."""
+    def __init__(self, parent, proj_by_klient, current_projs_str, on_save):
+        super().__init__(parent)
+        self.title("Wybór projektów (PS)")
+        self.geometry(f"{px(460)}x{px(500)}")
+        self.minsize(px(380), px(400))
+        self.resizable(True, True)
+        self.transient(parent)
+        self.grab_set()
+
+        self._on_save = on_save
+        curr_set = set(p.strip() for p in current_projs_str.replace(';', ',').split(',') if p.strip())
+        self._vars = {}  # {proj_name: BooleanVar}
+
+        pal = _get_theme_palette(UI.get("theme") == "dark")
+
+        frm = ttk.Frame(self, padding=16)
+        frm.pack(fill="both", expand=True)
+
+        ttk.Label(frm, text="Zaznacz projekty, których dotyczy ta usterka:",
+                  font=FONT_LABEL).pack(anchor="w", pady=(0, 8))
+
+        # Canvas z listą projektów
+        can_outer = ttk.Frame(frm)
+        can_outer.pack(fill="both", expand=True, pady=(0, 10))
+
+        canvas = tk.Canvas(can_outer, highlightthickness=0)
+        sb = ttk.Scrollbar(can_outer, orient="vertical", command=canvas.yview)
+        canvas.configure(yscrollcommand=sb.set)
+        sb.pack(side="right", fill="y")
+        canvas.pack(side="left", fill="both", expand=True)
+
+        inner = ttk.Frame(canvas)
+        cwin = canvas.create_window((0, 0), window=inner, anchor="nw")
+
+        def _on_c(e):
+            canvas.configure(scrollregion=canvas.bbox("all"))
+            canvas.itemconfig(cwin, width=canvas.winfo_width())
+        inner.bind("<Configure>", _on_c)
+        canvas.bind("<Configure>", lambda e: canvas.itemconfig(cwin, width=e.width))
+
+        has_any = False
+        for klient, projs in proj_by_klient.items():
+            if not projs:
+                continue
+            has_any = True
+            lf = ttk.Labelframe(inner, text=f" {klient} ", padding=8)
+            lf.pack(fill="x", pady=(0, 8), padx=2)
+            for p in projs:
+                var = tk.BooleanVar(value=(p in curr_set))
+                self._vars[p] = var
+                cb = ttk.Checkbutton(lf, text=p, variable=var)
+                cb.pack(anchor="w", pady=2)
+
+        if not has_any:
+            ttk.Label(inner, text="Brak zdefiniowanych projektów w słowniku.",
+                      font=FONT_MUTED, foreground=pal["dim"]).pack(anchor="w", pady=10)
+
+        # Wpisanie własnego projektu
+        custom_frame = ttk.Frame(frm)
+        custom_frame.pack(fill="x", pady=(0, 10))
+        ttk.Label(custom_frame, text="Dodatkowy projekt (ręcznie):", font=FONT_MUTED).pack(anchor="w", pady=(0, 2))
+        self._custom_var = tk.StringVar()
+        ttk.Entry(custom_frame, textvariable=self._custom_var).pack(fill="x")
+
+        # Przyciski akcji
+        btn_row = ttk.Frame(frm)
+        btn_row.pack(fill="x")
+        ttk.Button(btn_row, text="✓ Zastosuj", command=self._apply).pack(side="left", padx=(0, 8))
+        ttk.Button(btn_row, text="Anuluj", command=self.destroy).pack(side="left")
+
+    def _apply(self):
+        selected = [p for p, var in self._vars.items() if var.get()]
+        custom = self._custom_var.get().strip()
+        if custom:
+            for cp in custom.replace(';', ',').split(','):
+                cp_clean = cp.strip()
+                if cp_clean and cp_clean not in selected:
+                    selected.append(cp_clean)
+        res_str = ", ".join(selected)
+        self.destroy()
+        if self._on_save:
+            self._on_save(res_str)
 
 def _get_tree_font():
     """Zwraca obiekt Font odpowiadający czcionce tabeli dla precyzyjnych pomiarów szerokości tekstu."""
@@ -718,11 +827,14 @@ class _MarkFixedDlg(tk.Toplevel):
         self._tech_cb.pack(fill="x", pady=(0, 8))
         self._tech_var.set(curr_name or (user_names[0] if user_names else ""))
 
-        ttk.Label(frm, text="Opis wykonanej naprawy / Przyczyna usterki:", font=FONT_LABEL).pack(anchor="w", pady=(4, 2))
-        self._fix_txt = tk.Text(frm, height=5, wrap="word", font=FONT_REGULAR)
-        self._fix_txt.pack(fill="both", expand=True, pady=(0, 12))
-        if record.get("opisNaprawa"):
-            self._fix_txt.insert("1.0", record.get("opisNaprawa"))
+        pal = _get_theme_palette(UI.get("theme") == "dark")
+        info_lf = ttk.Labelframe(frm, text="Warianty rozwiązań", padding=8)
+        info_lf.pack(fill="x", pady=(4, 12))
+        ttk.Label(info_lf,
+                  text="💡 Szczegółowe opisy przyczyny i warianty rozwiązań zarządzaj w zakładce\n"
+                       "\"Dodaj usterkę\" → sekcja \"Warianty rozwiązań\" (po otwarciu tej usterki do edycji).",
+                  font=FONT_MUTED, foreground=pal["dim"],
+                  wraplength=px(440), justify="left").pack(anchor="w")
 
         btn_row = ttk.Frame(frm)
         btn_row.pack(fill="x")
@@ -733,12 +845,10 @@ class _MarkFixedDlg(tk.Toplevel):
         tech = self._tech_var.get().strip()
         if not tech:
             messagebox.showwarning(self.title(), "Wybierz lub wpisz osobę, która wykonała naprawę.", parent=self); return
-        fix_desc = self._fix_txt.get("1.0", "end").strip()
 
         try:
             now_str = datetime.now().isoformat(timespec="seconds")
             rec_copy = dict(self._record)
-            rec_copy["opisNaprawa"] = fix_desc
             rec_copy["status"] = "fixed"
             rec_copy["fixed_by"] = tech
             rec_copy["fixed_at"] = now_str
@@ -1705,6 +1815,733 @@ class DocGallery(ttk.Frame):
                                command=lambda i=idx: self._delete_doc(i)).pack(side="right")
 
 # ═══════════════════════════════════════════════════════════════════
+# PANEL WARIANTÓW ROZWIĄZAŃ
+# ═══════════════════════════════════════════════════════════════════
+class SolutionsPanel(ttk.Frame):
+    """
+    Widget wyświetlający listę wariantów rozwiązań usterki.
+    Podział każdego wariantu na 2 kolumny:
+    - Lewa kolumna: Zdjęcia wariantu
+    - Prawa kolumna (2 wiersze):
+        - Wiersz 1: Opis naprawy (rozciągnięty na całą szerokość kolumny)
+        - Wiersz 2: Spis dokumentów / załączników wariantu + przyciski akcji
+    """
+    MAX_PHOTOS = 6
+    MAX_DOCS   = 6
+
+    def __init__(self, parent, mode="panel", **kw):
+        super().__init__(parent, **kw)
+        assert mode in ("panel", "form")
+        self._mode = mode
+        self._record_id = None
+        self._solutions: list[dict] = []   # [{id, numer, tytul, opis, created_by, photos:[...], docs:[...]}]
+        self._thumb_refs = []
+        self._readonly = (mode == "panel")
+
+        self._hdr = ttk.Frame(self)
+        self._hdr.pack(fill="x")
+
+        pal = _get_theme_palette(UI.get("theme") == "dark")
+        self._title_lbl = ttk.Label(
+            self._hdr, text="Warianty rozwiązań", font=FONT_LABEL,
+            foreground=pal["dim"])
+        self._title_lbl.pack(side="left")
+
+        if not self._readonly:
+            self._add_btn = ttk.Button(
+                self._hdr, text="＋ Dodaj wariant", width=15,
+                command=self._add_solution)
+            self._add_btn.pack(side="right")
+
+        self._body = ttk.Frame(self)
+        self._body.pack(fill="both", expand=True, pady=(6, 0))
+
+        self._refresh_ui()
+
+    def set_readonly(self, readonly=True):
+        self._readonly = readonly
+        if hasattr(self, '_add_btn'):
+            if readonly:
+                self._add_btn.pack_forget()
+            else:
+                self._add_btn.pack(side="right")
+        self._refresh_ui()
+
+    def load_for_record(self, record_id: str | None, force: bool = False):
+        if self._record_id == record_id and not force:
+            return
+        self._record_id = record_id
+        self._solutions = []
+        if not record_id:
+            self._refresh_ui()
+            return
+        try:
+            metas = API.get(f"/api/records/{record_id}/solutions")
+            for m in metas:
+                sol = {
+                    "id": m["id"],
+                    "numer": m["numer"],
+                    "tytul": m["tytul"],
+                    "opis": m.get("opis", "") or "",
+                    "created_by": m.get("created_by", "") or "",
+                    "photos": [],
+                    "docs": []
+                }
+                # Wczytaj miniatury zdjęć wariantu
+                try:
+                    photo_metas = API.get(f"/api/solutions/{m['id']}/photos")
+                    for pm in photo_metas:
+                        try:
+                            resp = API.get(f"/api/solution-photos/{pm['id']}")
+                            raw = base64.b64decode(resp["data"])
+                            sol["photos"].append({
+                                "id": pm["id"],
+                                "filename": pm["filename"],
+                                "bytes": raw,
+                                "thumb": _make_thumb(raw, size=(px(120), px(90)))
+                            })
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+
+                # Wczytaj listę dokumentów wariantu
+                try:
+                    doc_metas = API.get(f"/api/solutions/{m['id']}/documents")
+                    for dm in doc_metas:
+                        sol["docs"].append({
+                            "id": dm["id"],
+                            "filename": dm["filename"],
+                            "filesize": dm.get("filesize", 0)
+                        })
+                except Exception:
+                    pass
+
+                self._solutions.append(sol)
+        except Exception:
+            pass
+        self._refresh_ui()
+
+    def clear(self):
+        self._record_id = None
+        self._solutions = []
+        self._refresh_ui()
+
+    def _refresh_ui(self):
+        pal = _get_theme_palette(UI.get("theme") == "dark")
+        if hasattr(self, '_title_lbl'):
+            self._title_lbl.configure(foreground=pal["dim"])
+
+        for w in self._body.winfo_children():
+            w.destroy()
+        self._thumb_refs.clear()
+
+        if not self._solutions:
+            msg = "Brak wariantów rozwiązań" if self._readonly else "Brak wariantów — kliknij '＋ Dodaj wariant'"
+            ttk.Label(self._body, text=msg,
+                      font=FONT_MUTED, foreground=pal["dim"]).pack(anchor="w", pady=2)
+            return
+
+        for sol_idx, sol in enumerate(self._solutions):
+            # Ramka wariantu
+            card = ttk.Labelframe(
+                self._body,
+                text=f"  Wariant {sol['numer']}: {sol['tytul']}  ",
+                padding=(10, 8))
+            card.pack(fill="x", pady=(0, 10))
+            card.columnconfigure(0, weight=1, uniform="sol_grid")
+            card.columnconfigure(1, weight=1, uniform="sol_grid")
+
+            # ── Lewa kolumna: Zdjęcia wariantu ──
+            left_col = ttk.Frame(card)
+            left_col.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
+
+            ttk.Label(left_col, text="Zdjęcia", font=FONT_LABEL,
+                      foreground=pal["dim"]).pack(anchor="w", pady=(0, 4))
+
+            photos = sol.get("photos", [])
+            if photos:
+                photo_row = ttk.Frame(left_col)
+                photo_row.pack(anchor="w", pady=(0, 4))
+                for ph_idx, ph in enumerate(photos):
+                    if ph.get("thumb"):
+                        self._thumb_refs.append(ph["thumb"])
+                        ph_frame = ttk.Frame(photo_row)
+                        ph_frame.pack(side="left", padx=(0, px(6)))
+
+                        btn = tk.Button(
+                            ph_frame, image=ph["thumb"], relief="flat", bd=1,
+                            cursor="hand2",
+                            command=lambda s=sol, i=ph_idx: self._open_full_photo(s, i))
+                        btn.pack()
+
+                        if not self._readonly and sol.get("id"):
+                            ttk.Button(
+                                ph_frame, text="✕", width=3,
+                                command=lambda s=sol, i=ph_idx: self._delete_photo(s, i)
+                            ).pack(pady=(2, 0))
+            else:
+                ttk.Label(left_col, text="Brak zdjęć dla tego wariantu",
+                          font=FONT_MUTED, foreground=pal["dim"]).pack(anchor="w", pady=(2, 4))
+
+            if not self._readonly and sol.get("id") and len(photos) < self.MAX_PHOTOS:
+                ttk.Button(left_col, text="📷 Dodaj zdjęcie",
+                           command=lambda s=sol: self._add_photo(s)).pack(anchor="w", pady=(4, 0))
+
+            # ── Prawa kolumna: Opis naprawy + Dokumenty / Załączniki ──
+            right_col = ttk.Frame(card)
+            right_col.grid(row=0, column=1, sticky="nsew", padx=(8, 0))
+            right_col.columnconfigure(0, weight=1)
+
+            # WIERSZ 1 (GÓRA): Opis naprawy
+            ttk.Label(right_col, text="Opis naprawy", font=FONT_LABEL,
+                      foreground=pal["dim"]).pack(anchor="w", pady=(0, 2))
+
+            opis_text = sol.get("opis", "") or ""
+            if opis_text:
+                opis_lbl = ttk.Label(right_col, text=opis_text, font=FONT_REGULAR,
+                                     justify="left", wraplength=px(480))
+                opis_lbl.pack(anchor="w", fill="x", pady=(0, 4))
+            else:
+                ttk.Label(right_col, text="(brak opisu)", font=FONT_MUTED,
+                          foreground=pal["dim"]).pack(anchor="w", pady=(0, 4))
+
+            if sol.get("created_by"):
+                ttk.Label(right_col, text=f"Wprowadził: {sol['created_by']}",
+                          font=FONT_MUTED, foreground=pal["dim"]).pack(anchor="w", pady=(0, 4))
+
+            # WIERSZ 2 (DÓŁ): Dokumenty / Załączniki
+            ttk.Separator(right_col).pack(fill="x", pady=(4, 4))
+            doc_hdr = ttk.Frame(right_col)
+            doc_hdr.pack(fill="x", pady=(0, 2))
+            ttk.Label(doc_hdr, text="Dokumenty / Załączniki", font=FONT_LABEL,
+                      foreground=pal["dim"]).pack(side="left")
+
+            docs = sol.get("docs", [])
+            if docs:
+                docs_frame = ttk.Frame(right_col)
+                docs_frame.pack(fill="x", pady=(2, 4))
+                for d_idx, doc in enumerate(docs):
+                    d_row = ttk.Frame(docs_frame)
+                    d_row.pack(fill="x", pady=1)
+
+                    ext  = doc["filename"].rsplit(".", 1)[-1].lower() if "." in doc["filename"] else ""
+                    icon = ICON_EXT.get(ext, "📎")
+                    size_str = f"({_fmt_size(doc.get('filesize', 0))})" if doc.get('filesize') else ""
+
+                    lbl = ttk.Label(d_row, text=f"{icon} {doc['filename']} {size_str}",
+                                    font=FONT_REGULAR, cursor="hand2", foreground=_get_link_color())
+                    lbl.pack(side="left")
+                    lbl.bind("<Button-1>", lambda e, d=doc: self._open_doc(d))
+
+                    if not self._readonly and sol.get("id"):
+                        ttk.Button(d_row, text="✕", width=3,
+                                   command=lambda s=sol, i=d_idx: self._delete_doc(s, i)
+                                   ).pack(side="right")
+            else:
+                ttk.Label(right_col, text="Brak dokumentów", font=FONT_MUTED,
+                          foreground=pal["dim"]).pack(anchor="w", pady=(1, 4))
+
+            # Przyciski akcji (dodaj plik, edytuj wariant, usuń wariant)
+            if not self._readonly and sol.get("id"):
+                action_bar = ttk.Frame(right_col)
+                action_bar.pack(fill="x", pady=(4, 0))
+
+                if len(docs) < self.MAX_DOCS:
+                    ttk.Button(action_bar, text="＋ Dodaj plik", width=12,
+                               command=lambda s=sol: self._add_document(s)).pack(side="left", padx=(0, 6))
+
+                ttk.Button(action_bar, text="✎ Edytuj wariant",
+                           command=lambda s=sol: self._edit_solution(s)).pack(side="left", padx=(0, 6))
+                ttk.Button(action_bar, text="✕ Usuń wariant",
+                           command=lambda s=sol: self._delete_solution(s)).pack(side="left")
+
+    def _open_full_photo(self, sol, ph_idx):
+        photos = sol.get("photos", [])
+        if not photos:
+            return
+        photos_for_viewer = [
+            {"filename": p["filename"], "bytes": p["bytes"]}
+            for p in photos if p.get("bytes")
+        ]
+        if photos_for_viewer:
+            _open_full(self, photos_for_viewer, ph_idx)
+
+    def _open_doc(self, doc):
+        try:
+            resp = API.get(f"/api/solution-documents/{doc['id']}")
+            raw = base64.b64decode(resp["data"])
+            _open_document(raw, doc["filename"])
+        except Exception as e:
+            messagebox.showerror(APP_TITLE, f"Nie udało się otworzyć dokumentu:\n{e}")
+
+    def _add_document(self, sol):
+        paths = filedialog.askopenfilenames(
+            title="Wybierz dokumenty do wariantu",
+            filetypes=[("Dokumenty", "*.pdf *.doc *.docx *.xls *.xlsx *.txt *.csv"),
+                       ("Wszystkie", "*.*")])
+        if not paths:
+            return
+        for path in paths:
+            if len(sol.get("docs", [])) >= self.MAX_DOCS:
+                messagebox.showwarning(APP_TITLE, f"Maksymalnie {self.MAX_DOCS} dokumentów na wariant.")
+                break
+            try:
+                raw = Path(path).read_bytes()
+                fn = Path(path).name
+                resp = API.post(f"/api/solutions/{sol['id']}/documents", {
+                    "filename": fn,
+                    "data": base64.b64encode(raw).decode()
+                })
+                doc_id = resp.get("id")
+                if doc_id:
+                    sol.setdefault("docs", []).append({
+                        "id": doc_id,
+                        "filename": fn,
+                        "filesize": len(raw)
+                    })
+            except Exception as e:
+                messagebox.showwarning(APP_TITLE, f"Nie udało się wgrać '{Path(path).name}':\n{e}")
+        self._refresh_ui()
+
+    def _delete_doc(self, sol, d_idx):
+        doc = sol["docs"][d_idx]
+        if not messagebox.askyesno(APP_TITLE, f'Usunąć dokument "{doc["filename"]}" z tego wariantu?'):
+            return
+        try:
+            if doc.get("id"):
+                API.delete(f"/api/solution-documents/{doc['id']}")
+            del sol["docs"][d_idx]
+            self._refresh_ui()
+        except Exception as e:
+            messagebox.showerror(APP_TITLE, f"Błąd usuwania dokumentu:\n{e}")
+
+    def _add_solution(self):
+        if not self._record_id:
+            messagebox.showwarning(APP_TITLE,
+                "Najpierw zapisz usterkę, aby móc dodawać warianty rozwiązań.")
+            return
+        _SolutionEditDlg(
+            self, self._record_id, solution=None,
+            on_save=lambda: self.load_for_record(self._record_id, force=True))
+
+    def _edit_solution(self, sol):
+        _SolutionEditDlg(
+            self, self._record_id, solution=sol,
+            on_save=lambda: self.load_for_record(self._record_id, force=True))
+
+    def _delete_solution(self, sol):
+        n_photos = len(sol.get("photos", []))
+        n_docs   = len(sol.get("docs", []))
+        msg = f"Czy na pewno chcesz usunąć '{sol['tytul']}'?"
+        if n_photos or n_docs:
+            msg += f"\n\nRazem z wariantem zostanie usuniętych {n_photos} zdjęć i {n_docs} dokumentów."
+        if not messagebox.askyesno(APP_TITLE, msg):
+            return
+        try:
+            API.delete(f"/api/solutions/{sol['id']}")
+            self.load_for_record(self._record_id, force=True)
+        except Exception as e:
+            messagebox.showerror(APP_TITLE, f"Błąd usuwania wariantu:\n{e}")
+
+    def _add_photo(self, sol):
+        paths = filedialog.askopenfilenames(
+            title="Wybierz zdjęcia do wariantu",
+            filetypes=[("Obrazy", "*.jpg *.jpeg *.png *.bmp *.gif *.webp"),
+                       ("Wszystkie", "*.*")])
+        if not paths:
+            return
+        for path in paths:
+            if len(sol.get("photos", [])) >= self.MAX_PHOTOS:
+                messagebox.showwarning(APP_TITLE, "Osiągnięto limit 6 zdjęć dla tego wariantu.")
+                break
+            try:
+                raw = Path(path).read_bytes()
+                raw = _optimize_image_bytes(raw)
+                fn = Path(path).name
+                resp = API.post(f"/api/solutions/{sol['id']}/photos", {
+                    "filename": fn,
+                    "data": base64.b64encode(raw).decode()
+                })
+                photo_id = resp.get("id")
+                if photo_id:
+                    sol.setdefault("photos", []).append({
+                        "id": photo_id,
+                        "filename": fn,
+                        "bytes": raw,
+                        "thumb": _make_thumb(raw, size=(px(120), px(90)))
+                    })
+            except Exception as e:
+                messagebox.showwarning(APP_TITLE, f"Nie udało się wgrać '{Path(path).name}':\n{e}")
+        self._refresh_ui()
+
+    def _delete_photo(self, sol, ph_idx):
+        ph = sol["photos"][ph_idx]
+        fn = ph['filename']
+        if not messagebox.askyesno(APP_TITLE, f'Usunąć zdjęcie "{fn}" z tego wariantu?'):
+            return
+        try:
+            if ph.get("id"):
+                API.delete(f"/api/solution-photos/{ph['id']}")
+            del sol["photos"][ph_idx]
+            self._refresh_ui()
+        except Exception as e:
+            messagebox.showerror(APP_TITLE, f"Błąd usuwania zdjęcia:\n{e}")
+
+
+class _SolutionEditDlg(tk.Toplevel):
+    """Dialog dodawania / edycji wariantu rozwiązania usterki z obsługą zdjęć i dokumentów w 1 oknie."""
+    MAX_PHOTOS = 6
+    MAX_DOCS   = 6
+
+    def __init__(self, parent, record_id, solution, on_save):
+        super().__init__(parent)
+        self._record_id = record_id
+        self._solution = solution
+        self._on_save = on_save
+        is_edit = solution is not None
+
+        # Lista zdjęć i dokumentów w dialogu
+        self._photos = []
+        self._deleted_photo_ids = []
+        self._thumb_refs = []
+
+        self._docs = []
+        self._deleted_doc_ids = []
+
+        if is_edit:
+            if solution.get("photos"):
+                for p in solution["photos"]:
+                    self._photos.append({
+                        "id": p.get("id"),
+                        "filename": p.get("filename", "foto.jpg"),
+                        "bytes": p.get("bytes"),
+                        "thumb": p.get("thumb") or (_make_thumb(p["bytes"], size=(px(100), px(75))) if p.get("bytes") else None),
+                        "is_new": False,
+                        "is_deleted": False
+                    })
+            if solution.get("docs"):
+                for d in solution["docs"]:
+                    self._docs.append({
+                        "id": d.get("id"),
+                        "filename": d.get("filename", "dokument.pdf"),
+                        "filesize": d.get("filesize", 0),
+                        "bytes": None,
+                        "is_new": False,
+                        "is_deleted": False
+                    })
+
+        self.title("Edytuj wariant rozwiązania" if is_edit else "Nowy wariant rozwiązania")
+        self.geometry(f"{px(720)}x{px(660)}")
+        self.minsize(px(600), px(540))
+        self.resizable(True, True)
+        self.transient(parent)
+        self.grab_set()
+
+        pal = _get_theme_palette(UI.get("theme") == "dark")
+
+        frm = ttk.Frame(self, padding=16)
+        frm.pack(fill="both", expand=True)
+        frm.columnconfigure(0, weight=1)
+        frm.rowconfigure(3, weight=1)
+
+        # 1. Tytuł wariantu
+        ttk.Label(frm, text="Tytuł wariantu (np. 'Uszkodzony mikrofon', 'Urwany przewód'): *",
+                  font=FONT_LABEL).grid(row=0, column=0, sticky="w", pady=(0, 2))
+        self._tytul_var = tk.StringVar(
+            value=solution["tytul"] if is_edit else "")
+        ttk.Entry(frm, textvariable=self._tytul_var,
+                  font=FONT_REGULAR).grid(row=1, column=0, sticky="ew", pady=(0, 8))
+
+        # 2. Opis naprawy
+        ttk.Label(frm, text="Opis naprawy / przyczyny usterki:",
+                  font=FONT_LABEL).grid(row=2, column=0, sticky="w", pady=(0, 2))
+        self._opis_txt = tk.Text(frm, height=4, wrap="word", font=FONT_REGULAR)
+        self._opis_txt.grid(row=3, column=0, sticky="nsew", pady=(0, 8))
+        if is_edit and solution.get("opis"):
+            self._opis_txt.insert("1.0", solution["opis"])
+
+        # 3. Sekcja zdjęć
+        photo_box = ttk.Labelframe(frm, text="Zdjęcia do tego wariantu (max 6)", padding=8)
+        photo_box.grid(row=4, column=0, sticky="ew", pady=(0, 8))
+        photo_box.columnconfigure(0, weight=1)
+
+        btn_photos = ttk.Frame(photo_box)
+        btn_photos.pack(fill="x", pady=(0, 4))
+        ttk.Button(btn_photos, text="📷 Wybierz zdjęcia z dysku",
+                   command=self._pick_photos).pack(side="left", padx=(0, 6))
+        ttk.Button(btn_photos, text="📋 Wklej ze schowka",
+                   command=self._paste_photo).pack(side="left")
+
+        self._photos_frame = ttk.Frame(photo_box)
+        self._photos_frame.pack(fill="x", pady=(2, 0))
+
+        # 4. Sekcja dokumentów
+        doc_box = ttk.Labelframe(frm, text="Dokumenty / Załączniki (PDF, DOCX, XLS - max 6)", padding=8)
+        doc_box.grid(row=5, column=0, sticky="ew", pady=(0, 10))
+        doc_box.columnconfigure(0, weight=1)
+
+        btn_docs = ttk.Frame(doc_box)
+        btn_docs.pack(fill="x", pady=(0, 4))
+        ttk.Button(btn_docs, text="📄 Wybierz pliki z dysku",
+                   command=self._pick_docs).pack(side="left")
+
+        self._docs_frame = ttk.Frame(doc_box)
+        self._docs_frame.pack(fill="x", pady=(2, 0))
+
+        # 5. Przyciski akcji dialogu
+        btn_row = ttk.Frame(frm)
+        btn_row.grid(row=6, column=0, sticky="ew")
+        ttk.Button(btn_row, text="✓ Zapisz wariant",
+                   command=self._save).pack(side="left", padx=(0, 8))
+        ttk.Button(btn_row, text="Anuluj",
+                   command=self.destroy).pack(side="left")
+
+        self._refresh_photos_ui()
+        self._refresh_docs_ui()
+
+    def _refresh_photos_ui(self):
+        for w in self._photos_frame.winfo_children():
+            w.destroy()
+        self._thumb_refs.clear()
+        pal = _get_theme_palette(UI.get("theme") == "dark")
+
+        active_photos = [p for p in self._photos if not p.get("is_deleted")]
+        if not active_photos:
+            ttk.Label(self._photos_frame, text="Brak wybranych zdjęć.",
+                      font=FONT_MUTED, foreground=pal["dim"]).pack(anchor="w", pady=2)
+            return
+
+        row = ttk.Frame(self._photos_frame)
+        row.pack(fill="x", pady=2)
+
+        for idx, p in enumerate(self._photos):
+            if p.get("is_deleted"):
+                continue
+            card = ttk.Frame(row, padding=2)
+            card.pack(side="left", padx=(0, px(8)))
+
+            if p.get("thumb"):
+                self._thumb_refs.append(p["thumb"])
+                lbl = tk.Label(card, image=p["thumb"], relief="groove", bd=1, cursor="hand2")
+                lbl.pack()
+                lbl.bind("<Button-1>", lambda e, i=idx: _open_full(self, [x for x in self._photos if not x.get('is_deleted')], i))
+            else:
+                lbl = ttk.Label(card, text=f"📷 {p['filename'][:12]}",
+                                font=FONT_REGULAR, foreground=_get_link_color(), cursor="hand2")
+                lbl.pack()
+
+            ttk.Button(card, text="✕", width=3,
+                       command=lambda i=idx: self._remove_photo(i)).pack(pady=(2, 0))
+
+    def _refresh_docs_ui(self):
+        for w in self._docs_frame.winfo_children():
+            w.destroy()
+        pal = _get_theme_palette(UI.get("theme") == "dark")
+
+        active_docs = [d for d in self._docs if not d.get("is_deleted")]
+        if not active_docs:
+            ttk.Label(self._docs_frame, text="Brak załączonych dokumentów.",
+                      font=FONT_MUTED, foreground=pal["dim"]).pack(anchor="w", pady=2)
+            return
+
+        for idx, d in enumerate(self._docs):
+            if d.get("is_deleted"):
+                continue
+            ext  = d["filename"].rsplit(".", 1)[-1].lower() if "." in d["filename"] else ""
+            icon = ICON_EXT.get(ext, "📎")
+            size_str = f"({_fmt_size(d.get('filesize', 0))})" if d.get('filesize') else ""
+
+            row = ttk.Frame(self._docs_frame)
+            row.pack(fill="x", pady=1)
+
+            lbl = ttk.Label(row, text=f"{icon} {d['filename']} {size_str}",
+                            font=FONT_REGULAR, foreground=_get_link_color())
+            lbl.pack(side="left")
+
+            ttk.Button(row, text="✕", width=3,
+                       command=lambda i=idx: self._remove_doc(i)).pack(side="right")
+
+    def _pick_photos(self):
+        active_count = len([p for p in self._photos if not p.get("is_deleted")])
+        if active_count >= self.MAX_PHOTOS:
+            messagebox.showwarning(self.title(), f"Maksymalnie {self.MAX_PHOTOS} zdjęć na wariant.", parent=self)
+            return
+        paths = filedialog.askopenfilenames(
+            title="Wybierz zdjęcia do wariantu",
+            filetypes=[("Obrazy", "*.jpg *.jpeg *.png *.bmp *.gif *.webp"),
+                       ("Wszystkie", "*.*")],
+            parent=self)
+        if not paths:
+            return
+        for path in paths:
+            if len([p for p in self._photos if not p.get("is_deleted")]) >= self.MAX_PHOTOS:
+                messagebox.showwarning(self.title(), f"Osiągnięto limit {self.MAX_PHOTOS} zdjęć.", parent=self)
+                break
+            try:
+                raw = Path(path).read_bytes()
+                raw = _optimize_image_bytes(raw)
+                fn = Path(path).name
+                thumb = _make_thumb(raw, size=(px(100), px(75)))
+                self._photos.append({
+                    "id": None,
+                    "filename": fn,
+                    "bytes": raw,
+                    "thumb": thumb,
+                    "is_new": True,
+                    "is_deleted": False
+                })
+            except Exception as e:
+                messagebox.showwarning(self.title(), f"Nie udało się wczytać '{Path(path).name}':\n{e}", parent=self)
+        self._refresh_photos_ui()
+
+    def _paste_photo(self):
+        active_count = len([p for p in self._photos if not p.get("is_deleted")])
+        if active_count >= self.MAX_PHOTOS:
+            messagebox.showwarning(self.title(), f"Maksymalnie {self.MAX_PHOTOS} zdjęć na wariant.", parent=self)
+            return
+        if not _PIL:
+            messagebox.showwarning(self.title(), "Wklejanie wymaga biblioteki Pillow.", parent=self)
+            return
+        try:
+            img = ImageGrab.grabclipboard()
+        except Exception as e:
+            messagebox.showerror(self.title(), f"Błąd odczytu schowka:\n{e}", parent=self)
+            return
+        if img is None:
+            messagebox.showinfo(self.title(), "Schowek nie zawiera obrazu. Skopiuj zdjęcie (PrintScreen lub Ctrl+C) i spróbuj ponownie.", parent=self)
+            return
+        try:
+            buf = io.BytesIO()
+            if img.mode in ("RGBA", "P"):
+                img = img.convert("RGB")
+            img.save(buf, format="JPEG", quality=85, optimize=True)
+            raw = buf.getvalue()
+            raw = _optimize_image_bytes(raw)
+            fn = f"wklejone_{datetime.now().strftime('%H%M%S')}.jpg"
+            thumb = _make_thumb(raw, size=(px(100), px(75)))
+            self._photos.append({
+                "id": None,
+                "filename": fn,
+                "bytes": raw,
+                "thumb": thumb,
+                "is_new": True,
+                "is_deleted": False
+            })
+            self._refresh_photos_ui()
+        except Exception as e:
+            messagebox.showerror(self.title(), f"Błąd przetwarzania obrazu ze schowka:\n{e}", parent=self)
+
+    def _remove_photo(self, idx):
+        p = self._photos[idx]
+        if p.get("id"):
+            self._deleted_photo_ids.append(p["id"])
+        p["is_deleted"] = True
+        self._refresh_photos_ui()
+
+    def _pick_docs(self):
+        active_count = len([d for d in self._docs if not d.get("is_deleted")])
+        if active_count >= self.MAX_DOCS:
+            messagebox.showwarning(self.title(), f"Maksymalnie {self.MAX_DOCS} dokumentów na wariant.", parent=self)
+            return
+        paths = filedialog.askopenfilenames(
+            title="Wybierz dokumenty do wariantu",
+            filetypes=[("Dokumenty", "*.pdf *.doc *.docx *.xls *.xlsx *.txt *.csv"),
+                       ("Wszystkie", "*.*")],
+            parent=self)
+        if not paths:
+            return
+        for path in paths:
+            if len([d for d in self._docs if not d.get("is_deleted")]) >= self.MAX_DOCS:
+                messagebox.showwarning(self.title(), f"Osiągnięto limit {self.MAX_DOCS} dokumentów.", parent=self)
+                break
+            try:
+                raw = Path(path).read_bytes()
+                fn = Path(path).name
+                self._docs.append({
+                    "id": None,
+                    "filename": fn,
+                    "filesize": len(raw),
+                    "bytes": raw,
+                    "is_new": True,
+                    "is_deleted": False
+                })
+            except Exception as e:
+                messagebox.showwarning(self.title(), f"Nie udało się wczytać '{Path(path).name}':\n{e}", parent=self)
+        self._refresh_docs_ui()
+
+    def _remove_doc(self, idx):
+        d = self._docs[idx]
+        if d.get("id"):
+            self._deleted_doc_ids.append(d["id"])
+        d["is_deleted"] = True
+        self._refresh_docs_ui()
+
+    def _save(self):
+        tytul = self._tytul_var.get().strip()
+        opis = self._opis_txt.get("1.0", "end").strip()
+        if not tytul:
+            messagebox.showwarning(self.title(), "Wpisz tytuł wariantu.", parent=self)
+            return
+        try:
+            if self._solution:
+                sol_id = self._solution["id"]
+                API.put(f"/api/solutions/{sol_id}", {"tytul": tytul, "opis": opis})
+                # Usuń skasowane zdjęcia
+                for ph_id in self._deleted_photo_ids:
+                    try:
+                        API.delete(f"/api/solution-photos/{ph_id}")
+                    except Exception:
+                        pass
+                # Wgraj nowo dodane zdjęcia
+                for p in self._photos:
+                    if p.get("is_new") and not p.get("is_deleted") and p.get("bytes"):
+                        API.post(f"/api/solutions/{sol_id}/photos", {
+                            "filename": p["filename"],
+                            "data": base64.b64encode(p["bytes"]).decode()
+                        })
+                # Usuń skasowane dokumenty
+                for doc_id in self._deleted_doc_ids:
+                    try:
+                        API.delete(f"/api/solution-documents/{doc_id}")
+                    except Exception:
+                        pass
+                # Wgraj nowo dodane dokumenty
+                for d in self._docs:
+                    if d.get("is_new") and not d.get("is_deleted") and d.get("bytes"):
+                        API.post(f"/api/solutions/{sol_id}/documents", {
+                            "filename": d["filename"],
+                            "data": base64.b64encode(d["bytes"]).decode()
+                        })
+            else:
+                created_by = CURRENT_USER.get("full_name") or CURRENT_USER.get("username") or ""
+                resp = API.post(f"/api/records/{self._record_id}/solutions", {
+                    "tytul": tytul,
+                    "opis": opis,
+                    "created_by": created_by
+                })
+                sol_id = resp.get("id")
+                # Wgraj zdjęcia do nowego wariantu
+                for p in self._photos:
+                    if not p.get("is_deleted") and p.get("bytes"):
+                        API.post(f"/api/solutions/{sol_id}/photos", {
+                            "filename": p["filename"],
+                            "data": base64.b64encode(p["bytes"]).decode()
+                        })
+                # Wgraj dokumenty do nowego wariantu
+                for d in self._docs:
+                    if not d.get("is_deleted") and d.get("bytes"):
+                        API.post(f"/api/solutions/{sol_id}/documents", {
+                            "filename": d["filename"],
+                            "data": base64.b64encode(d["bytes"]).decode()
+                        })
+            self.destroy()
+            if self._on_save:
+                self._on_save()
+        except Exception as e:
+            messagebox.showerror(self.title(), f"Błąd zapisu wariantu:\n{e}", parent=self)
+
+# ═══════════════════════════════════════════════════════════════════
 # GŁÓWNE OKNO APLIKACJI
 # ═══════════════════════════════════════════════════════════════════
 class App:
@@ -1761,7 +2598,7 @@ class App:
         self._user_badge.pack(side="left")
 
         # Przycisk szybkiego przełączania technika na wspólnym laptopie
-        self._switch_btn = ttk.Button(conn_row, text="🔄 Przełącz technika", width=17,
+        self._switch_btn = ttk.Button(conn_row, text="🔄 Przełącz technika", width=20,
                                       command=self._open_quick_switch)
         self._switch_btn.pack(side="left", padx=(10, 0))
 
@@ -1800,7 +2637,7 @@ class App:
         bot = ttk.Frame(root, padding=(14,4))
         bot.pack(fill="x", side="bottom")
         ttk.Separator(root).pack(fill="x", side="bottom")
-        ttk.Label(bot, text="Rejestr Usterek v2.0   Created by ad.luka",
+        ttk.Label(bot, text="Rejestr Usterek v5.0   Created by ad.luka",
                    font=FONT_MUTED, foreground=DIM).pack(side="left")
         if _BOOT:
             self._dark_var = tk.BooleanVar(value=UI.get("theme")=="dark")
@@ -1900,8 +2737,6 @@ class App:
             avail_w = max(px(250), w - px(36))
             if hasattr(self, '_det_prob_lbl'):
                 self._det_prob_lbl.configure(wraplength=avail_w)
-            if hasattr(self, '_det_fix_lbl'):
-                self._det_fix_lbl.configure(wraplength=avail_w)
             if hasattr(self, '_det_typ_lbl'):
                 self._det_typ_lbl.configure(wraplength=max(px(120), avail_w // 2 - px(16)))
             if hasattr(self, '_det_elem_lbl'):
@@ -1922,7 +2757,7 @@ class App:
         detail_outer.bind("<Leave>", lambda _: canvas.unbind_all("<MouseWheel>"))
 
         self._dv = {k: tk.StringVar() for k in
-            ["klient","model","projekt","vin","typ","elem","status","data","prob","fix", "created_by", "fixed_by"]}
+            ["klient","model","projekt","vin","typ","elem","status","data","prob","created_by","fixed_by"]}
 
         # Identyfikacja i Odpowiedzialność
         meta_grid = ttk.Frame(detail)
@@ -1932,15 +2767,25 @@ class App:
 
         pal = _get_theme_palette(UI.get("theme") == "dark")
 
+        # Projekt(y) + Podgląd Klient / Model
+        f_proj = ttk.Frame(meta_grid)
+        f_proj.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 6))
+        l_proj = ttk.Label(f_proj, text="Projekt(y):", font=FONT_LABEL, foreground=pal["dim"])
+        l_proj.pack(anchor="w")
+        self._dim_labels.append(l_proj)
+        ttk.Label(f_proj, textvariable=self._dv["projekt"], font=FONT_SUBTITLE).pack(anchor="w")
+        self._det_meta_sub_lbl = ttk.Label(f_proj, text="", font=FONT_MUTED, foreground=pal["dim"])
+        self._det_meta_sub_lbl.pack(anchor="w")
+
         f_cb = ttk.Frame(meta_grid)
-        f_cb.grid(row=0, column=0, sticky="nw", padx=(0, px(8)))
+        f_cb.grid(row=1, column=0, sticky="nw", padx=(0, px(8)), pady=(4, 0))
         l_cb = ttk.Label(f_cb, text="Zgłosił:", font=FONT_LABEL, foreground=pal["dim"])
         l_cb.pack(anchor="w")
         self._dim_labels.append(l_cb)
         ttk.Label(f_cb, textvariable=self._dv["created_by"], font=FONT_REGULAR).pack(anchor="w")
 
         f_fb = ttk.Frame(meta_grid)
-        f_fb.grid(row=0, column=1, sticky="nw", padx=(px(8), 0))
+        f_fb.grid(row=1, column=1, sticky="nw", padx=(px(8), 0), pady=(4, 0))
         l_fb = ttk.Label(f_fb, text="Naprawił:", font=FONT_LABEL, foreground=pal["dim"])
         l_fb.pack(anchor="w")
         self._dim_labels.append(l_fb)
@@ -1985,21 +2830,14 @@ class App:
 
         ttk.Separator(detail).pack(fill="x", pady=(6,2))
 
-        _lbl("Opis naprawy / Przyczyna")
-        self._det_fix_lbl = ttk.Label(detail, textvariable=self._dv["fix"],
-                                      justify="left", font=FONT_REGULAR)
-        self._det_fix_lbl.pack(anchor="w")
-
-        ttk.Separator(detail).pack(fill="x", pady=(6,2))
-
-        # Galeria zdjęć i Dokumentów w panelu szczegółów
+        # Galeria zdjęć problemu
         self._panel_gallery = PhotoGallery(detail, mode="panel")
         self._panel_gallery.pack(fill="x", pady=(4,0))
 
         ttk.Separator(detail).pack(fill="x", pady=(8,2))
 
-        self._panel_docs = DocGallery(detail, mode="panel")
-        self._panel_docs.pack(fill="x", pady=(4,0))
+        self._panel_solutions = SolutionsPanel(detail, mode="panel")
+        self._panel_solutions.pack(fill="x", pady=(4,0))
 
         self._clear_detail()
         pw.add(detail_outer, weight=2)
@@ -2021,101 +2859,152 @@ class App:
     # ZAKŁADKA 2 — FORMULARZ
     # ══════════════════════════════════════════════════════════════
     def _build_form_tab(self, parent):
-        parent.columnconfigure(0, weight=1)
-        parent.columnconfigure(1, weight=1)
+        parent.columnconfigure(0, weight=1, uniform="top_grid")
+        parent.columnconfigure(1, weight=1, uniform="top_grid")
+        parent.columnconfigure(2, weight=1, uniform="top_grid")
         parent.rowconfigure(1, weight=0)
         parent.rowconfigure(2, weight=1)
 
         self._form_title_var = tk.StringVar(value="Nowa usterka")
         ttk.Label(parent, textvariable=self._form_title_var,
                   font=FONT_SUBTITLE).grid(
-            row=0, column=0, columnspan=2, sticky="w", pady=(0, 10))
+            row=0, column=0, columnspan=3, sticky="w", pady=(0, 10))
 
-        # Identyfikacja
-        left_top = ttk.Labelframe(parent, text="Identyfikacja", padding=12)
-        left_top.grid(row=1, column=0, sticky="nsew", padx=(0, 6), pady=(0, 10))
+        # ── 1. KOLUMNA: Identyfikacja ──
+        left_top = ttk.Labelframe(parent, text="Identyfikacja", padding=10)
+        left_top.grid(row=1, column=0, sticky="nsew", padx=(0, 4), pady=(0, 8))
         left_top.columnconfigure(1, weight=1)
+
+        pal = _get_theme_palette(UI.get("theme") == "dark")
 
         def lrow(frm, label, w_fn, r):
             ttk.Label(frm, text=label, font=FONT_LABEL).grid(
-                row=r, column=0, sticky="w", padx=(0, 10), pady=(3, 2))
+                row=r, column=0, sticky="w", padx=(0, 8), pady=(2, 2))
             w = w_fn(frm)
-            w.grid(row=r, column=1, sticky="ew", pady=(3, 2))
+            w.grid(row=r, column=1, sticky="ew", pady=(2, 2))
             return w
 
         r = 0
-        self._klient_var = tk.StringVar()
-        self._klient_cb  = lrow(left_top, "Klient",
-            lambda p: ttk.Combobox(p, textvariable=self._klient_var, state="readonly"), r); r += 1
-        self._klient_cb.bind("<<ComboboxSelected>>", lambda _: self._on_klient_changed())
-
-        self._model_var = tk.StringVar()
-        self._model_cb  = lrow(left_top, "Model",
-            lambda p: ttk.Combobox(p, textvariable=self._model_var), r); r += 1
-        self._model_cb.bind("<<ComboboxSelected>>", lambda _: self._on_model_changed())
-
+        # Projekt(y) PS
         self._proj_var = tk.StringVar()
-        self._proj_cb  = lrow(left_top, "Projekt",
-            lambda p: ttk.Combobox(p, textvariable=self._proj_var), r); r += 1
+        proj_row_frame = ttk.Frame(left_top)
+        proj_row_frame.grid(row=r, column=1, sticky="ew", pady=(2, 2))
+        proj_row_frame.columnconfigure(0, weight=1)
+
+        ttk.Label(left_top, text="Projekt(y) (PS) *", font=FONT_LABEL).grid(
+            row=r, column=0, sticky="w", padx=(0, 8), pady=(2, 2))
+        self._proj_cb = ttk.Combobox(proj_row_frame, textvariable=self._proj_var, font=FONT_REGULAR)
+        self._proj_cb.grid(row=0, column=0, sticky="ew")
         self._proj_cb.bind("<<ComboboxSelected>>", lambda _: self._on_projekt_changed())
+        self._proj_cb.bind("<KeyRelease>", lambda _: self._on_projekt_changed())
 
-        self._vin_var = tk.StringVar()
-        self._vin_entry = lrow(left_top, "VIN (opcjonalnie)",
-            lambda p: ttk.Entry(p, textvariable=self._vin_var), r); r += 1
+        self._btn_multi_proj = ttk.Button(proj_row_frame, text="＋", width=3,
+                                          command=self._open_multi_proj_picker)
+        self._btn_multi_proj.grid(row=0, column=1, padx=(3, 0))
+        r += 1
 
+        self._proj_meta_lbl = ttk.Label(left_top, text="💡 Wybierz projekt PS",
+                                        font=FONT_MUTED, foreground=pal["dim"])
+        self._proj_meta_lbl.grid(row=r, column=1, sticky="w", pady=(0, 2))
+        r += 1
+
+        # Typ usterki
         self._typ_var = tk.StringVar()
-        self._typ_cb  = lrow(left_top, "Typ usterki",
+        self._typ_cb  = lrow(left_top, "Typ usterki *",
             lambda p: ttk.Combobox(p, textvariable=self._typ_var, state="readonly"), r); r += 1
 
+        # Element / urządzenie
         self._elem_var = tk.StringVar()
-        self._elem_entry = lrow(left_top, "Element / urządzenie",
+        self._elem_entry = lrow(left_top, "Element",
             lambda p: ttk.Entry(p, textvariable=self._elem_var), r); r += 1
 
-        self._created_by_var = tk.StringVar()
-        self._created_by_cb = lrow(left_top, "Zgłaszający (Technik)",
-            lambda p: ttk.Combobox(p, textvariable=self._created_by_var), r); r += 1
+        # Status i Zgłaszający
+        stat_user_frame = ttk.Frame(left_top)
+        stat_user_frame.grid(row=r, column=1, sticky="ew", pady=(2, 2))
+        stat_user_frame.columnconfigure(0, weight=1)
+        stat_user_frame.columnconfigure(1, weight=1)
+
+        ttk.Label(left_top, text="Status / Zgłosił", font=FONT_LABEL).grid(
+            row=r, column=0, sticky="w", padx=(0, 8), pady=(2, 2))
 
         self._status_var = tk.StringVar(value="Otwarta")
-        self._status_cb = lrow(left_top, "Status",
-            lambda p: ttk.Combobox(p, textvariable=self._status_var, state="readonly",
-                                   values=["Otwarta", "Naprawiona"]), r); r += 1
+        self._status_cb = ttk.Combobox(stat_user_frame, textvariable=self._status_var, state="readonly",
+                                       values=["Otwarta", "Naprawiona"], width=9)
+        self._status_cb.grid(row=0, column=0, sticky="ew", padx=(0, 2))
         self._status_cb.bind("<<ComboboxSelected>>", lambda _: self._on_status_changed())
 
+        self._created_by_var = tk.StringVar()
+        self._created_by_cb = ttk.Combobox(stat_user_frame, textvariable=self._created_by_var)
+        self._created_by_cb.grid(row=0, column=1, sticky="ew", padx=(2, 0))
+        r += 1
+
+        # Naprawił (Technik)
         self._fixed_by_var = tk.StringVar()
-        self._fixed_by_cb = lrow(left_top, "Naprawił (Technik)",
+        self._fixed_by_cb = lrow(left_top, "Naprawił",
             lambda p: ttk.Combobox(p, textvariable=self._fixed_by_var, state="disabled"), r)
 
-        # Opisy
-        right_top = ttk.Labelframe(parent, text="Opisy", padding=12)
-        right_top.grid(row=1, column=1, sticky="nsew", padx=(6, 0), pady=(0, 10))
-        right_top.columnconfigure(0, weight=1)
-        right_top.rowconfigure(1, weight=3)
-        right_top.rowconfigure(3, weight=2)
+        # Zmienne kompatybilności wstecznej
+        self._klient_var = tk.StringVar()
+        self._model_var  = tk.StringVar()
+        self._vin_var    = tk.StringVar(value="")
 
-        ttk.Label(right_top, text="Opis problemu *",
+        # ── 2. KOLUMNA: Opisy (Opis problemu) ──
+        mid_top = ttk.Labelframe(parent, text="Opisy", padding=10)
+        mid_top.grid(row=1, column=1, sticky="nsew", padx=(4, 4), pady=(0, 8))
+        mid_top.columnconfigure(0, weight=1)
+        mid_top.rowconfigure(1, weight=1)
+
+        ttk.Label(mid_top, text="Opis problemu *",
                   font=FONT_LABEL).grid(row=0, column=0, sticky="w", pady=(0, 2))
-        self._prob_txt = tk.Text(right_top, height=5, wrap="word", font=FONT_REGULAR)
-        self._prob_txt.grid(row=1, column=0, sticky="nsew", pady=(0, 6))
+        self._prob_txt = tk.Text(mid_top, height=6, wrap="word", font=FONT_REGULAR)
+        self._prob_txt.grid(row=1, column=0, sticky="nsew", pady=(0, 0))
 
-        ttk.Label(right_top, text="Opis naprawy / Rozwiązanie",
-                  font=FONT_LABEL).grid(row=2, column=0, sticky="w", pady=(0, 2))
-        self._fix_txt = tk.Text(right_top, height=3, wrap="word", font=FONT_REGULAR)
-        self._fix_txt.grid(row=3, column=0, sticky="nsew")
-
-        # Zdjęcia i Dokumenty
-        left_bot = ttk.Labelframe(parent, text="Zdjęcia", padding=12)
-        left_bot.grid(row=2, column=0, sticky="nsew", padx=(0, 6))
-        self._form_gallery = PhotoGallery(left_bot, mode="form")
+        # ── 3. KOLUMNA: Zdjęcia problemu ──
+        right_top = ttk.Labelframe(parent, text="Zdjęcia problemu", padding=10)
+        right_top.grid(row=1, column=2, sticky="nsew", padx=(4, 0), pady=(0, 8))
+        right_top.columnconfigure(0, weight=1)
+        right_top.rowconfigure(0, weight=1)
+        self._form_gallery = PhotoGallery(right_top, mode="form")
         self._form_gallery.pack(fill="both", expand=True)
 
-        right_bot = ttk.Labelframe(parent, text="Dokumenty", padding=12)
-        right_bot.grid(row=2, column=1, sticky="nsew", padx=(6, 0))
-        self._form_docs = DocGallery(right_bot, mode="form")
-        self._form_docs.pack(fill="both", expand=True)
+        # ── WARIANTY ROZWIĄZAŃ — pełna szerokość i wysokość pod spodem ──
+        parent.rowconfigure(2, weight=1)
+        sol_outer = ttk.Labelframe(parent, text="Warianty rozwiązań", padding=10)
+        sol_outer.grid(row=2, column=0, columnspan=3, sticky="nsew", pady=(0, 0))
+
+        sol_canvas = tk.Canvas(sol_outer, highlightthickness=0, height=px(420))
+        sol_sb = ttk.Scrollbar(sol_outer, orient="vertical", command=sol_canvas.yview)
+        sol_canvas.configure(yscrollcommand=sol_sb.set)
+        sol_sb.pack(side="right", fill="y")
+        sol_canvas.pack(side="left", fill="both", expand=True)
+
+        sol_inner = ttk.Frame(sol_canvas)
+        _sol_cwin = sol_canvas.create_window((0, 0), window=sol_inner, anchor="nw")
+
+        def _on_sol_conf(e):
+            sol_canvas.configure(scrollregion=sol_canvas.bbox("all"))
+        def _on_sol_canvas_resize(e):
+            sol_canvas.itemconfig(_sol_cwin, width=e.width)
+
+        sol_inner.bind("<Configure>", _on_sol_conf)
+        sol_canvas.bind("<Configure>", _on_sol_canvas_resize)
+        sol_outer.bind("<Enter>", lambda _: sol_canvas.bind_all(
+            "<MouseWheel>", lambda e: sol_canvas.yview_scroll(int(-1*(e.delta/120)), "units")))
+        sol_outer.bind("<Leave>", lambda _: sol_canvas.unbind_all("<MouseWheel>"))
+
+        pal = _get_theme_palette(UI.get("theme") == "dark")
+        self._form_solutions_hint = ttk.Label(
+            sol_inner,
+            text="💡 Zapisz usterkę, aby móc dodawać warianty rozwiązań z osobnymi zdjęciami i dokumentami.",
+            font=FONT_MUTED, foreground=pal["dim"], wraplength=px(900))
+        self._form_solutions_hint.pack(anchor="w", pady=4)
+
+        self._form_solutions = SolutionsPanel(sol_inner, mode="form")
+        self._form_solutions.pack(fill="x", pady=(4, 0))
 
         # Przyciski
         brow = ttk.Frame(parent)
-        brow.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(12, 0))
+        brow.grid(row=3, column=0, columnspan=3, sticky="ew", pady=(10, 0))
         self._save_btn = ttk.Button(brow, text="Zapisz usterkę", command=self._save_form)
         self._save_btn.pack(side="left", padx=(0, 8))
         self._cancel_btn = ttk.Button(brow, text="Wyczyść", command=self._confirm_clear)
@@ -2139,7 +3028,7 @@ class App:
     def _clear_detail(self):
         for v in self._dv.values(): v.set("—")
         self._panel_gallery.clear()
-        self._panel_docs.clear()
+        self._panel_solutions.clear()
 
     def _on_select(self):
         r = self._selected()
@@ -2154,34 +3043,55 @@ class App:
         self._dv["status"].set(STATUS_PL.get(r.get("status","open"),r.get("status","")))
         self._dv["data"].set(self._fmt_dt(r.get("created","")))
         self._dv["prob"].set(r.get("opisProblem") or "—")
-        self._dv["fix"].set(r.get("opisNaprawa") or "—")
-
         self._dv["created_by"].set(r.get("created_by") or "—")
         fixed_str = r.get("fixed_by") or ""
         if fixed_str and r.get("fixed_at"):
             fixed_str += f"  ({self._fmt_dt(r.get('fixed_at'))})"
         self._dv["fixed_by"].set(fixed_str or "—")
 
+        if hasattr(self, '_det_meta_sub_lbl'):
+            meta_txt = _get_project_meta_text(r.get("projekt", ""), self._lists)
+            pal = _get_theme_palette(UI.get("theme") == "dark")
+            self._det_meta_sub_lbl.configure(text=meta_txt, foreground=pal["dim"])
+
         self._panel_gallery.load_for_record(r["id"])
-        self._panel_docs.load_for_record(r["id"])
+        self._panel_solutions.load_for_record(r["id"])
 
     # ── obsługa zdarzeń formularza ───────────────────────────────
-    def _on_klient_changed(self):
-        k = self._klient_var.get()
-        projekty = self._lists.get("projektyByKlient",{}).get(k,[])
-        self._proj_cb.configure(values=projekty)
-        if projekty: self._proj_var.set(projekty[0])
-        else: self._proj_var.set("")
-        UI["last_klient"] = k
-        _save_cfg(UI)
-
-    def _on_model_changed(self):
-        UI["last_model"] = self._model_var.get()
-        _save_cfg(UI)
+    def _open_multi_proj_picker(self):
+        def on_selected(res_str):
+            if res_str:
+                self._proj_var.set(res_str)
+                self._on_projekt_changed()
+        _MultiProjectDlg(self.root, self._lists.get("projektyByKlient", {}),
+                         self._proj_var.get(), on_selected)
 
     def _on_projekt_changed(self):
-        UI["last_projekt"] = self._proj_var.get()
+        p_val = self._proj_var.get().strip()
+        pal = _get_theme_palette(UI.get("theme") == "dark")
+        meta_txt = _get_project_meta_text(p_val, self._lists)
+        if hasattr(self, '_proj_meta_lbl'):
+            self._proj_meta_lbl.configure(text=meta_txt, foreground=pal["dim"])
+        # Wyznacz domyślnego klienta i model do zmiennych wewnętrznych
+        projs = [p.strip() for p in p_val.replace(';', ',').split(',') if p.strip()]
+        if projs:
+            projs_by_k = self._lists.get("projektyByKlient", {})
+            for p in projs:
+                for k, p_list in projs_by_k.items():
+                    if p in p_list:
+                        self._klient_var.set(k)
+                        break
+        modele = self._lists.get("modele", [])
+        if modele:
+            self._model_var.set(modele[0])
+        UI["last_projekt"] = p_val
         _save_cfg(UI)
+
+    def _on_klient_changed(self):
+        pass
+
+    def _on_model_changed(self):
+        pass
 
     def _get_prob_col_width(self):
         try:
@@ -2311,13 +3221,26 @@ class App:
         if CURRENT_USER.get("role") == "podglad":
             messagebox.showwarning(APP_TITLE, "Konto o roli 'Podgląd' nie posiada uprawnień do edycji."); return
 
+        projekt = self._proj_var.get().strip()
+        typ     = self._typ_var.get().strip()
+        prob    = self._prob_txt.get("1.0","end").strip()
+        if not all([projekt, typ, prob]):
+            messagebox.showwarning(APP_TITLE,
+                "Uzupełnij wymagane pola: Projekt(y) (PS), Typ usterki, Opis problemu."); return
+
+        # Wyznacz klienta i model na podstawie projektów jeśli brak
         klient = self._klient_var.get().strip()
         model  = self._model_var.get().strip()
-        typ    = self._typ_var.get().strip()
-        prob   = self._prob_txt.get("1.0","end").strip()
-        if not all([klient, model, typ, prob]):
-            messagebox.showwarning(APP_TITLE,
-                "Uzupełnij wymagane pola: Klient, Model, Typ, Opis problemu."); return
+        if not klient:
+            projs_by_k = self._lists.get("projektyByKlient", {})
+            for p in [p.strip() for p in projekt.replace(';', ',').split(',') if p.strip()]:
+                for k, p_list in projs_by_k.items():
+                    if p in p_list:
+                        klient = k
+                        break
+        if not model:
+            modele = self._lists.get("modele", [])
+            model = modele[0] if modele else "MAN TGE 2024" 
 
         status = "open" if self._status_var.get()=="Otwarta" else "fixed"
         rec_id = self._edit_id or str(uuid.uuid4())
@@ -2335,7 +3258,7 @@ class App:
             vin=self._vin_var.get().strip(),
             typ=typ, element=self._elem_var.get().strip(),
             opisProblem=prob,
-            opisNaprawa=self._fix_txt.get("1.0","end").strip(),
+            opisNaprawa="",
             status=status,
             created_by=created_by
         )
@@ -2366,17 +3289,12 @@ class App:
             except Exception as e:
                 messagebox.showwarning(APP_TITLE, f"Usterka zapisana, ale zdjęcie „{p['filename']}\" nie:\n{e}")
 
-        for d in self._form_docs.get_pending():
-            try:
-                API.post(f"/api/records/{rec_id}/documents", {
-                    "filename": d["filename"],
-                    "data": base64.b64encode(d["bytes"]).decode()
-                })
-            except Exception as e:
-                messagebox.showwarning(APP_TITLE, f"Usterka zapisana, ale dokument „{d['filename']}\" nie:\n{e}")
-
         self._auto_add_to_lists(klient, model, typ, payload["projekt"])
-        self._clear_form()
+
+        # Aktywuj panel wariantów po zapisie (teraz mamy rec_id w bazie)
+        self._form_solutions.load_for_record(rec_id, force=True)
+        self._form_solutions_hint.pack_forget()
+
         self._reload(force=True)
         self._nb.select(0)
 
@@ -2426,11 +3344,9 @@ class App:
     def _clear_form(self):
         self._edit_id = None
         self._prob_txt.configure(state="normal")
-        self._fix_txt.configure(state="normal")
         for v in [self._vin_var, self._typ_var, self._elem_var]:
             v.set("")
         self._prob_txt.delete("1.0","end")
-        self._fix_txt.delete("1.0","end")
         self._status_var.set("Otwarta")
         self._fixed_by_var.set("")
         self._fixed_by_cb.configure(state="disabled")
@@ -2439,17 +3355,19 @@ class App:
         self._created_by_var.set(curr_name)
 
         self._form_gallery.clear()
-        self._form_docs.clear()
-        klienci  = self._lists.get("klienci",[])
-        modele   = self._lists.get("modele",[])
-        last_k   = UI.get("last_klient","")
-        self._klient_var.set(last_k if last_k in klienci else "")
-        last_m   = UI.get("last_model","")
-        self._model_var.set(last_m if last_m in modele else "")
-        projekty = self._lists.get("projektyByKlient",{}).get(self._klient_var.get(),[])
-        self._proj_cb.configure(values=projekty)
-        last_p   = UI.get("last_projekt","")
-        self._proj_var.set(last_p if last_p in projekty else "")
+        self._form_solutions.clear()
+        # Pokaż ponownie wskazówkę (usterka jeszcze nie zapisana)
+        pal = _get_theme_palette(UI.get("theme") == "dark")
+        self._form_solutions_hint.configure(foreground=pal["dim"])
+        self._form_solutions_hint.pack(anchor="w", pady=4, before=self._form_solutions)
+        all_projs = []
+        for k, p_list in self._lists.get("projektyByKlient", {}).items():
+            for p in p_list:
+                if p not in all_projs: all_projs.append(p)
+        self._proj_cb.configure(values=all_projs)
+        last_p = UI.get("last_projekt", "")
+        self._proj_var.set(last_p if last_p in all_projs else (all_projs[0] if all_projs else ""))
+        self._on_projekt_changed()
 
     def _set_form_mode(self, mode="new", record=None):
         self._form_mode = mode
@@ -2459,10 +3377,9 @@ class App:
         entry_state = "disabled" if is_view else "normal"
         text_state = "disabled" if is_view else "normal"
 
-        self._klient_cb.configure(state=cb_state)
-        self._model_cb.configure(state="disabled" if is_view else "normal")
         self._proj_cb.configure(state="disabled" if is_view else "normal")
-        self._vin_entry.configure(state=entry_state)
+        if hasattr(self, '_btn_multi_proj'):
+            self._btn_multi_proj.configure(state="disabled" if is_view else "normal")
         self._typ_cb.configure(state=cb_state)
         self._elem_entry.configure(state=entry_state)
         self._created_by_cb.configure(state="disabled" if is_view else "normal")
@@ -2474,10 +3391,9 @@ class App:
             self._fixed_by_cb.configure(state="disabled")
 
         self._prob_txt.configure(state=text_state)
-        self._fix_txt.configure(state=text_state)
 
         self._form_gallery.set_readonly(is_view)
-        self._form_docs.set_readonly(is_view)
+        self._form_solutions.set_readonly(is_view)
 
         if mode == "new":
             self._form_title_var.set("Nowa usterka")
@@ -2497,10 +3413,10 @@ class App:
 
     def _fill_form_with_record(self, r):
         self._edit_id = r["id"]
-        self._klient_var.set(r.get("klient",""))
-        self._on_klient_changed()
-        self._model_var.set(r.get("model",""))
         self._proj_var.set(r.get("projekt",""))
+        self._on_projekt_changed()
+        self._klient_var.set(r.get("klient",""))
+        self._model_var.set(r.get("model",""))
         self._vin_var.set(r.get("vin",""))
         self._typ_var.set(r.get("typ",""))
         self._elem_var.set(r.get("element",""))
@@ -2511,10 +3427,6 @@ class App:
         self._prob_txt.configure(state="normal")
         self._prob_txt.delete("1.0","end")
         self._prob_txt.insert("1.0", r.get("opisProblem",""))
-
-        self._fix_txt.configure(state="normal")
-        self._fix_txt.delete("1.0","end")
-        self._fix_txt.insert("1.0", r.get("opisNaprawa",""))
 
         self._form_gallery.clear()
         try:
@@ -2530,24 +3442,8 @@ class App:
         except Exception:
             pass
 
-        self._form_docs.clear()
-        try:
-            metas = API.get(f"/api/records/{r['id']}/documents")
-            for m in metas:
-                entry = {"id": m["id"], "filename": m["filename"],
-                         "filesize": m["filesize"], "bytes": None, "thumb": None}
-                if m["filename"].lower().endswith(".pdf"):
-                    try:
-                        resp = API.get(f"/api/documents/{m['id']}")
-                        raw  = base64.b64decode(resp["data"])
-                        entry["bytes"] = raw
-                        entry["thumb"] = _make_pdf_thumb(raw, size=(px(100), px(130)))
-                    except Exception:
-                        pass
-                self._form_docs._docs.append(entry)
-            self._form_docs._refresh_ui()
-        except Exception:
-            pass
+        self._form_solutions_hint.pack_forget()
+        self._form_solutions.load_for_record(r["id"], force=True)
 
     def _on_double_click(self, event):
         iid = self._tree.identify_row(event.y)
@@ -2774,16 +3670,12 @@ class App:
             try: self._panel_gallery._refresh_ui()
             except Exception: pass
 
-        if hasattr(self, '_panel_docs'):
-            try: self._panel_docs._refresh_ui()
             except Exception: pass
 
         if hasattr(self, '_form_gallery'):
             try: self._form_gallery._refresh_ui()
             except Exception: pass
 
-        if hasattr(self, '_form_docs'):
-            try: self._form_docs._refresh_ui()
             except Exception: pass
 
         self._render()
@@ -2826,9 +3718,14 @@ class App:
 
         self._fklient_cb.configure(values=["Wszyscy"] + klienci)
         self._ftyp_cb.configure(values=["Wszystkie"] + typy)
-        self._klient_cb.configure(values=klienci)
-        self._model_cb.configure(values=modele)
-        self._typ_cb.configure(values=typy)
+        all_projs = []
+        for k, p_list in self._lists.get("projektyByKlient", {}).items():
+            for p in p_list:
+                if p not in all_projs: all_projs.append(p)
+        if hasattr(self, '_proj_cb'):
+            self._proj_cb.configure(values=all_projs)
+        if hasattr(self, '_typ_cb'):
+            self._typ_cb.configure(values=typy)
         if user_names:
             self._created_by_cb.configure(values=user_names)
             self._fixed_by_cb.configure(values=user_names)

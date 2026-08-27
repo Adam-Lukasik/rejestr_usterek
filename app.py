@@ -304,6 +304,115 @@ def init_db():
         )
     """)
 
+    # 8. Warianty rozwiązań usterki
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS solutions (
+            id TEXT PRIMARY KEY,
+            record_id TEXT NOT NULL,
+            numer INTEGER NOT NULL DEFAULT 1,
+            tytul TEXT NOT NULL,
+            opis TEXT,
+            created_by TEXT,
+            created TEXT NOT NULL,
+            FOREIGN KEY (record_id) REFERENCES records(id)
+        )
+    """)
+
+    # 9. Zdjęcia przypisane do wariantu rozwiązania
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS solution_photos (
+            id TEXT PRIMARY KEY,
+            solution_id TEXT NOT NULL,
+            filename TEXT NOT NULL,
+            data BLOB NOT NULL,
+            created TEXT NOT NULL,
+            FOREIGN KEY (solution_id) REFERENCES solutions(id)
+        )
+    """)
+
+    # 10. Dokumenty przypisane do wariantu rozwiązania
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS solution_documents (
+            id TEXT PRIMARY KEY,
+            solution_id TEXT NOT NULL,
+            filename TEXT NOT NULL,
+            filesize INTEGER NOT NULL DEFAULT 0,
+            data BLOB NOT NULL,
+            created TEXT NOT NULL,
+            FOREIGN KEY (solution_id) REFERENCES solutions(id)
+        )
+    """)
+
+    # Migracja: przenieś opisNaprawa do tabeli solutions jako "Wariant 1"
+    # oraz przypisz pierwsze zdjęcie do usterki, a kolejne zdjęcia (od 2 wzwyż) do Wariantu 1
+    # (tylko dla rekordów które mają opis naprawy, a nie mają jeszcze żadnych wariantów)
+    cursor.execute("""
+        SELECT r.id, r.opisNaprawa, r.fixed_by, r.fixed_at
+        FROM records r
+        WHERE r.opisNaprawa IS NOT NULL AND r.opisNaprawa != ''
+          AND NOT EXISTS (SELECT 1 FROM solutions s WHERE s.record_id = r.id)
+    """)
+    to_migrate = cursor.fetchall()
+    migrated_photos_count = 0
+    for row in to_migrate:
+        sol_id = str(_uuid.uuid4())
+        cursor.execute("""
+            INSERT INTO solutions (id, record_id, numer, tytul, opis, created_by, created)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (
+            sol_id,
+            row["id"],
+            1,
+            "Wariant 1",
+            row["opisNaprawa"],
+            row["fixed_by"] or "",
+            row["fixed_at"] or _dt.now().isoformat(timespec="seconds")
+        ))
+
+        # Migracja zdjęć: 1. zdjęcie zostaje w 'photos' (opis problemu),
+        # a zdjęcia 2..N trafiają do 'solution_photos' (Wariant 1)
+        cursor.execute("""
+            SELECT id, filename, data, created
+            FROM photos
+            WHERE record_id = ?
+            ORDER BY created ASC, id ASC
+        """, (row["id"],))
+        rec_photos = cursor.fetchall()
+        if len(rec_photos) > 1:
+            for p in rec_photos[1:]:
+                cursor.execute("""
+                    INSERT INTO solution_photos (id, solution_id, filename, data, created)
+                    VALUES (?, ?, ?, ?, ?)
+                """, (
+                    p["id"],
+                    sol_id,
+                    p["filename"],
+                    p["data"],
+                    p["created"]
+                ))
+                cursor.execute("DELETE FROM photos WHERE id = ?", (p["id"],))
+                migrated_photos_count += 1
+
+    if to_migrate:
+        print(f"[MIGRATION] Zmigrowano opisNaprawa do tabeli solutions: {len(to_migrate)} rekordów, przeniesiono {migrated_photos_count} zdjęć do wariantów.")
+
+    # Migracja dokumentów: przenieś istniejące dokumenty z tabeli 'documents' do 'solution_documents' (Wariant 1)
+    cursor.execute("SELECT id, record_id, filename, filesize, data, created FROM documents")
+    docs_to_migrate = cursor.fetchall()
+    migrated_docs_count = 0
+    for doc in docs_to_migrate:
+        cursor.execute("SELECT id FROM solutions WHERE record_id = ? ORDER BY numer ASC LIMIT 1", (doc["record_id"],))
+        sol_row = cursor.fetchone()
+        if sol_row:
+            cursor.execute("""
+                INSERT OR REPLACE INTO solution_documents (id, solution_id, filename, filesize, data, created)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (doc["id"], sol_row["id"], doc["filename"], doc["filesize"], doc["data"], doc["created"]))
+            cursor.execute("DELETE FROM documents WHERE id = ?", (doc["id"],))
+            migrated_docs_count += 1
+    if migrated_docs_count > 0:
+        print(f"[MIGRATION] Przeniesiono {migrated_docs_count} dokumentów z usterki do 'solution_documents' (Wariant 1).")
+
     # Bootstrap domyślnego administratora jeśli brak użytkowników
     cursor.execute("SELECT COUNT(*) as count FROM users")
     if cursor.fetchone()["count"] == 0:
@@ -858,6 +967,16 @@ def update_status(rec_id):
 def delete_record(rec_id):
     conn = get_db_connection()
     cursor = conn.cursor()
+    # Usuń zdjęcia i dokumenty wariantów rozwiązań należących do tej usterki
+    cursor.execute("""
+        DELETE FROM solution_documents WHERE solution_id IN
+        (SELECT id FROM solutions WHERE record_id=?)
+    """, (rec_id,))
+    cursor.execute("""
+        DELETE FROM solution_photos WHERE solution_id IN
+        (SELECT id FROM solutions WHERE record_id=?)
+    """, (rec_id,))
+    cursor.execute("DELETE FROM solutions WHERE record_id=?", (rec_id,))
     cursor.execute("DELETE FROM records WHERE id=?", (rec_id,))
     cursor.execute("DELETE FROM photos WHERE record_id=?", (rec_id,))
     cursor.execute("DELETE FROM documents WHERE record_id=?", (rec_id,))
@@ -876,6 +995,9 @@ def import_data():
     cursor = conn.cursor()
     try:
         if mode == "replace":
+            cursor.execute("DELETE FROM solution_documents")
+            cursor.execute("DELETE FROM solution_photos")
+            cursor.execute("DELETE FROM solutions")
             cursor.execute("DELETE FROM records")
             cursor.execute("DELETE FROM photos")
             cursor.execute("DELETE FROM documents")
@@ -941,6 +1063,178 @@ def import_data():
         conn.close()
 
 # ═══════════════════════════════════════════════════════════════════
+# WARIANTY ROZWIĄZAŃ (SOLUTIONS)
+# ═══════════════════════════════════════════════════════════════════
+
+@app.route("/api/records/<rec_id>/solutions", methods=["GET"])
+def get_solutions(rec_id):
+    """Zwraca listę wariantów rozwiązań dla danej usterki (bez danych zdjęć)."""
+    conn = get_db_connection()
+    rows = conn.execute(
+        "SELECT id, record_id, numer, tytul, opis, created_by, created "
+        "FROM solutions WHERE record_id=? ORDER BY numer ASC",
+        (rec_id,)).fetchall()
+    conn.close()
+    return jsonify([dict(r) for r in rows])
+
+@app.route("/api/records/<rec_id>/solutions", methods=["POST"])
+def add_solution(rec_id):
+    """Dodaje nowy wariant rozwiązania do usterki."""
+    data = request.get_json() or {}
+    conn = get_db_connection()
+    # Wyznacz kolejny numer wariantu
+    max_num = conn.execute(
+        "SELECT COALESCE(MAX(numer), 0) FROM solutions WHERE record_id=?",
+        (rec_id,)).fetchone()[0]
+    sol_id = str(_uuid.uuid4())
+    tytul = data.get("tytul", "").strip() or f"Wariant {max_num + 1}"
+    conn.execute("""
+        INSERT INTO solutions (id, record_id, numer, tytul, opis, created_by, created)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    """, (
+        sol_id, rec_id, max_num + 1, tytul,
+        data.get("opis", ""),
+        data.get("created_by", ""),
+        _dt.now().isoformat(timespec="seconds")
+    ))
+    conn.commit()
+    conn.close()
+    return jsonify({"id": sol_id, "numer": max_num + 1, "tytul": tytul}), 201
+
+@app.route("/api/solutions/<sol_id>", methods=["PUT"])
+def update_solution(sol_id):
+    """Edytuje tytuł i opis wariantu rozwiązania."""
+    data = request.get_json() or {}
+    conn = get_db_connection()
+    conn.execute("""
+        UPDATE solutions SET tytul=?, opis=? WHERE id=?
+    """, (data.get("tytul", ""), data.get("opis", ""), sol_id))
+    conn.commit()
+    conn.close()
+    return jsonify({"status": "ok"})
+
+@app.route("/api/solutions/<sol_id>", methods=["DELETE"])
+def delete_solution(sol_id):
+    """Usuwa wariant rozwiązania wraz z jego zdjęciami i dokumentami."""
+    conn = get_db_connection()
+    conn.execute("DELETE FROM solution_photos WHERE solution_id=?", (sol_id,))
+    conn.execute("DELETE FROM solution_documents WHERE solution_id=?", (sol_id,))
+    conn.execute("DELETE FROM solutions WHERE id=?", (sol_id,))
+    conn.commit()
+    conn.close()
+    return jsonify({"status": "ok"})
+
+@app.route("/api/solutions/<sol_id>/photos", methods=["GET"])
+def get_solution_photos(sol_id):
+    """Zwraca listę metadanych zdjęć wariantu (bez danych binarnych)."""
+    conn = get_db_connection()
+    rows = conn.execute(
+        "SELECT id, filename, created FROM solution_photos WHERE solution_id=? ORDER BY created",
+        (sol_id,)).fetchall()
+    conn.close()
+    return jsonify([dict(r) for r in rows])
+
+@app.route("/api/solutions/<sol_id>/photos", methods=["POST"])
+def add_solution_photo(sol_id):
+    """Dodaje zdjęcie do wariantu rozwiązania."""
+    data = request.get_json() or {}
+    conn = get_db_connection()
+    count = conn.execute(
+        "SELECT COUNT(*) FROM solution_photos WHERE solution_id=?", (sol_id,)).fetchone()[0]
+    if count >= 6:
+        conn.close()
+        return jsonify({"error": "Maksymalnie 6 zdjęć na wariant rozwiązania."}), 400
+    photo_id = str(_uuid.uuid4())
+    raw = base64.b64decode(data.get("data", ""))
+    img_data = optimize_image_bytes(raw)
+    conn.execute(
+        "INSERT INTO solution_photos (id, solution_id, filename, data, created) VALUES (?,?,?,?,?)",
+        (photo_id, sol_id, data.get("filename", "foto.jpg"),
+         img_data, _dt.now().isoformat(timespec="seconds")))
+    conn.commit()
+    conn.close()
+    return jsonify({"id": photo_id}), 201
+
+@app.route("/api/solution-photos/<photo_id>", methods=["GET"])
+def get_solution_photo(photo_id):
+    """Zwraca dane binarne (base64) jednego zdjęcia wariantu."""
+    conn = get_db_connection()
+    row = conn.execute(
+        "SELECT filename, data FROM solution_photos WHERE id=?", (photo_id,)).fetchone()
+    conn.close()
+    if not row:
+        return jsonify({"error": "Nie znaleziono."}), 404
+    return jsonify({"filename": row["filename"],
+                    "data": base64.b64encode(row["data"]).decode()})
+
+@app.route("/api/solution-photos/<photo_id>", methods=["DELETE"])
+def delete_solution_photo(photo_id):
+    """Usuwa zdjęcie wariantu rozwiązania."""
+    conn = get_db_connection()
+    conn.execute("DELETE FROM solution_photos WHERE id=?", (photo_id,))
+    conn.commit()
+    conn.close()
+    return jsonify({"status": "ok"})
+
+# ═══════════════════════════════════════════════════════════════════
+# DOKUMENTY WARIANTÓW ROZWIĄZAŃ (SOLUTION DOCUMENTS)
+# ═══════════════════════════════════════════════════════════════════
+
+@app.route("/api/solutions/<sol_id>/documents", methods=["GET"])
+def get_solution_documents(sol_id):
+    """Zwraca listę metadanych dokumentów wariantu (bez BLOB)."""
+    conn = get_db_connection()
+    rows = conn.execute(
+        "SELECT id, filename, filesize, created FROM solution_documents WHERE solution_id=? ORDER BY created",
+        (sol_id,)).fetchall()
+    conn.close()
+    return jsonify([dict(r) for r in rows])
+
+@app.route("/api/solutions/<sol_id>/documents", methods=["POST"])
+def add_solution_document(sol_id):
+    """Dodaje dokument (PDF, DOC itp.) do wariantu rozwiązania."""
+    data = request.get_json() or {}
+    conn = get_db_connection()
+    count = conn.execute(
+        "SELECT COUNT(*) FROM solution_documents WHERE solution_id=?", (sol_id,)).fetchone()[0]
+    if count >= 6:
+        conn.close()
+        return jsonify({"error": "Maksymalnie 6 dokumentów na wariant."}), 400
+    doc_id = str(_uuid.uuid4())
+    raw = base64.b64decode(data.get("data", ""))
+    conn.execute(
+        "INSERT INTO solution_documents (id, solution_id, filename, filesize, data, created) VALUES (?,?,?,?,?,?)",
+        (doc_id, sol_id, data.get("filename", "dokument.pdf"), len(raw),
+         raw, _dt.now().isoformat(timespec="seconds")))
+    conn.commit()
+    conn.close()
+    return jsonify({"id": doc_id}), 201
+
+@app.route("/api/solution-documents/<doc_id>", methods=["GET"])
+def get_solution_document(doc_id):
+    """Zwraca zawartość binarną (base64) jednego dokumentu wariantu."""
+    conn = get_db_connection()
+    row = conn.execute(
+        "SELECT filename, filesize, data FROM solution_documents WHERE id=?", (doc_id,)).fetchone()
+    conn.close()
+    if not row:
+        return jsonify({"error": "Nie znaleziono dokumentu."}), 404
+    return jsonify({
+        "filename": row["filename"],
+        "filesize": row["filesize"],
+        "data": base64.b64encode(row["data"]).decode()
+    })
+
+@app.route("/api/solution-documents/<doc_id>", methods=["DELETE"])
+def delete_solution_document(doc_id):
+    """Usuwa dokument wariantu rozwiązania."""
+    conn = get_db_connection()
+    conn.execute("DELETE FROM solution_documents WHERE id=?", (doc_id,))
+    conn.commit()
+    conn.close()
+    return jsonify({"status": "ok"})
+
+# ═══════════════════════════════════════════════════════════════════
 # ZDJĘCIA (PHOTOS)
 # ═══════════════════════════════════════════════════════════════════
 
@@ -993,17 +1287,20 @@ def delete_photo(photo_id):
 
 @app.route("/api/admin/optimize-photos", methods=["POST"])
 def admin_optimize_photos():
-    """Optymalizuje wszystkie istniejące zdjęcia w bazie i odzyskuje miejsce (VACUUM)."""
+    """Optymalizuje wszystkie istniejące zdjęcia w bazie (usterki i warianty) i odzyskuje miejsce (VACUUM)."""
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute("SELECT id, filename, data FROM photos")
-    rows = cursor.fetchall()
+    rows_photos = cursor.fetchall()
+
+    cursor.execute("SELECT id, filename, data FROM solution_photos")
+    rows_sol_photos = cursor.fetchall()
 
     before_total = 0
     after_total = 0
     updated_count = 0
 
-    for r in rows:
+    for r in rows_photos:
         raw = r["data"]
         before_total += len(raw)
         optimized = optimize_image_bytes(raw)
@@ -1012,13 +1309,23 @@ def admin_optimize_photos():
             cursor.execute("UPDATE photos SET data = ? WHERE id = ?", (optimized, r["id"]))
             updated_count += 1
 
+    for r in rows_sol_photos:
+        raw = r["data"]
+        before_total += len(raw)
+        optimized = optimize_image_bytes(raw)
+        after_total += len(optimized)
+        if len(optimized) < len(raw):
+            cursor.execute("UPDATE solution_photos SET data = ? WHERE id = ?", (optimized, r["id"]))
+            updated_count += 1
+
     conn.commit()
     conn.execute("VACUUM;")
     conn.close()
 
+    total_photos = len(rows_photos) + len(rows_sol_photos)
     return jsonify({
         "status": "ok",
-        "total_photos": len(rows),
+        "total_photos": total_photos,
         "updated_photos": updated_count,
         "before_mb": round(before_total / (1024 * 1024), 2),
         "after_mb": round(after_total / (1024 * 1024), 2),
