@@ -1558,6 +1558,27 @@
   </div>
 </div>
 
+<!-- ════════════ MODAL: PODGLĄD DOKUMENTU PDF ════════════ -->
+<div class="modal-backdrop" id="modal-pdf-viewer" style="display:none;" onclick="closeModal('modal-pdf-viewer')">
+  <div class="modal-box large" style="height:90vh; max-width:1100px; display:flex; flex-direction:column;" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <h3 id="pdf-viewer-title">📄 Podgląd dokumentu</h3>
+      <div style="display:flex; gap:8px; align-items:center;">
+        <button class="btn-secondary-action" id="btn-pdf-system-open" style="color:#FFF; border-color:rgba(255,255,255,0.2); padding:3px 10px; font-size:12px;">
+          🖥 Otwórz w aplikacji Windows
+        </button>
+        <button class="btn-secondary-action" id="btn-pdf-download" style="color:#FFF; border-color:rgba(255,255,255,0.2); padding:3px 10px; font-size:12px;">
+          ⬇ Pobierz
+        </button>
+        <button class="btn-close-modal" onclick="closeModal('modal-pdf-viewer')">✕</button>
+      </div>
+    </div>
+    <div style="flex:1; background:#1E293B; position:relative; overflow:hidden;">
+      <iframe id="pdf-viewer-frame" style="width:100%; height:100%; border:none;" src=""></iframe>
+    </div>
+  </div>
+</div>
+
 <!-- ════════════ EKRAN LOGOWANIA (LOGIN OVERLAY) ════════════ -->
 <div class="modal-backdrop" id="modal-login" style="display:flex; background:var(--bg-sidebar); z-index:9999;">
   <div class="modal-box" style="max-width:400px; box-shadow:var(--shadow-xl); border:1px solid var(--border-subtle);">
@@ -2092,19 +2113,36 @@ async function loadRecordSolutions(recId) {
       apiCall(`/api/solutions/${sol.id}/documents`).then(dList => {
         const dBox = document.getElementById(`sol-docs-${sol.id}`);
         if (!dBox || !dList || dList.length === 0) return;
-        dBox.innerHTML = dList.map(d => `
-          <div style="display:flex; justify-content:space-between; font-size:12px; padding:3px 6px; background:var(--bg-card); border:1px solid var(--border); border-radius:4px;">
-            <span style="color:var(--primary); cursor:pointer;" onclick="downloadSolutionDoc('${d.id}', '${escapeHtml(d.filename)}')">📄 ${escapeHtml(d.filename)} <small style="color:var(--text-muted);">(${formatBytes(d.filesize)})</small></span>
-            <button style="background:none; border:none; color:var(--red); cursor:pointer;" onclick="deleteSolutionDoc('${d.id}', '${recId}')">✕</button>
-          </div>
-        `).join('');
+        dBox.innerHTML = dList.map(d => {
+          const isPdf = (d.filename || '').toLowerCase().endsWith('.pdf');
+          const thumbUrl = `/api/solution-documents/${d.id}/thumb`;
+          const rawUrl = `/api/solution-documents/${d.id}/raw`;
+          const openUrl = `/api/solution-documents/${d.id}/open`;
+          return `
+            <div style="display:flex; align-items:center; gap:10px; padding:6px 10px; background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius-md); margin-top:4px;">
+              <div style="width:38px; height:48px; background:var(--bg-card-subtle); border-radius:4px; overflow:hidden; display:flex; align-items:center; justify-content:center; border:1px solid var(--border); cursor:pointer; flex-shrink:0;" onclick="openPdfPreview('${rawUrl}', '${escapeHtml(d.filename)}', '${openUrl}', '${d.id}')">
+                ${isPdf ? `<img src="${thumbUrl}" alt="PDF" style="width:100%; height:100%; object-fit:cover;" onerror="this.onerror=null; this.parentElement.innerHTML='<span style=\\'font-size:18px;\\'>📄</span>';">` : '<span style="font-size:18px;">📄</span>'}
+              </div>
+              <div style="flex:1; min-width:0; cursor:pointer;" onclick="openPdfPreview('${rawUrl}', '${escapeHtml(d.filename)}', '${openUrl}', '${d.id}')">
+                <div style="font-size:12.5px; font-weight:600; color:var(--primary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="${escapeHtml(d.filename)}">${escapeHtml(d.filename)}</div>
+                <div style="font-size:11px; color:var(--text-muted); display:flex; align-items:center; gap:6px; margin-top:2px;">
+                  <span style="background:var(--primary-light); color:var(--primary); font-size:9.5px; font-weight:700; padding:1px 5px; border-radius:3px;">${isPdf ? 'PDF' : 'DOKUMENT'}</span>
+                  <span>${formatBytes(d.filesize)}</span>
+                </div>
+              </div>
+              <div style="display:flex; gap:4px; flex-shrink:0;">
+                <button class="btn-secondary-action" style="padding:3px 8px; font-size:11px;" title="Podgląd / Otwórz" onclick="openPdfPreview('${rawUrl}', '${escapeHtml(d.filename)}', '${openUrl}', '${d.id}')">👁 Otwórz</button>
+                <button class="btn-secondary-action" style="padding:3px 6px; font-size:11px; color:var(--red);" title="Usuń" onclick="deleteSolutionDoc('${d.id}', '${recId}')">✕</button>
+              </div>
+            </div>
+          `;
+        }).join('');
       });
     }
   } catch(e) {
     box.innerHTML = `<div style="font-size:12px; color:var(--red);">Błąd ładowania wariantów.</div>`;
   }
 }
-
 
 async function loadRecordDocs(recId) {
   const box = document.getElementById('detail-docs-box');
@@ -2115,22 +2153,61 @@ async function loadRecordDocs(recId) {
       box.innerHTML = `<div style="font-size:12px; color:var(--text-dim);">Brak załączonych plików PDF/CSV.</div>`;
       return;
     }
-    box.innerHTML = docs.map(d => `
-      <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 10px; background:var(--bg-card-subtle); border:1px solid var(--border); border-radius:var(--radius-md);">
-        <div>
-          <b>📄 ${escapeHtml(d.filename)}</b>
-          <span style="font-size:11px; color:var(--text-muted); margin-left:6px;">(${formatBytes(d.filesize)})</span>
+    box.innerHTML = docs.map(d => {
+      const isPdf = (d.filename || '').toLowerCase().endsWith('.pdf');
+      const thumbUrl = `/api/documents/${d.id}/thumb`;
+      const rawUrl = `/api/documents/${d.id}/raw`;
+      const openUrl = `/api/documents/${d.id}/open`;
+      return `
+        <div style="display:flex; align-items:center; gap:10px; padding:6px 10px; background:var(--bg-card-subtle); border:1px solid var(--border); border-radius:var(--radius-md);">
+          <div style="width:38px; height:48px; background:var(--bg-card); border-radius:4px; overflow:hidden; display:flex; align-items:center; justify-content:center; border:1px solid var(--border); cursor:pointer; flex-shrink:0;" onclick="openPdfPreview('${rawUrl}', '${escapeHtml(d.filename)}', '${openUrl}', '${d.id}')">
+            ${isPdf ? `<img src="${thumbUrl}" alt="PDF" style="width:100%; height:100%; object-fit:cover;" onerror="this.onerror=null; this.parentElement.innerHTML='<span style=\\'font-size:18px;\\'>📄</span>';">` : '<span style="font-size:18px;">📄</span>'}
+          </div>
+          <div style="flex:1; min-width:0; cursor:pointer;" onclick="openPdfPreview('${rawUrl}', '${escapeHtml(d.filename)}', '${openUrl}', '${d.id}')">
+            <div style="font-size:12.5px; font-weight:600; color:var(--primary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="${escapeHtml(d.filename)}">${escapeHtml(d.filename)}</div>
+            <div style="font-size:11px; color:var(--text-muted); display:flex; align-items:center; gap:6px; margin-top:2px;">
+              <span style="background:var(--primary-light); color:var(--primary); font-size:9.5px; font-weight:700; padding:1px 5px; border-radius:3px;">${isPdf ? 'PDF' : 'DOKUMENT'}</span>
+              <span>${formatBytes(d.filesize)}</span>
+            </div>
+          </div>
+          <div style="display:flex; gap:4px; flex-shrink:0;">
+            <button class="btn-secondary-action" style="padding:3px 8px; font-size:11px;" title="Podgląd / Otwórz" onclick="openPdfPreview('${rawUrl}', '${escapeHtml(d.filename)}', '${openUrl}', '${d.id}')">👁 Otwórz</button>
+            <button class="btn-secondary-action" style="padding:3px 6px; font-size:11px; color:var(--red);" title="Usuń" onclick="deleteRecordDoc('${d.id}', '${recId}')">✕</button>
+          </div>
         </div>
-        <div style="display:flex; gap:6px;">
-          <button class="btn-secondary-action" style="padding:2px 8px; font-size:11px;" onclick="downloadRecordDoc('${d.id}', '${escapeHtml(d.filename)}')">⬇ Pobierz</button>
-          <button class="btn-secondary-action" style="padding:2px 6px; font-size:11px; color:var(--red);" onclick="deleteRecordDoc('${d.id}', '${recId}')">✕</button>
-        </div>
-      </div>
-    `).join('');
+      `;
+    }).join('');
   } catch(e) {
     box.innerHTML = `<div style="font-size:12px; color:var(--red);">Błąd załączników.</div>`;
   }
 }
+
+function openPdfPreview(rawUrl, title, openEndpoint, docId) {
+  document.getElementById('pdf-viewer-title').textContent = `📄 ${title}`;
+  const iframe = document.getElementById('pdf-viewer-frame');
+  iframe.src = rawUrl;
+  
+  // Przycisk otwierania w aplikacji systemowej Windows
+  document.getElementById('btn-pdf-system-open').onclick = async () => {
+    try {
+      showToast('Otwieranie pliku w programie Windows...', 'info');
+      await apiCall(openEndpoint, 'POST');
+    } catch(err) {
+      showToast(`Błąd otwierania: ${err.message}`, 'error');
+    }
+  };
+
+  // Przycisk pobierania
+  document.getElementById('btn-pdf-download').onclick = () => {
+    const a = document.createElement('a');
+    a.href = rawUrl;
+    a.download = title;
+    a.click();
+  };
+
+  openModal('modal-pdf-viewer');
+}
+
 
 /* ── ZARZĄDZANIE FORMULARZEM (DODAWANIE / EDYCJA) ── */
 function resetDefectForm() {

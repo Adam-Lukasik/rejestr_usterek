@@ -11,13 +11,31 @@ from email.mime.multipart import MIMEMultipart
 import uuid as _uuid
 from datetime import datetime as _dt, timedelta as _td
 from functools import wraps
-from flask import Flask, send_from_directory, request, jsonify
+from flask import Flask, send_from_directory, request, jsonify, Response
 
 try:
     from PIL import Image as _PILImage
     _PIL_OK = True
 except ImportError:
     _PIL_OK = False
+
+def generate_pdf_thumb_bytes(raw_pdf_bytes: bytes, max_size=(160, 200)) -> bytes:
+    """Generuje miniaturkę JPG 1. strony PDF przy użyciu pypdfium2."""
+    if not _PIL_OK or not raw_pdf_bytes:
+        return None
+    try:
+        import pypdfium2 as pdfium
+        pdf = pdfium.PdfDocument(raw_pdf_bytes)
+        if len(pdf) == 0:
+            return None
+        page = pdf[0]
+        pil_img = page.render(scale=1.5).to_pil()
+        pil_img.thumbnail(max_size, _PILImage.Resampling.LANCZOS)
+        buf = io.BytesIO()
+        pil_img.convert("RGB").save(buf, format="JPEG", quality=85)
+        return buf.getvalue()
+    except Exception as e:
+        return None
 
 def optimize_image_bytes(raw_bytes: bytes, max_dim: int = 1920, quality: int = 85) -> bytes:
     """Automatycznie przeskalowuje i kompresuje zdjęcie (JPEG 85%, max 1920px), redukując rozmiar o ~90%."""
@@ -1225,6 +1243,56 @@ def get_solution_document(doc_id):
         "data": base64.b64encode(row["data"]).decode()
     })
 
+@app.route("/api/solution-documents/<doc_id>/thumb", methods=["GET"])
+def get_solution_document_thumb(doc_id):
+    """Zwraca miniaturkę JPG pierwszej strony PDF dla dokumentu wariantu."""
+    conn = get_db_connection()
+    row = conn.execute(
+        "SELECT filename, data FROM solution_documents WHERE id=?", (doc_id,)).fetchone()
+    conn.close()
+    if not row:
+        return "Nie znaleziono", 404
+    if row["filename"].lower().endswith(".pdf"):
+        thumb = generate_pdf_thumb_bytes(row["data"])
+        if thumb:
+            return Response(thumb, mimetype="image/jpeg", headers={"Cache-Control": "public, max-age=86400"})
+    return "Brak miniaturki", 404
+
+@app.route("/api/solution-documents/<doc_id>/raw", methods=["GET"])
+def get_solution_document_raw(doc_id):
+    """Zwraca bezpośredni strumień pliku (inline) dla wbudowanego podglądu PDF."""
+    conn = get_db_connection()
+    row = conn.execute(
+        "SELECT filename, data FROM solution_documents WHERE id=?", (doc_id,)).fetchone()
+    conn.close()
+    if not row:
+        return "Nie znaleziono", 404
+    fn = row["filename"]
+    mimetype = "application/pdf" if fn.lower().endswith(".pdf") else "application/octet-stream"
+    resp = Response(row["data"], mimetype=mimetype)
+    resp.headers["Content-Disposition"] = f'inline; filename="{fn}"'
+    return resp
+
+@app.route("/api/solution-documents/<doc_id>/open", methods=["POST"])
+def open_solution_document(doc_id):
+    """Zapisuje dokument do pliku tymczasowego i otwiera go w domyślnej aplikacji Windows."""
+    conn = get_db_connection()
+    row = conn.execute(
+        "SELECT filename, data FROM solution_documents WHERE id=?", (doc_id,)).fetchone()
+    conn.close()
+    if not row:
+        return jsonify({"error": "Nie znaleziono pliku."}), 404
+    import tempfile
+    temp_dir = Path(tempfile.gettempdir()) / "rejestr_usterek_docs"
+    temp_dir.mkdir(parents=True, exist_ok=True)
+    temp_file = temp_dir / row["filename"]
+    temp_file.write_bytes(row["data"])
+    try:
+        os.startfile(str(temp_file))
+        return jsonify({"status": "ok", "path": str(temp_file)})
+    except Exception as e:
+        return jsonify({"error": f"Błąd otwierania: {e}"}), 500
+
 @app.route("/api/solution-documents/<doc_id>", methods=["DELETE"])
 def delete_solution_document(doc_id):
     """Usuwa dokument wariantu rozwiązania."""
@@ -1233,6 +1301,7 @@ def delete_solution_document(doc_id):
     conn.commit()
     conn.close()
     return jsonify({"status": "ok"})
+
 
 # ═══════════════════════════════════════════════════════════════════
 # ZDJĘCIA (PHOTOS)
@@ -1370,6 +1439,56 @@ def get_document(doc_id):
     return jsonify({"filename": row["filename"],
                     "data": base64.b64encode(row["data"]).decode()})
 
+@app.route("/api/documents/<doc_id>/thumb", methods=["GET"])
+def get_document_thumb(doc_id):
+    """Zwraca miniaturkę JPG pierwszej strony PDF."""
+    conn = get_db_connection()
+    row = conn.execute(
+        "SELECT filename, data FROM documents WHERE id=?", (doc_id,)).fetchone()
+    conn.close()
+    if not row:
+        return "Nie znaleziono", 404
+    if row["filename"].lower().endswith(".pdf"):
+        thumb = generate_pdf_thumb_bytes(row["data"])
+        if thumb:
+            return Response(thumb, mimetype="image/jpeg", headers={"Cache-Control": "public, max-age=86400"})
+    return "Brak miniaturki", 404
+
+@app.route("/api/documents/<doc_id>/raw", methods=["GET"])
+def get_document_raw(doc_id):
+    """Zwraca bezpośredni strumień pliku dla wbudowanego podglądu PDF."""
+    conn = get_db_connection()
+    row = conn.execute(
+        "SELECT filename, data FROM documents WHERE id=?", (doc_id,)).fetchone()
+    conn.close()
+    if not row:
+        return "Nie znaleziono", 404
+    fn = row["filename"]
+    mimetype = "application/pdf" if fn.lower().endswith(".pdf") else "application/octet-stream"
+    resp = Response(row["data"], mimetype=mimetype)
+    resp.headers["Content-Disposition"] = f'inline; filename="{fn}"'
+    return resp
+
+@app.route("/api/documents/<doc_id>/open", methods=["POST"])
+def open_document(doc_id):
+    """Zapisuje dokument do pliku tymczasowego i otwiera go w domyślnej aplikacji Windows."""
+    conn = get_db_connection()
+    row = conn.execute(
+        "SELECT filename, data FROM documents WHERE id=?", (doc_id,)).fetchone()
+    conn.close()
+    if not row:
+        return jsonify({"error": "Nie znaleziono pliku."}), 404
+    import tempfile
+    temp_dir = Path(tempfile.gettempdir()) / "rejestr_usterek_docs"
+    temp_dir.mkdir(parents=True, exist_ok=True)
+    temp_file = temp_dir / row["filename"]
+    temp_file.write_bytes(row["data"])
+    try:
+        os.startfile(str(temp_file))
+        return jsonify({"status": "ok", "path": str(temp_file)})
+    except Exception as e:
+        return jsonify({"error": f"Błąd otwierania: {e}"}), 500
+
 @app.route("/api/documents/<doc_id>", methods=["DELETE"])
 def delete_document(doc_id):
     conn = get_db_connection()
@@ -1377,6 +1496,7 @@ def delete_document(doc_id):
     conn.commit()
     conn.close()
     return jsonify({"status": "ok"})
+
 
 
 if __name__ == "__main__":
