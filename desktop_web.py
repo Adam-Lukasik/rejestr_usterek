@@ -9,11 +9,26 @@ import logging
 import threading
 from pathlib import Path
 
+# ── High DPI awareness dla Windows (4K / 2K / FHD) ──
+try:
+    import ctypes
+    try:
+        # DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 (-4)
+        ctypes.windll.user32.SetProcessDpiAwarenessContext(ctypes.c_void_p(-4))
+    except Exception:
+        try:
+            ctypes.windll.shcore.SetProcessDpiAwareness(2)
+        except Exception:
+            ctypes.windll.user32.SetProcessDPIAware()
+except Exception:
+    pass
+
 # Zabezpieczenie przed brakiem strumieni w pythonw.exe na Windows
 if sys.stdout is None:
     sys.stdout = io.StringIO()
 if sys.stderr is None:
     sys.stderr = io.StringIO()
+
 
 BASE_DIR = Path(__file__).resolve().parent
 LOG_FILE = BASE_DIR / "desktop_web.log"

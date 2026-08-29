@@ -1558,6 +1558,35 @@
   </div>
 </div>
 
+<!-- ════════════ EKRAN LOGOWANIA (LOGIN OVERLAY) ════════════ -->
+<div class="modal-backdrop" id="modal-login" style="display:flex; background:var(--bg-sidebar); z-index:9999;">
+  <div class="modal-box" style="max-width:400px; box-shadow:var(--shadow-xl); border:1px solid var(--border-subtle);">
+    <div style="background:var(--bg-sidebar); padding:26px 20px 18px 20px; text-align:center; color:#FFFFFF; border-bottom:1px solid rgba(255,255,255,0.08);">
+      <div style="width:48px; height:48px; background:linear-gradient(135deg, #2563EB, #1D4ED8); border-radius:12px; display:inline-flex; align-items:center; justify-content:center; margin-bottom:12px; box-shadow:0 4px 14px rgba(37,99,235,0.4);">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+      </div>
+      <h2 style="font-size:18px; font-weight:700; letter-spacing:-0.2px;">Rejestr Usterek</h2>
+      <p style="font-size:12px; color:#94A3B8; margin-top:4px;">Zaloguj się, aby uzyskać dostęp</p>
+    </div>
+    <div class="modal-body" style="padding:22px;">
+      <form id="form-login">
+        <div class="form-group" style="margin-bottom:14px;">
+          <label for="login-username">Login</label>
+          <input type="text" id="login-username" required placeholder="Wpisz login..." autofocus autocomplete="username">
+        </div>
+        <div class="form-group" style="margin-bottom:16px;">
+          <label for="login-password">Hasło</label>
+          <input type="password" id="login-password" required placeholder="Wpisz hasło..." autocomplete="current-password">
+        </div>
+        <div id="login-error-box" style="display:none; padding:8px 12px; background:var(--red-bg); color:var(--red-text); border-radius:var(--radius-md); font-size:12px; margin-bottom:14px; font-weight:500;"></div>
+        <button type="submit" class="btn-primary-action" style="width:100%; padding:10px; font-size:14px; justify-content:center;">
+          Zaloguj się
+        </button>
+      </form>
+    </div>
+  </div>
+</div>
+
 <!-- Kontener Toastów -->
 <div class="toast-container" id="toast-container"></div>
 
@@ -1568,8 +1597,8 @@ const STATE = {
   records: [],
   lists: { klienci: [], modele: [], typy: [], projekty: {}, projektyByKlient: {} },
   users: [],
-  activeUser: { username: 'admin', full_name: 'Administrator', role: 'admin' },
-  authToken: localStorage.getItem('ru_auth_token') || '',
+  activeUser: null,
+  authToken: sessionStorage.getItem('ru_auth_token') || '',
   currentView: 'dashboard',
   selectedRecordId: null,
   editingRecordId: null,
@@ -1577,17 +1606,52 @@ const STATE = {
   pendingPhotos: [], // [{filename, data: base64, isNew: true}]
   pendingDocs: [],   // [{filename, data: base64, filesize: int, isNew: true}]
   lightboxPhotos: [],
-  lightboxIndex: 0
+  lightboxIndex: 0,
+  pollTimer: null
 };
 
 /* ── START I INICJALIZACJA ── */
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
   applyTheme(STATE.theme);
   setupNavigation();
   setupEventListeners();
-  loadAllData();
-  setInterval(loadAllData, 4000); // Live poll
+
+  // Sprawdź czy jest aktywna sesja w sessionStorage
+  const token = sessionStorage.getItem('ru_auth_token');
+  if (token) {
+    STATE.authToken = token;
+    try {
+      const meResp = await apiCall('/api/auth/me');
+      if (meResp && meResp.user) {
+        STATE.activeUser = meResp.user;
+        closeModal('modal-login');
+        await loadAllData();
+        startPolling();
+        return;
+      }
+    } catch(e) {
+      STATE.authToken = '';
+      sessionStorage.removeItem('ru_auth_token');
+    }
+  }
+
+  // Brak sesji -> pokaż ekran logowania
+  showLoginModal();
 });
+
+function showLoginModal() {
+  document.getElementById('modal-login').style.display = 'flex';
+  document.getElementById('login-password').value = '';
+  const uInp = document.getElementById('login-username');
+  if (!uInp.value) uInp.value = '';
+  uInp.focus();
+}
+
+function startPolling() {
+  if (STATE.pollTimer) clearInterval(STATE.pollTimer);
+  STATE.pollTimer = setInterval(loadAllData, 4000);
+}
+
 
 /* ── ZARZĄDZANIE MOTYWEM ── */
 function applyTheme(theme) {
@@ -1678,16 +1742,25 @@ function updateUserBadge() {
   const nameEl = document.getElementById('u-name');
   const roleEl = document.getElementById('u-role');
   const avEl = document.getElementById('u-avatar');
+  const navUsers = document.getElementById('nav-users');
+
+  if (!u) {
+    if (nameEl) nameEl.textContent = 'Niezalogowany';
+    if (roleEl) roleEl.textContent = '—';
+    if (avEl) avEl.textContent = '?';
+    if (navUsers) navUsers.style.display = 'none';
+    return;
+  }
+
   if (nameEl) nameEl.textContent = u.full_name || u.username || 'Technik';
   if (roleEl) roleEl.textContent = u.role === 'admin' ? 'Administrator' : (u.role === 'podglad' ? 'Podgląd' : 'Technik');
   if (avEl) avEl.textContent = (u.full_name || u.username || 'T').charAt(0).toUpperCase();
 
-  // Ukryj sekcje dla roli podgląd
-  const navUsers = document.getElementById('nav-users');
   if (navUsers) {
     navUsers.style.display = u.role === 'admin' ? 'flex' : 'none';
   }
 }
+
 
 /* ── NAWIGACJA MIĘDZY WIDOKAMI ── */
 function setupNavigation() {
@@ -2919,6 +2992,32 @@ function setupEventListeners() {
     docInput.value = '';
   };
 
+  // Formularz logowania
+  document.getElementById('form-login').onsubmit = async (e) => {
+    e.preventDefault();
+    const username = document.getElementById('login-username').value.trim();
+    const password = document.getElementById('login-password').value;
+    const errBox = document.getElementById('login-error-box');
+    errBox.style.display = 'none';
+
+    if (!username || !password) return;
+
+    try {
+      const res = await apiCall('/api/auth/login', 'POST', { username, password });
+      STATE.authToken = res.token;
+      sessionStorage.setItem('ru_auth_token', res.token);
+      STATE.activeUser = res.user;
+      closeModal('modal-login');
+      updateUserBadge();
+      showToast(`Witaj, ${res.user.full_name || res.user.username}!`, 'success');
+      await loadAllData();
+      startPolling();
+    } catch(err) {
+      errBox.textContent = err.message || 'Nieprawidłowy login lub hasło.';
+      errBox.style.display = 'block';
+    }
+  };
+
   // Zmiana hasła
   document.getElementById('btn-change-password').onclick = async () => {
     const oldPw = prompt('Wpisz obecne hasło:');
@@ -2932,11 +3031,18 @@ function setupEventListeners() {
   };
 
   // Wyloguj
-  document.getElementById('btn-logout').onclick = () => {
-    localStorage.removeItem('ru_auth_token');
+  document.getElementById('btn-logout').onclick = async () => {
+    try {
+      await apiCall('/api/auth/logout', 'POST');
+    } catch(e){}
+    STATE.authToken = '';
+    sessionStorage.removeItem('ru_auth_token');
+    STATE.activeUser = null;
+    if (STATE.pollTimer) clearInterval(STATE.pollTimer);
     showToast('Wylogowano', 'info');
-    setTimeout(() => location.reload(), 500);
+    showLoginModal();
   };
+
 }
 
 function handleFormImageFile(file) {
