@@ -2,6 +2,8 @@
 chcp 65001 >nul
 cd /d "%~dp0"
 
+title Rejestr Usterek - Uruchamianie
+
 set PYTHON=
 set PYTHONW=
 
@@ -29,26 +31,36 @@ if "%PYTHON%"=="" (
 )
 
 if "%PYTHON%"=="" (
-  echo Nie znalazlem Pythona.
+  echo [BLAD] Nie znaleziono srodowiska Python.
   echo.
   echo Mozliwe rozwiazania:
   echo 1. Zainstaluj Pythona ze Sklepu Windows lub z python.org.
-  echo 2. Skopiuj folder python-embed do tego folderu.
+  echo 2. Skopiuj folder python-embed do glownego katalogu programu.
   pause
   exit /b 1
 )
 
 %PYTHON% -c "import flask, requests, webview, waitress" >nul 2>&1
 if errorlevel 1 (
-  echo Instaluje lub aktualizuje zaleznosci (w tym okno WebView2 i serwer)...
+  echo ========================================================
+  echo   Instalowanie brakujacych bibliotek dla WebView2...
+  echo ========================================================
   %PYTHON% -m pip install -r requirements.txt
   if errorlevel 1 (
-    echo Nie udalo sie zainstalowac zaleznosci. Sprawdz polaczenie internetowe.
+    echo [BLAD] Nie udalo sie zainstalowac zaleznosci.
     pause
     exit /b 1
   )
 )
 
-:: Uruchomienie nowoczesnego okna WebView2
-start "" "%PYTHONW%" desktop_web.py --local
+echo ========================================================
+echo   Rejestr Usterek v5.0 - Nowoczesny Interfejs
+echo ========================================================
+echo.
+echo [1/2] Inicjalizacja serwera lokalnego i bazy danych...
+echo [2/2] Otwieranie okna aplikacji...
+echo.
+
+:: Uruchomienie okna aplikacji w tle
+start "" "%PYTHONW%" "%~dp0desktop_web.py" --local
 exit
