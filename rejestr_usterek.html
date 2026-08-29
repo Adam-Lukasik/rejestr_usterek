@@ -1558,26 +1558,34 @@
   </div>
 </div>
 
-<!-- ════════════ MODAL: PODGLĄD DOKUMENTU PDF ════════════ -->
-<div class="modal-backdrop" id="modal-pdf-viewer" style="display:none;" onclick="closeModal('modal-pdf-viewer')">
-  <div class="modal-box large" style="height:90vh; max-width:1100px; display:flex; flex-direction:column;" onclick="event.stopPropagation()">
-    <div class="modal-header">
-      <h3 id="pdf-viewer-title">📄 Podgląd dokumentu</h3>
-      <div style="display:flex; gap:8px; align-items:center;">
-        <button class="btn-secondary-action" id="btn-pdf-system-open" style="color:#FFF; border-color:rgba(255,255,255,0.2); padding:3px 10px; font-size:12px;">
-          🖥 Otwórz w aplikacji Windows
+<!-- ════════════ MODAL: PODGLĄD DOKUMENTU PDF (PEŁNOEKRANOWY) ════════════ -->
+<div class="modal-backdrop" id="modal-pdf-viewer" style="display:none; padding:0; background:rgba(15,23,42,0.92); z-index:9999;" onclick="closeModal('modal-pdf-viewer')">
+  <div class="modal-box" id="pdf-viewer-container" style="height:100vh; width:100vw; max-width:100vw; max-height:100vh; border-radius:0; border:none; display:flex; flex-direction:column;" onclick="event.stopPropagation()">
+    <div class="modal-header" style="background:#0F172A; padding:10px 18px; border-bottom:1px solid #334155; display:flex; align-items:center; justify-content:space-between;">
+      <div style="display:flex; align-items:center; gap:10px; min-width:0; max-width:55%;">
+        <span style="font-size:18px;">📄</span>
+        <h3 id="pdf-viewer-title" style="font-size:14px; font-weight:600; color:#F8FAFC; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin:0;">Podgląd dokumentu</h3>
+      </div>
+      <div style="display:flex; gap:10px; align-items:center;">
+        <button type="button" id="btn-pdf-system-open" style="background:#2563EB; color:#FFFFFF; font-size:12.5px; font-weight:600; padding:7px 15px; border-radius:6px; border:none; cursor:pointer; display:flex; align-items:center; gap:6px; box-shadow:0 2px 8px rgba(37,99,235,0.4);">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+          <span>Otwórz w aplikacji Windows</span>
         </button>
-        <button class="btn-secondary-action" id="btn-pdf-download" style="color:#FFF; border-color:rgba(255,255,255,0.2); padding:3px 10px; font-size:12px;">
-          ⬇ Pobierz
+        <button type="button" id="btn-pdf-download" style="background:#334155; color:#F8FAFC; font-size:12.5px; font-weight:500; padding:7px 13px; border-radius:6px; border:1px solid #475569; cursor:pointer; display:flex; align-items:center; gap:6px;">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          <span>Pobierz</span>
         </button>
-        <button class="btn-close-modal" onclick="closeModal('modal-pdf-viewer')">✕</button>
+        <button type="button" onclick="closeModal('modal-pdf-viewer')" style="background:#DC2626; color:#FFFFFF; padding:7px 14px; font-size:12.5px; font-weight:600; border-radius:6px; border:none; cursor:pointer; display:flex; align-items:center; gap:4px; margin-left:6px;" title="Zamknij podgląd (ESC)">
+          <span>✕ Zamknij (ESC)</span>
+        </button>
       </div>
     </div>
-    <div style="flex:1; background:#1E293B; position:relative; overflow:hidden;">
+    <div style="flex:1; background:#525659; position:relative; overflow:hidden;">
       <iframe id="pdf-viewer-frame" style="width:100%; height:100%; border:none;" src=""></iframe>
     </div>
   </div>
 </div>
+
 
 <!-- ════════════ EKRAN LOGOWANIA (LOGIN OVERLAY) ════════════ -->
 <div class="modal-backdrop" id="modal-login" style="display:flex; background:var(--bg-sidebar); z-index:9999;">
@@ -3010,12 +3018,21 @@ document.getElementById('btn-lightbox-next').onclick = () => {
 };
 
 window.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    if (document.getElementById('modal-pdf-viewer').style.display === 'flex') {
+      closeModal('modal-pdf-viewer');
+      document.getElementById('pdf-viewer-frame').src = '';
+    }
+    if (document.getElementById('lightbox').style.display === 'flex') {
+      closeLightbox();
+    }
+  }
   if (document.getElementById('lightbox').style.display === 'flex') {
-    if (e.key === 'Escape') closeLightbox();
     if (e.key === 'ArrowLeft') document.getElementById('btn-lightbox-prev').click();
     if (e.key === 'ArrowRight') document.getElementById('btn-lightbox-next').click();
   }
 });
+
 
 /* ── OBSŁUGA SCHOWKA I DRAG & DROP ── */
 function setupEventListeners() {

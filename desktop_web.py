@@ -12,6 +12,7 @@ from pathlib import Path
 # ── High DPI awareness dla Windows (4K / 2K / FHD) ──
 try:
     import ctypes
+    from ctypes import wintypes
     try:
         # DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 (-4)
         ctypes.windll.user32.SetProcessDpiAwarenessContext(ctypes.c_void_p(-4))
@@ -23,11 +24,23 @@ try:
 except Exception:
     pass
 
+# ── Zapobieganie wielokrotnemu uruchomieniu (Single Instance Mutex) ──
+_MUTEX_HANDLE = None
+try:
+    ERROR_ALREADY_EXISTS = 183
+    _MUTEX_HANDLE = ctypes.windll.kernel32.CreateMutexW(None, wintypes.BOOL(True), "Local\\RejestrUsterek_App_Mutex")
+    if ctypes.windll.kernel32.GetLastError() == ERROR_ALREADY_EXISTS:
+        # Program jest już uruchomiony - zakończ zdublowany proces
+        sys.exit(0)
+except Exception:
+    pass
+
 # Zabezpieczenie przed brakiem strumieni w pythonw.exe na Windows
 if sys.stdout is None:
     sys.stdout = io.StringIO()
 if sys.stderr is None:
     sys.stderr = io.StringIO()
+
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -163,10 +176,19 @@ def main():
 
         window.events.resized += on_resized
 
+        # Ukryj okno konsoli terminala dokładnie w momencie gotowości okna aplikacji
+        try:
+            hwnd_console = ctypes.windll.kernel32.GetConsoleWindow()
+            if hwnd_console:
+                ctypes.windll.user32.ShowWindow(hwnd_console, 0)
+        except Exception:
+            pass
+
         logging.info("Start webview.start()")
         # EdgeChromium jako domyślny silnik WebView2 na Windows
         webview.start(debug=("--debug" in sys.argv), gui="edgechromium")
         logging.info("Zamknięto okno webview")
+
 
     except Exception as ex:
         logging.error(f"Krytyczny błąd w main(): {ex}", exc_info=True)
