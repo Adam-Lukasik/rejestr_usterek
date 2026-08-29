@@ -38,9 +38,9 @@ if "%PYTHON%"=="" (
   exit /b 1
 )
 
-%PYTHON% -c "import flask, requests, webview" >nul 2>&1
+%PYTHON% -c "import flask, requests, webview, waitress" >nul 2>&1
 if errorlevel 1 (
-  echo Instaluje lub aktualizuje zaleznosci (w tym nowoczesne okno WebView2)...
+  echo Instaluje lub aktualizuje zaleznosci (w tym okno WebView2 i serwer)...
   %PYTHON% -m pip install -r requirements.txt
   if errorlevel 1 (
     echo Nie udalo sie zainstalowac zaleznosci. Sprawdz polaczenie internetowe.
@@ -49,6 +49,6 @@ if errorlevel 1 (
   )
 )
 
-:: Uruchomienie nowoczesnego okna WebView2 w tle
+:: Uruchomienie nowoczesnego okna WebView2
 start "" "%PYTHONW%" desktop_web.py --local
 exit
