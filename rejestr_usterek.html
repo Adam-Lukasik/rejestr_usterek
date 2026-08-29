@@ -2012,20 +2012,24 @@ async function loadRecordPhotos(recId) {
       return;
     }
     box.innerHTML = '';
-    const loadedList = [];
-    for (let i = 0; i < photos.length; i++) {
+    
+    // Pobierz pełne dane wszystkich zdjęć usterki
+    const fullPhotos = await Promise.all(
+      photos.map(ph => apiCall(`/api/photos/${ph.id}`))
+    );
+    const photoUrls = fullPhotos.map(p => `data:image/jpeg;base64,${p.data}`);
+
+    fullPhotos.forEach((full, i) => {
       const ph = photos[i];
-      const full = await apiCall(`/api/photos/${ph.id}`);
-      loadedList.push(`data:image/jpeg;base64,${full.data}`);
       const div = document.createElement('div');
       div.className = 'photo-thumb-card';
       div.innerHTML = `
         <img src="data:image/jpeg;base64,${full.data}" alt="Foto usterki">
         <button type="button" style="position:absolute; top:4px; right:4px; background:rgba(0,0,0,0.7); color:#FFF; border:none; border-radius:50%; width:20px; height:20px; font-size:11px; cursor:pointer;" onclick="event.stopPropagation(); deleteDirectPhoto('${ph.id}', '${recId}')">✕</button>
       `;
-      div.onclick = () => openLightboxGallery(loadedList, i);
+      div.onclick = () => openLightboxGallery(photoUrls, i);
       box.appendChild(div);
-    }
+    });
   } catch(e) {
     box.innerHTML = `<div style="font-size:12px; color:var(--red);">Błąd ładowania zdjęć.</div>`;
   }
@@ -2062,18 +2066,26 @@ async function loadRecordSolutions(recId) {
       `;
       box.appendChild(card);
 
-      // Zdjęcia wariantu
+      // Zdjęcia wariantu — pobranie wszystkich i spięcie w pełną galerię
       apiCall(`/api/solutions/${sol.id}/photos`).then(async pList => {
         const phBox = document.getElementById(`sol-photos-${sol.id}`);
         if (!phBox || !pList || pList.length === 0) return;
-        for (const pm of pList) {
-          const full = await apiCall(`/api/solution-photos/${pm.id}`);
+        
+        const fullPhotos = await Promise.all(
+          pList.map(pm => apiCall(`/api/solution-photos/${pm.id}`))
+        );
+        const solPhotoUrls = fullPhotos.map(p => `data:image/jpeg;base64,${p.data}`);
+
+        phBox.innerHTML = '';
+        fullPhotos.forEach((full, pIdx) => {
           const img = document.createElement('img');
           img.src = `data:image/jpeg;base64,${full.data}`;
-          img.style.cssText = 'width:64px; height:50px; object-fit:cover; border-radius:4px; border:1px solid var(--border); cursor:pointer;';
-          img.onclick = () => openLightboxGallery([`data:image/jpeg;base64,${full.data}`], 0);
+          img.style.cssText = 'width:64px; height:50px; object-fit:cover; border-radius:4px; border:1px solid var(--border); cursor:pointer; transition:transform 0.15s ease;';
+          img.onmouseover = () => img.style.transform = 'scale(1.05)';
+          img.onmouseout = () => img.style.transform = 'scale(1)';
+          img.onclick = () => openLightboxGallery(solPhotoUrls, pIdx);
           phBox.appendChild(img);
-        }
+        });
       });
 
       // Dokumenty wariantu
@@ -2092,6 +2104,7 @@ async function loadRecordSolutions(recId) {
     box.innerHTML = `<div style="font-size:12px; color:var(--red);">Błąd ładowania wariantów.</div>`;
   }
 }
+
 
 async function loadRecordDocs(recId) {
   const box = document.getElementById('detail-docs-box');
