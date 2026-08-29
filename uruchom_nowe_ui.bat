@@ -49,7 +49,7 @@ if errorlevel 1 (
 )
 
 echo ========================================================
-echo   Rejestr Usterek v5.0 — Panel Kontroli Jakosci
+echo   Rejestr Usterek v5.0 -- Panel Kontroli Jakosci
 echo ========================================================
 echo.
 echo   [1/2] Inicjalizacja bazy danych i serwera lokalnego...
