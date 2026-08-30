@@ -140,7 +140,7 @@ def get_user_from_token(token: str):
     try:
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT u.id, u.username, u.full_name, u.email, u.role, u.is_active, t.expires_at
+            SELECT u.id, u.username, u.full_name, u.email, u.phone, u.role, u.is_active, u.must_change_password, t.expires_at
             FROM auth_tokens t
             JOIN users u ON t.user_id = u.id
             WHERE t.token = ? AND u.is_active = 1
@@ -299,8 +299,10 @@ def init_db():
             salt TEXT NOT NULL,
             full_name TEXT NOT NULL,
             email TEXT,
+            phone TEXT,
             role TEXT NOT NULL DEFAULT 'technik',
             is_active INTEGER NOT NULL DEFAULT 1,
+            must_change_password INTEGER NOT NULL DEFAULT 0,
             created_at TEXT NOT NULL
         )
     """)
@@ -434,6 +436,16 @@ def init_db():
     if migrated_docs_count > 0:
         print(f"[MIGRATION] Przeniesiono {migrated_docs_count} dokumentów z usterki do 'solution_documents' (Wariant 1).")
 
+    # Migracja kolumn w tabeli users
+    cursor.execute("PRAGMA table_info(users)")
+    u_cols = [c["name"] for c in cursor.fetchall()]
+    if "email" not in u_cols:
+        cursor.execute("ALTER TABLE users ADD COLUMN email TEXT")
+    if "phone" not in u_cols:
+        cursor.execute("ALTER TABLE users ADD COLUMN phone TEXT")
+    if "must_change_password" not in u_cols:
+        cursor.execute("ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0")
+
     # Bootstrap domyślnego administratora jeśli brak użytkowników
     cursor.execute("SELECT COUNT(*) as count FROM users")
     if cursor.fetchone()["count"] == 0:
@@ -478,7 +490,7 @@ def auth_login():
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute("""
-        SELECT id, username, password_hash, salt, full_name, email, role, is_active
+        SELECT id, username, password_hash, salt, full_name, email, phone, role, is_active, must_change_password
         FROM users
         WHERE LOWER(username) = ?
     """, (username,))
@@ -515,7 +527,9 @@ def auth_login():
             "username": user["username"],
             "full_name": user["full_name"],
             "email": user["email"] or "",
-            "role": user["role"]
+            "phone": user["phone"] or "",
+            "role": user["role"],
+            "must_change_password": bool(user["must_change_password"])
         }
     })
 
@@ -530,7 +544,9 @@ def auth_me():
             "username": user["username"],
             "full_name": user["full_name"],
             "email": user["email"] or "",
-            "role": user["role"]
+            "phone": user.get("phone") or "",
+            "role": user["role"],
+            "must_change_password": bool(user.get("must_change_password", 0))
         }
     })
 
@@ -560,18 +576,24 @@ def auth_change_password():
 
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT password_hash, salt FROM users WHERE id = ?", (user["id"],))
+    cursor.execute("SELECT password_hash, salt, must_change_password FROM users WHERE id = ?", (user["id"],))
     row = cursor.fetchone()
-    if not row or not verify_password(old_pw, row["password_hash"], row["salt"]):
+    if not row:
         conn.close()
-        return jsonify({"error": "Aktualne hasło jest nieprawidłowe."}), 400
+        return jsonify({"error": "Nie znaleziono użytkownika."}), 404
+
+    # Jeśli użytkownik nie jest w trybie wymuszonej zmiany, wymagaj podania poprawnego starego hasła
+    if not row["must_change_password"]:
+        if not old_pw or not verify_password(old_pw, row["password_hash"], row["salt"]):
+            conn.close()
+            return jsonify({"error": "Aktualne hasło jest nieprawidłowe."}), 400
 
     new_hash, new_salt = hash_password(new_pw)
-    cursor.execute("UPDATE users SET password_hash = ?, salt = ? WHERE id = ?",
+    cursor.execute("UPDATE users SET password_hash = ?, salt = ?, must_change_password = 0 WHERE id = ?",
                    (new_hash, new_salt, user["id"]))
     conn.commit()
     conn.close()
-    return jsonify({"status": "ok", "message": "Hasło zostało zmienione."})
+    return jsonify({"status": "ok", "message": "Hasło zostało pomyślnie zmienione."})
 
 @app.route("/api/auth/request-reset", methods=["POST"])
 def auth_request_reset():
@@ -651,7 +673,7 @@ def auth_reset_password():
 
     user_id = row["user_id"]
     new_hash, new_salt = hash_password(new_pw)
-    cursor.execute("UPDATE users SET password_hash = ?, salt = ? WHERE id = ?",
+    cursor.execute("UPDATE users SET password_hash = ?, salt = ?, must_change_password = 0 WHERE id = ?",
                    (new_hash, new_salt, user_id))
     cursor.execute("DELETE FROM password_reset_codes WHERE user_id = ?", (user_id,))
     # Unieważnij wszystkie aktywne sesje tego użytkownika
@@ -690,7 +712,7 @@ def get_users():
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute("""
-        SELECT id, username, full_name, email, role, is_active, created_at
+        SELECT id, username, full_name, email, phone, role, is_active, must_change_password, created_at
         FROM users
         ORDER BY role ASC, username ASC
     """)
@@ -708,8 +730,10 @@ def create_user():
     username = (data.get("username") or "").strip()
     full_name = (data.get("full_name") or "").strip()
     email = (data.get("email") or "").strip()
+    phone = (data.get("phone") or "").strip()
     role = data.get("role", "technik")
     password = data.get("password", "")
+    must_change = 1 if data.get("must_change_password", True) else 0
 
     if not username or not full_name:
         return jsonify({"error": "Pola 'Login' oraz 'Imię i Nazwisko' są wymagane."}), 400
@@ -725,8 +749,8 @@ def create_user():
     try:
         cursor = conn.cursor()
         cursor.execute("""
-            INSERT INTO users (id, username, password_hash, salt, full_name, email, role, is_active, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO users (id, username, password_hash, salt, full_name, email, phone, role, is_active, must_change_password, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             new_id,
             username,
@@ -734,8 +758,10 @@ def create_user():
             salt,
             full_name,
             email,
+            phone,
             role,
             1,
+            must_change,
             _dt.now().isoformat(timespec="seconds")
         ))
         conn.commit()
@@ -757,8 +783,10 @@ def update_user(user_id):
     username = (data.get("username") or "").strip()
     full_name = (data.get("full_name") or "").strip()
     email = (data.get("email") or "").strip()
+    phone = (data.get("phone") or "").strip()
     role = data.get("role", "technik")
     is_active = 1 if data.get("is_active", True) else 0
+    must_change = 1 if data.get("must_change_password") else 0
 
     if not full_name:
         return jsonify({"error": "Pole 'Imię i Nazwisko' jest wymagane."}), 400
@@ -782,9 +810,9 @@ def update_user(user_id):
 
     cursor.execute("""
         UPDATE users
-        SET username = ?, full_name = ?, email = ?, role = ?, is_active = ?
+        SET username = ?, full_name = ?, email = ?, phone = ?, role = ?, is_active = ?, must_change_password = ?
         WHERE id = ?
-    """, (username, full_name, email, role, is_active, user_id))
+    """, (username, full_name, email, phone, role, is_active, must_change, user_id))
     conn.commit()
     conn.close()
 
@@ -792,6 +820,8 @@ def update_user(user_id):
     if current_user["id"] == user_id:
         current_user["username"] = username
         current_user["full_name"] = full_name
+        current_user["email"] = email
+        current_user["phone"] = phone
         current_user["role"] = role
 
     return jsonify({"status": "ok"})
@@ -805,6 +835,8 @@ def admin_reset_user_password(user_id):
 
     data = request.get_json() or {}
     new_password = data.get("new_password", "")
+    must_change = 1 if data.get("must_change_password", True) else 0
+
     if not new_password or len(new_password) < 4:
         return jsonify({"error": "Nowe hasło musi mieć co najmniej 4 znaki."}), 400
 
@@ -812,8 +844,8 @@ def admin_reset_user_password(user_id):
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute("""
-        UPDATE users SET password_hash = ?, salt = ? WHERE id = ?
-    """, (pw_hash, salt, user_id))
+        UPDATE users SET password_hash = ?, salt = ?, must_change_password = ? WHERE id = ?
+    """, (pw_hash, salt, must_change, user_id))
     cursor.execute("DELETE FROM auth_tokens WHERE user_id = ?", (user_id,))
     conn.commit()
     conn.close()

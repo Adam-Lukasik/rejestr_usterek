@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Rejestr Usterek v5.0 — Panel Kontroli Jakości</title>
+<title>Rejestr Usterek v5.0 — Panel Diagnostyki & Serwisu</title>
 <style>
   :root {
     --font-sans: "Segoe UI", -apple-system, BlinkMacSystemFont, Roboto, Helvetica, Arial, sans-serif;
@@ -126,12 +126,75 @@
     border-right: 1px solid rgba(255, 255, 255, 0.08);
     user-select: none;
     z-index: 50;
-    transition: width 0.25s ease;
+    transition: width 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .sidebar.collapsed {
+    width: 68px;
+  }
+  .sidebar.collapsed .brand-titles,
+  .sidebar.collapsed .user-info-text,
+  .sidebar.collapsed .btn-switch-tech,
+  .sidebar.collapsed .nav-section-title,
+  .sidebar.collapsed .nav-item span,
+  .sidebar.collapsed .nav-badge,
+  .sidebar.collapsed .sidebar-footer-btn span {
+    display: none !important;
+  }
+  .sidebar.collapsed .sidebar-header {
+    padding: 14px 10px;
+    justify-content: center;
+  }
+  .sidebar.collapsed .brand-box {
+    display: none;
+  }
+  .sidebar.collapsed .sidebar-user-card {
+    margin: 10px 8px;
+    padding: 8px 0;
+    justify-content: center;
+    border-color: transparent;
+    background: transparent;
+  }
+  .sidebar.collapsed .nav-item {
+    justify-content: center;
+    padding: 11px 0;
+    margin: 0 6px;
+  }
+  .sidebar.collapsed .sidebar-footer {
+    padding: 10px 8px;
+  }
+  .sidebar.collapsed .sidebar-footer-btn {
+    justify-content: center;
+    padding: 8px 0;
+  }
+
+  .btn-toggle-sidebar {
+    background: transparent;
+    border: none;
+    color: var(--text-sidebar);
+    cursor: pointer;
+    padding: 6px;
+    border-radius: var(--radius-sm);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s ease;
+    flex-shrink: 0;
+  }
+  .btn-toggle-sidebar:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: #FFFFFF;
+  }
+  .sidebar.collapsed .btn-toggle-sidebar {
+    transform: rotate(180deg);
   }
 
   .sidebar-header {
-    padding: 18px 18px 14px 18px;
+    padding: 18px 16px 14px 18px;
     border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
   }
 
   .brand-box {
@@ -427,9 +490,9 @@
     flex: 2;
     min-width: 220px;
   }
-  .search-box input {
+  .search-box input, .search-box input[type="text"] {
     width: 100%;
-    padding: 8px 12px 8px 34px;
+    padding: 8px 12px 8px 36px !important;
     border: 1px solid var(--border);
     border-radius: var(--radius-md);
     background: var(--bg-input);
@@ -444,10 +507,12 @@
   }
   .search-box svg {
     position: absolute;
-    left: 10px;
+    left: 11px;
     top: 50%;
     transform: translateY(-50%);
     color: var(--text-dim);
+    pointer-events: none;
+    z-index: 2;
   }
 
   .select-filter {
@@ -504,6 +569,26 @@
     border-color: var(--border-subtle);
   }
 
+  .btn-quick-add {
+    background: transparent;
+    border: 1px dashed var(--border);
+    color: var(--primary);
+    font-size: 11.5px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    transition: all 0.15s ease;
+  }
+  .btn-quick-add:hover {
+    background: var(--primary-light);
+    border-color: var(--primary);
+    color: var(--primary-hover);
+  }
+
   /* ── KONTENER MASTER-DETAIL (PODZIAŁ NA TABELĘ I PODGLĄD) ── */
   .master-detail-container {
     flex: 1;
@@ -520,6 +605,12 @@
     background: var(--bg-card);
     display: flex;
     flex-direction: column;
+    min-width: 320px;
+    transition: flex 0.2s ease;
+  }
+  .master-pane.full-width {
+    flex: 1 !important;
+    border-right: none !important;
   }
 
   .table-scroll-area {
@@ -552,6 +643,7 @@
   table.data-table tbody tr {
     border-bottom: 1px solid var(--border);
     cursor: pointer;
+    user-select: none;
     transition: background 0.12s ease;
   }
   table.data-table tbody tr:hover {
@@ -562,7 +654,7 @@
     border-left: 3px solid var(--primary);
   }
   table.data-table td {
-    padding: 11px 14px;
+    padding: 10px 14px;
     vertical-align: middle;
   }
 
@@ -607,12 +699,16 @@
   /* Prawa kolumna: Szczegóły usterki (Detail) */
   .detail-pane {
     flex: 4;
-    min-width: 380px;
-    max-width: 600px;
+    min-width: 360px;
+    max-width: 580px;
     overflow-y: auto;
     background: var(--bg-app);
     display: flex;
     flex-direction: column;
+    transition: all 0.2s ease;
+  }
+  .detail-pane.hidden {
+    display: none !important;
   }
 
   .detail-empty-state {
@@ -905,6 +1001,50 @@
     from { opacity: 0; transform: scale(0.96); }
     to { opacity: 1; transform: scale(1); }
   }
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  /* Pełnoekranowe okno szczegółów i podglądu usterki */
+  #modal-defect-preview {
+    padding: 0 !important;
+    background: rgba(15, 23, 42, 0.85) !important;
+    backdrop-filter: blur(8px) !important;
+    z-index: 1200 !important;
+  }
+  #modal-defect-preview-box {
+    width: 100vw !important;
+    height: 100vh !important;
+    max-width: 100vw !important;
+    max-height: 100vh !important;
+    border-radius: 0 !important;
+    border: none !important;
+    box-shadow: none !important;
+    animation: fadeIn 0.18s cubic-bezier(0.16, 1, 0.3, 1) !important;
+    background: var(--bg-app) !important;
+    display: flex !important;
+    flex-direction: column !important;
+  }
+  #modal-defect-preview .modal-header {
+    background: var(--bg-sidebar);
+    padding: 12px 24px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    flex-shrink: 0;
+    box-shadow: var(--shadow-sm);
+  }
+  #modal-defect-preview #modal-defect-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 24px 32px;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    max-width: 1600px;
+    margin: 0 auto;
+    width: 100%;
+    box-sizing: border-box;
+  }
   .modal-header {
     background: var(--bg-sidebar);
     color: #FFFFFF;
@@ -1007,6 +1147,40 @@
     from { opacity: 0; transform: translateY(15px); }
     to { opacity: 1; transform: translateY(0); }
   }
+
+  @media print {
+    body * {
+      visibility: hidden;
+    }
+    #modal-defect-preview, #modal-defect-preview * {
+      visibility: visible;
+    }
+    #modal-defect-preview {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: auto;
+      background: #FFFFFF !important;
+      padding: 0;
+      margin: 0;
+      display: block !important;
+    }
+    #modal-defect-preview-box {
+      max-width: 100% !important;
+      width: 100% !important;
+      max-height: none !important;
+      border: none !important;
+      box-shadow: none !important;
+      overflow: visible !important;
+    }
+    #modal-defect-body {
+      overflow: visible !important;
+    }
+    .btn-close-modal, #btn-modal-preview-print, .detail-actions-row button, .section-card-title button, button {
+      display: none !important;
+    }
+  }
 </style>
 </head>
 <body>
@@ -1027,6 +1201,9 @@
           </div>
         </div>
       </div>
+      <button class="btn-toggle-sidebar" id="btn-toggle-sidebar" title="Zwiń / Rozwiń menu boczne (Ctrl+B)">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="9" y1="3" x2="9" y2="21"/><path d="M14 9l-3 3 3 3"/></svg>
+      </button>
     </div>
 
     <!-- Karta aktywnego technika -->
@@ -1045,35 +1222,35 @@
     <nav class="sidebar-nav">
       <div class="nav-section-title">Główne Menu</div>
       
-      <div class="nav-item active" data-view="dashboard" id="nav-dashboard">
+      <div class="nav-item active" data-view="dashboard" id="nav-dashboard" title="Rejestr usterek">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
         <span>Rejestr usterek</span>
         <span class="nav-badge alert" id="nav-badge-open">0</span>
       </div>
 
-      <div class="nav-item" data-view="new-defect" id="nav-new-defect">
+      <div class="nav-item" data-view="new-defect" id="nav-new-defect" title="Nowe zgłoszenie">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
         <span>Nowe zgłoszenie</span>
       </div>
 
       <div class="nav-section-title">Konfiguracja</div>
 
-      <div class="nav-item" data-view="projects" id="nav-projects">
+      <div class="nav-item" data-view="projects" id="nav-projects" title="Baza projektów (PS)">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
         <span>Baza projektów (PS)</span>
       </div>
 
-      <div class="nav-item" data-view="dictionaries" id="nav-dictionaries">
+      <div class="nav-item" data-view="dictionaries" id="nav-dictionaries" title="Słowniki">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
         <span>Słowniki</span>
       </div>
 
-      <div class="nav-item" data-view="users" id="nav-users">
+      <div class="nav-item" data-view="users" id="nav-users" title="Użytkownicy">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
         <span>Użytkownicy</span>
       </div>
 
-      <div class="nav-item" data-view="backup" id="nav-backup">
+      <div class="nav-item" data-view="backup" id="nav-backup" title="Kopie & Eksport">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
         <span>Kopie & Eksport</span>
       </div>
@@ -1081,15 +1258,15 @@
 
     <!-- Stopka sidebaru -->
     <div class="sidebar-footer">
-      <button class="sidebar-footer-btn" id="btn-toggle-theme">
+      <button class="sidebar-footer-btn" id="btn-toggle-theme" title="Zmień motyw">
         <span id="theme-icon">🌙</span>
         <span id="theme-text">Tryb ciemny</span>
       </button>
-      <button class="sidebar-footer-btn" id="btn-change-password">
+      <button class="sidebar-footer-btn" id="btn-change-password" title="Zmień hasło">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
         <span>Zmień hasło</span>
       </button>
-      <button class="sidebar-footer-btn logout" id="btn-logout">
+      <button class="sidebar-footer-btn logout" id="btn-logout" title="Wyloguj">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
         <span>Wyloguj</span>
       </button>
@@ -1118,7 +1295,11 @@
           </div>
         </div>
 
-        <div style="display:flex; gap:8px;">
+        <div style="display:flex; gap:8px; align-items:center;">
+          <button class="btn-secondary-action" id="btn-toggle-detail-pane" title="Przełącz panel boczny szczegółów / pełna szerokość tabeli">
+            <svg id="icon-toggle-detail" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="15" y1="3" x2="15" y2="21"/></svg>
+            <span id="text-toggle-detail">Ukryj panel</span>
+          </button>
           <button class="btn-secondary-action" id="btn-export-csv">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
             Eksport CSV
@@ -1160,12 +1341,11 @@
             <table class="data-table">
               <thead>
                 <tr>
-                  <th style="width:110px;">Status</th>
-                  <th style="width:130px;">Data / Autor</th>
-                  <th style="width:130px;">Projekt (PS)</th>
-                  <th style="width:150px;">Klient / Model</th>
+                  <th style="width:100px;">Status</th>
+                  <th style="width:115px;">Data</th>
+                  <th style="width:170px;">Projekt / Pojazd</th>
                   <th>Opis problemu</th>
-                  <th style="width:70px; text-align:center;">Załączniki</th>
+                  <th style="width:65px; text-align:center;">Pliki</th>
                 </tr>
               </thead>
               <tbody id="defects-tbody">
@@ -1336,22 +1516,34 @@
       </div>
     </section>
 
-    <!-- ── WIDOK 4: SŁOWNIKI (KLIENCI, TYPY) ── -->
+    <!-- ── WIDOK 4: SŁOWNIKI (KLIENCI, MODELE, TYPY) ── -->
     <section class="view-panel" id="view-dictionaries">
-      <div style="padding:20px; flex:1; overflow-y:auto; max-width:1000px; margin:0 auto; width:100%;">
+      <div style="padding:20px; flex:1; overflow-y:auto; max-width:1150px; margin:0 auto; width:100%;">
         <h2 style="font-size:18px; font-weight:700; margin-bottom:16px;">Zarządzanie Słownikami</h2>
         
-        <div style="display:grid; grid-template-columns:1fr 1fr; gap:20px;">
+        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); gap:20px;">
           <!-- Klienci -->
           <div class="detail-section-card">
             <div class="section-card-title">
               <span>Lista Klientów</span>
             </div>
             <div style="display:flex; gap:8px; margin-bottom:12px;">
-              <input type="text" id="inp-new-client" placeholder="Nazwa nowego klienta...">
+              <input type="text" id="inp-new-client" placeholder="np. EOE - East of England Ambulance Service" onkeydown="if(event.key==='Enter'){event.preventDefault();addDictionaryItem('klienci','inp-new-client');}">
               <button class="btn-primary-action" onclick="addDictionaryItem('klienci', 'inp-new-client')">+ Dodaj</button>
             </div>
             <div id="dict-list-klienci" style="display:flex; flex-direction:column; gap:6px; max-height:360px; overflow-y:auto;"></div>
+          </div>
+
+          <!-- Modele Aut Bazowych -->
+          <div class="detail-section-card">
+            <div class="section-card-title">
+              <span>Modele Aut Bazowych</span>
+            </div>
+            <div style="display:flex; gap:8px; margin-bottom:12px;">
+              <input type="text" id="inp-new-model" placeholder="Nazwa nowego modelu..." onkeydown="if(event.key==='Enter'){event.preventDefault();addDictionaryItem('modele','inp-new-model');}">
+              <button class="btn-primary-action" onclick="addDictionaryItem('modele', 'inp-new-model')">+ Dodaj</button>
+            </div>
+            <div id="dict-list-modele" style="display:flex; flex-direction:column; gap:6px; max-height:360px; overflow-y:auto;"></div>
           </div>
 
           <!-- Typy usterek -->
@@ -1360,7 +1552,7 @@
               <span>Typy Usterek</span>
             </div>
             <div style="display:flex; gap:8px; margin-bottom:12px;">
-              <input type="text" id="inp-new-type" placeholder="Nazwa nowego typu usterki...">
+              <input type="text" id="inp-new-type" placeholder="Nazwa nowego typu usterki..." onkeydown="if(event.key==='Enter'){event.preventDefault();addDictionaryItem('typy','inp-new-type');}">
               <button class="btn-primary-action" onclick="addDictionaryItem('typy', 'inp-new-type')">+ Dodaj</button>
             </div>
             <div id="dict-list-typy" style="display:flex; flex-direction:column; gap:6px; max-height:360px; overflow-y:auto;"></div>
@@ -1386,6 +1578,7 @@
               <tr>
                 <th>Login</th>
                 <th>Imię i Nazwisko</th>
+                <th>Kontakt</th>
                 <th>Rola</th>
                 <th>Status</th>
                 <th style="text-align:right;">Akcje</th>
@@ -1433,6 +1626,27 @@
   </main>
 </div>
 
+<!-- ════════════ MODAL: PEŁNY PODGLĄD USTERKI (DWUKLIK / PODGLĄD — PEŁNY EKRAN) ════════════ -->
+<div class="modal-backdrop" id="modal-defect-preview" style="display:none;" onclick="if(event.target===this)closeModal('modal-defect-preview')">
+  <div class="modal-box" id="modal-defect-preview-box" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <div style="display:flex; align-items:center; gap:10px; min-width:0;">
+        <span style="font-size:18px;">🔍</span>
+        <h3 id="modal-defect-title" style="margin:0; font-size:15px; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">Podgląd usterki</h3>
+      </div>
+      <div style="display:flex; align-items:center; gap:8px;">
+        <button type="button" class="btn-secondary-action" id="btn-modal-preview-print" style="padding:4px 10px; font-size:12px;" onclick="window.print()" title="Drukuj kartę usterki">
+          🖨 Drukuj
+        </button>
+        <button type="button" class="btn-close-modal" onclick="closeModal('modal-defect-preview')" title="Zamknij podgląd (ESC)">✕</button>
+      </div>
+    </div>
+    <div class="modal-body" id="modal-defect-body">
+      <!-- Treść generowana dynamicznie w openDefectPreview() -->
+    </div>
+  </div>
+</div>
+
 <!-- ════════════ MODAL: SZYBKIE PRZEŁĄCZANIE TECHNIKA / LOGOWANIE ════════════ -->
 <div class="modal-backdrop" id="modal-quick-switch" style="display:none;">
   <div class="modal-box">
@@ -1462,12 +1676,34 @@
           <input type="text" id="pe-ps" required placeholder="np. PS011871">
         </div>
         <div class="form-group">
-          <label>Klient *</label>
-          <select id="pe-klient" required></select>
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:5px;">
+            <label style="margin-bottom:0;">Klient *</label>
+            <button type="button" class="btn-quick-add" onclick="toggleQuickAdd('client')" title="Dodaj nowego klienta do listy">＋ Nowy klient</button>
+          </div>
+          <select id="pe-klient" required onchange="handleProjectDropdownChange('client', this.value)"></select>
+          <div id="quick-add-client-box" style="display:none; margin-top:8px; padding:10px 12px; background:var(--bg-card-subtle); border:1px solid var(--border); border-radius:var(--radius-md);">
+            <div style="font-size:12px; font-weight:600; color:var(--text-muted); margin-bottom:6px;">Dodaj nowego klienta:</div>
+            <div style="display:flex; gap:6px;">
+              <input type="text" id="quick-client-input" placeholder="Wpisz nazwę klienta..." style="flex:1; padding:6px 10px; font-size:13px;" onkeydown="if(event.key==='Enter'){event.preventDefault();submitQuickAdd('client');}if(event.key==='Escape'){event.preventDefault();toggleQuickAdd('client',false);}">
+              <button type="button" class="btn-primary-action" style="padding:6px 12px; font-size:12px; white-space:nowrap;" onclick="submitQuickAdd('client')">Zapisz</button>
+              <button type="button" class="btn-secondary-action" style="padding:6px 10px; font-size:12px;" onclick="toggleQuickAdd('client', false)">✕</button>
+            </div>
+          </div>
         </div>
         <div class="form-group">
-          <label>Model auta bazowego *</label>
-          <select id="pe-model" required></select>
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:5px;">
+            <label style="margin-bottom:0;">Model auta bazowego *</label>
+            <button type="button" class="btn-quick-add" onclick="toggleQuickAdd('model')" title="Dodaj nowy model do listy">＋ Nowy model</button>
+          </div>
+          <select id="pe-model" required onchange="handleProjectDropdownChange('model', this.value)"></select>
+          <div id="quick-add-model-box" style="display:none; margin-top:8px; padding:10px 12px; background:var(--bg-card-subtle); border:1px solid var(--border); border-radius:var(--radius-md);">
+            <div style="font-size:12px; font-weight:600; color:var(--text-muted); margin-bottom:6px;">Dodaj nowy model auta:</div>
+            <div style="display:flex; gap:6px;">
+              <input type="text" id="quick-model-input" placeholder="np. MAN TGE 2024, Mercedes Sprinter..." style="flex:1; padding:6px 10px; font-size:13px;" onkeydown="if(event.key==='Enter'){event.preventDefault();submitQuickAdd('model');}if(event.key==='Escape'){event.preventDefault();toggleQuickAdd('model',false);}">
+              <button type="button" class="btn-primary-action" style="padding:6px 12px; font-size:12px; white-space:nowrap;" onclick="submitQuickAdd('model')">Zapisz</button>
+              <button type="button" class="btn-secondary-action" style="padding:6px 10px; font-size:12px;" onclick="toggleQuickAdd('model', false)">✕</button>
+            </div>
+          </div>
         </div>
         <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:16px;">
           <button type="button" class="btn-secondary-action" onclick="closeModal('modal-project-edit')">Anuluj</button>
@@ -1500,6 +1736,16 @@
         </div>
         <div class="form-row">
           <div class="form-group">
+            <label>Adres e-mail (do odzyskiwania hasła)</label>
+            <input type="email" id="ue-email" placeholder="np. jan.kowalski@gmail.com">
+          </div>
+          <div class="form-group">
+            <label>Numer telefonu (opcjonalny)</label>
+            <input type="tel" id="ue-phone" placeholder="np. 600 100 200">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
             <label>Rola</label>
             <select id="ue-role">
               <option value="technik">Technik (zgłoszenia i naprawy)</option>
@@ -1511,6 +1757,12 @@
             <label>Hasło początkowe <span id="ue-pw-hint">(min. 4 znaki)</span></label>
             <input type="password" id="ue-password" placeholder="Wpisz hasło...">
           </div>
+        </div>
+        <div class="form-group" style="margin-top:6px; margin-bottom:12px;">
+          <label style="display:flex; align-items:center; gap:8px; font-weight:500; cursor:pointer; font-size:13px;">
+            <input type="checkbox" id="ue-must-change" checked style="width:16px; height:16px; cursor:pointer;">
+            <span>Wymuś zmianę hasła przy pierwszym logowaniu</span>
+          </label>
         </div>
         <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:16px;">
           <button type="button" class="btn-secondary-action" onclick="closeModal('modal-user-edit')">Anuluj</button>
@@ -1601,15 +1853,114 @@
       <form id="form-login">
         <div class="form-group" style="margin-bottom:14px;">
           <label for="login-username">Login</label>
-          <input type="text" id="login-username" required placeholder="Wpisz login..." autofocus autocomplete="username">
+          <input type="text" id="login-username" required placeholder="Wpisz login..." autocomplete="username">
         </div>
-        <div class="form-group" style="margin-bottom:16px;">
-          <label for="login-password">Hasło</label>
+        <div class="form-group" style="margin-bottom:10px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+            <label for="login-password" style="margin-bottom:0;">Hasło</label>
+            <button type="button" onclick="openResetPasswordModal()" style="background:none; border:none; color:#2563EB; font-size:12px; font-weight:600; cursor:pointer; padding:0; text-decoration:none;" onmouseover="this.style.textDecoration='underline'" onmouseout="this.style.textDecoration='none'">
+              Nie pamiętasz hasła?
+            </button>
+          </div>
           <input type="password" id="login-password" required placeholder="Wpisz hasło..." autocomplete="current-password">
         </div>
         <div id="login-error-box" style="display:none; padding:8px 12px; background:var(--red-bg); color:var(--red-text); border-radius:var(--radius-md); font-size:12px; margin-bottom:14px; font-weight:500;"></div>
-        <button type="submit" class="btn-primary-action" style="width:100%; padding:10px; font-size:14px; justify-content:center;">
+        <button type="submit" class="btn-primary-action" style="width:100%; padding:10px; font-size:14px; justify-content:center; margin-top:8px;">
           Zaloguj się
+        </button>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════ MODAL: SAMODZIELNY RESET HASŁA ════════════ -->
+<div class="modal-backdrop" id="modal-reset-password" style="display:none; background:var(--bg-sidebar); z-index:10000;">
+  <div class="modal-box" style="max-width:440px; box-shadow:var(--shadow-xl); border:1px solid var(--border-subtle);">
+    <div class="modal-header" style="padding:16px 20px; border-bottom:1px solid var(--border);">
+      <h3 style="font-size:16px; font-weight:700; display:flex; align-items:center; gap:8px;">
+        <span>🔑</span> <span>Resetowanie hasła</span>
+      </h3>
+      <button class="btn-close-modal" onclick="closeResetPasswordModal()">✕</button>
+    </div>
+    <div class="modal-body" style="padding:22px;">
+      
+      <!-- KROK 1: Podanie loginu lub emaila -->
+      <div id="reset-step-1">
+        <p style="font-size:13px; color:var(--text-muted); margin-bottom:16px; line-height:1.4;">
+          Wpisz swój <strong>login</strong> lub <strong>adres e-mail</strong> przypisany do Twojego konta. Prześlemy Ci 6-cyfrowy kod weryfikacyjny.
+        </p>
+        <form id="form-reset-request">
+          <div class="form-group" style="margin-bottom:16px;">
+            <label for="reset-identifier">Login lub E-mail *</label>
+            <input type="text" id="reset-identifier" required placeholder="np. j.kowalski lub jan@gmail.com">
+          </div>
+          <div id="reset-step1-msg" style="display:none; padding:10px 12px; border-radius:var(--radius-md); font-size:12.5px; margin-bottom:16px; line-height:1.4;"></div>
+          <div style="display:flex; justify-content:flex-end; gap:8px;">
+            <button type="button" class="btn-secondary-action" onclick="closeResetPasswordModal()">Wróć do logowania</button>
+            <button type="submit" class="btn-primary-action" id="btn-send-reset-code">
+              Wyślij kod weryfikacyjny ►
+            </button>
+          </div>
+        </form>
+      </div>
+
+      <!-- KROK 2: Wprowadzenie kodu i nowego hasła -->
+      <div id="reset-step-2" style="display:none;">
+        <p style="font-size:13px; color:var(--text-muted); margin-bottom:14px; line-height:1.4;">
+          Wprowadź 6-cyfrowy kod weryfikacyjny (wysłany na e-mail) oraz ustaw nowe hasło.
+        </p>
+        <form id="form-reset-submit">
+          <div class="form-group" style="margin-bottom:14px;">
+            <label for="reset-code">Kod weryfikacyjny PIN (6 cyfr) *</label>
+            <input type="text" id="reset-code" required maxlength="6" style="letter-spacing:4px; font-family:var(--font-mono); font-size:18px; font-weight:700; text-align:center;" placeholder="123456">
+          </div>
+          <div class="form-group" style="margin-bottom:14px;">
+            <label for="reset-new-password">Nowe hasło (min. 4 znaki) *</label>
+            <input type="password" id="reset-new-password" required minlength="4" placeholder="Wpisz nowe hasło...">
+          </div>
+          <div class="form-group" style="margin-bottom:16px;">
+            <label for="reset-confirm-password">Powtórz nowe hasło *</label>
+            <input type="password" id="reset-confirm-password" required minlength="4" placeholder="Powtórz nowe hasło...">
+          </div>
+          <div id="reset-step2-msg" style="display:none; padding:10px 12px; border-radius:var(--radius-md); font-size:12.5px; margin-bottom:16px; line-height:1.4;"></div>
+          <div style="display:flex; justify-content:space-between; gap:8px;">
+            <button type="button" class="btn-secondary-action" onclick="goToResetStep(1)">◄ Wróć</button>
+            <button type="submit" class="btn-primary-action">
+              ✓ Zapisz nowe hasło
+            </button>
+          </div>
+        </form>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- ════════════ MODAL: WYMUSZONA ZMIANA HASŁA (FIRST LOGIN) ════════════ -->
+<div class="modal-backdrop" id="modal-force-change-password" style="display:none; background:rgba(15,23,42,0.92); z-index:10001;">
+  <div class="modal-box" style="max-width:440px; box-shadow:var(--shadow-xl); border:2px solid #2563EB;">
+    <div style="background:linear-gradient(135deg, #1E293B, #0F172A); padding:22px 20px 16px 20px; text-align:center; color:#FFFFFF; border-bottom:1px solid rgba(255,255,255,0.08);">
+      <div style="width:48px; height:48px; background:linear-gradient(135deg, #EAB308, #CA8A04); border-radius:12px; display:inline-flex; align-items:center; justify-content:center; margin-bottom:10px; box-shadow:0 4px 14px rgba(234,179,8,0.4);">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+      </div>
+      <h3 style="font-size:17px; font-weight:700; margin:0;">Wymagana zmiana hasła</h3>
+      <p style="font-size:12.5px; color:#94A3B8; margin-top:6px; line-height:1.4;">
+        To Twoje pierwsze logowanie lub hasło tymczasowe. Ustaw własne, bezpieczne hasło, aby uzyskać dostęp do aplikacji.
+      </p>
+    </div>
+    <div class="modal-body" style="padding:22px;">
+      <form id="form-force-change-password">
+        <div class="form-group" style="margin-bottom:14px;">
+          <label for="force-new-password">Nowe hasło (min. 4 znaki) *</label>
+          <input type="password" id="force-new-password" required minlength="4" placeholder="Wpisz nowe hasło...">
+        </div>
+        <div class="form-group" style="margin-bottom:16px;">
+          <label for="force-confirm-password">Powtórz nowe hasło *</label>
+          <input type="password" id="force-confirm-password" required minlength="4" placeholder="Powtórz nowe hasło...">
+        </div>
+        <div id="force-pw-error" style="display:none; padding:8px 12px; background:var(--red-bg); color:var(--red-text); border-radius:var(--radius-md); font-size:12px; margin-bottom:14px; font-weight:500;"></div>
+        <button type="submit" class="btn-primary-action" style="width:100%; padding:10px; font-size:14px; justify-content:center;">
+          Zapisz hasło i rozpocznij pracę
         </button>
       </form>
     </div>
@@ -1642,6 +1993,7 @@ const STATE = {
 /* ── START I INICJALIZACJA ── */
 document.addEventListener('DOMContentLoaded', async () => {
   applyTheme(STATE.theme);
+  initLayoutPreferences();
   setupNavigation();
   setupEventListeners();
 
@@ -1654,6 +2006,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (meResp && meResp.user) {
         STATE.activeUser = meResp.user;
         closeModal('modal-login');
+        checkMustChangePassword();
         await loadAllData();
         startPolling();
         return;
@@ -1673,7 +2026,77 @@ function showLoginModal() {
   document.getElementById('login-password').value = '';
   const uInp = document.getElementById('login-username');
   if (!uInp.value) uInp.value = '';
-  uInp.focus();
+
+  // Wyczyść stan focusu i aktywuj pole po załadowaniu okna
+  if (document.activeElement && document.activeElement.blur) {
+    document.activeElement.blur();
+  }
+  const setFocus = () => {
+    try { window.focus(); } catch(e){}
+    if (uInp) {
+      uInp.focus();
+      uInp.select();
+    }
+  };
+  setTimeout(setFocus, 80);
+  setTimeout(setFocus, 250);
+  setTimeout(setFocus, 600);
+}
+
+function checkMustChangePassword() {
+  if (STATE.activeUser && STATE.activeUser.must_change_password) {
+    document.getElementById('modal-force-change-password').style.display = 'flex';
+    document.getElementById('force-new-password').value = '';
+    document.getElementById('force-confirm-password').value = '';
+    document.getElementById('force-pw-error').style.display = 'none';
+    setTimeout(() => {
+      document.getElementById('force-new-password').focus();
+    }, 150);
+  } else {
+    document.getElementById('modal-force-change-password').style.display = 'none';
+  }
+}
+
+function openResetPasswordModal() {
+  closeModal('modal-login');
+  document.getElementById('modal-reset-password').style.display = 'flex';
+  goToResetStep(1);
+}
+
+function closeResetPasswordModal() {
+  document.getElementById('modal-reset-password').style.display = 'none';
+  showLoginModal();
+}
+
+function goToResetStep(step) {
+  const s1 = document.getElementById('reset-step-1');
+  const s2 = document.getElementById('reset-step-2');
+  const msg1 = document.getElementById('reset-step1-msg');
+  const msg2 = document.getElementById('reset-step2-msg');
+  if (msg1) msg1.style.display = 'none';
+  if (msg2) msg2.style.display = 'none';
+
+  if (step === 1) {
+    if (s1) s1.style.display = 'block';
+    if (s2) s2.style.display = 'none';
+    const idInp = document.getElementById('reset-identifier');
+    if (idInp) {
+      idInp.value = (document.getElementById('login-username')?.value || '').trim();
+      setTimeout(() => idInp.focus(), 100);
+    }
+  } else {
+    if (s1) s1.style.display = 'none';
+    if (s2) s2.style.display = 'block';
+    const codeInp = document.getElementById('reset-code');
+    if (codeInp) {
+      codeInp.value = '';
+      setTimeout(() => codeInp.focus(), 100);
+    }
+    const npInp = document.getElementById('reset-new-password');
+    const cpInp = document.getElementById('reset-confirm-password');
+    if (npInp) npInp.value = '';
+    if (cpInp) cpInp.value = '';
+  }
 }
 
 function startPolling() {
@@ -1834,6 +2257,20 @@ function renderKPIs() {
   document.getElementById('nav-badge-open').textContent = open;
 }
 
+/* ── POMOCNICZE: SKRÓT NAZWY KLIENTA ── */
+function getClientShortName(klient) {
+  if (!klient) return '—';
+  const s = String(klient).trim();
+  if (s.includes(' - ')) return s.split(' - ')[0].trim();
+  if (s.includes(' – ')) return s.split(' – ')[0].trim();
+  if (s.includes(' — ')) return s.split(' — ')[0].trim();
+  if (s.includes(': ')) return s.split(': ')[0].trim();
+  const matchParen = s.match(/\(([^)]+)\)/);
+  if (matchParen && matchParen[1].length <= 6) return matchParen[1].trim();
+  if (s.length <= 6) return s;
+  return s.split(' ')[0];
+}
+
 /* ── TABELA USTEREK (MASTER) ── */
 function renderDefectsTable() {
   const tbody = document.getElementById('defects-tbody');
@@ -1854,15 +2291,16 @@ function renderDefectsTable() {
   });
 
   if (filtered.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; padding:40px; color:var(--text-muted);">Brak usterek spełniających wybrane kryteria wyszukiwania.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; padding:40px; color:var(--text-muted);">Brak usterek spełniających wybrane kryteria wyszukiwania.</td></tr>`;
     return;
   }
 
   tbody.innerHTML = filtered.map(r => {
     const isSelected = r.id === STATE.selectedRecordId;
     const isFixed = r.status === 'fixed';
+    const clientShort = getClientShortName(r.klient);
     return `
-      <tr class="${isSelected ? 'selected' : ''}" onclick="selectRecord('${r.id}')">
+      <tr class="${isSelected ? 'selected' : ''}" onclick="selectRecord('${r.id}')" ondblclick="openDefectPreview('${r.id}')" title="Kliknij, aby podglądnąć w panelu bocznym. Podwójne kliknięcie otwiera pełne okno podglądu usterki.">
         <td>
           <span class="status-badge ${isFixed ? 'fixed' : 'open'}">
             <span class="dot"></span>
@@ -1870,19 +2308,20 @@ function renderDefectsTable() {
           </span>
         </td>
         <td>
-          <div style="font-weight:600; font-size:12.5px;">${formatDateTime(r.created)}</div>
-          <div style="font-size:11.5px; color:var(--text-muted);">${escapeHtml(r.created_by || 'Technik')}</div>
+          <div style="font-weight:600; font-size:12px; color:var(--text-main);">${formatDateTime(r.created)}</div>
         </td>
         <td>
-          <span class="tag-project">${escapeHtml(r.projekt || '—')}</span>
+          <div>
+            <span class="tag-project">${escapeHtml(r.projekt || '—')}</span>
+            <div style="margin-top:3px; font-size:12px; line-height:1.3;" title="${escapeHtml(r.klient)} — ${escapeHtml(r.model)}">
+              <b style="color:var(--text-main); font-weight:700;">${escapeHtml(clientShort)}</b>
+              <span style="color:var(--text-muted); font-size:11.5px;">• ${escapeHtml(r.model)}</span>
+            </div>
+          </div>
         </td>
         <td>
-          <div style="font-weight:600; color:var(--text-main); font-size:12.5px;">${escapeHtml(r.klient)}</div>
-          <div style="font-size:11.5px; color:var(--text-muted);">${escapeHtml(r.model)}</div>
-        </td>
-        <td>
-          <div style="font-weight:500; line-height:1.35; overflow:hidden; text-overflow:ellipsis; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical;">${escapeHtml(r.opisProblem)}</div>
-          ${r.element ? `<span style="font-size:11px; color:var(--text-dim);">Element: ${escapeHtml(r.element)}</span>` : ''}
+          <div style="font-weight:500; line-height:1.4; overflow:hidden; text-overflow:ellipsis; display:-webkit-box; -webkit-line-clamp:4; -webkit-box-orient:vertical; word-break:break-word;">${escapeHtml(r.opisProblem)}</div>
+          ${r.element ? `<div style="font-size:11px; color:var(--text-dim); margin-top:2px;">Element: ${escapeHtml(r.element)}</div>` : ''}
         </td>
         <td style="text-align:center;" id="badge-files-${r.id}">
           <span style="color:var(--text-dim); font-size:11px;">...</span>
@@ -1965,6 +2404,9 @@ async function selectRecord(recId) {
       </div>
 
       <div class="detail-actions-row">
+        <button class="btn-secondary-action" onclick="openDefectPreview('${r.id}')" title="Otwórz pełne okno podglądu usterki">
+          🔍 Pełny podgląd
+        </button>
         ${!isFixed ? `
           <button class="btn-primary-action" onclick="markAsFixed('${r.id}')">
             ✓ Oznacz jako naprawioną
@@ -2031,17 +2473,160 @@ async function selectRecord(recId) {
   loadRecordSolutions(recId);
 }
 
+/* ── PEŁNY PODGLĄD USTERKI (MODAL / DWUKLIK) ── */
+async function openDefectPreview(recId) {
+  STATE.selectedRecordId = recId;
+  renderDefectsTable();
+
+  const r = STATE.records.find(x => x.id === recId);
+  if (!r) return;
+
+  // Uaktualnij również boczny panel w tle
+  selectRecord(recId);
+
+  const isFixed = r.status === 'fixed';
+  const modalTitle = document.getElementById('modal-defect-title');
+  if (modalTitle) {
+    modalTitle.innerHTML = `<span>${escapeHtml(r.klient)} — ${escapeHtml(r.model)}</span> <span class="tag-project" style="margin-left:8px; font-size:12px; vertical-align:middle;">${escapeHtml(r.projekt || '—')}</span>`;
+  }
+
+  const modalBody = document.getElementById('modal-defect-body');
+  if (!modalBody) return;
+
+  modalBody.innerHTML = `
+    <!-- Główny pasek statusu i akcji -->
+    <div class="detail-header-card" style="margin-bottom:0;">
+      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:14px; padding-bottom:12px; border-bottom:1px solid var(--border);">
+        <div style="display:flex; align-items:center; gap:10px;">
+          <span class="status-badge ${isFixed ? 'fixed' : 'open'}" style="font-size:13px; padding:4px 12px;">
+            <span class="dot"></span>
+            ${isFixed ? 'Usterka Naprawiona' : 'Usterka Otwarta'}
+          </span>
+          <span style="font-size:12.5px; color:var(--text-muted);">ID: <code style="font-family:var(--font-mono); font-size:11.5px; color:var(--text-dim);">${r.id.slice(0,8)}</code></span>
+        </div>
+        <div class="detail-actions-row" style="margin-top:0;">
+          ${!isFixed ? `
+            <button class="btn-primary-action" onclick="markAsFixed('${r.id}')">
+              ✓ Oznacz jako naprawioną
+            </button>
+          ` : `
+            <button class="btn-secondary-action" onclick="reopenDefect('${r.id}')">
+              ↺ Otwórz ponownie
+            </button>
+          `}
+          <button class="btn-secondary-action" onclick="closeModal('modal-defect-preview'); startEditRecord('${r.id}')">
+            ✏ Edytuj usterkę
+          </button>
+          <button class="btn-secondary-action" style="color:var(--red);" onclick="deleteRecordConfirm('${r.id}')">
+            🗑 Usuń
+          </button>
+        </div>
+      </div>
+
+      <!-- Siatka metadanych -->
+      <div class="detail-meta-grid" style="grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:14px;">
+        <div class="meta-field">
+          <label>Projekt(y) (PS)</label>
+          <div class="val" style="color:var(--primary); font-family:var(--font-mono); font-size:13.5px; font-weight:700;">${escapeHtml(r.projekt || '—')}</div>
+        </div>
+        <div class="meta-field">
+          <label>Klient</label>
+          <div class="val" style="font-weight:600;">${escapeHtml(r.klient)}</div>
+        </div>
+        <div class="meta-field">
+          <label>Model auta bazowego</label>
+          <div class="val" style="font-weight:600;">${escapeHtml(r.model)}</div>
+        </div>
+        <div class="meta-field">
+          <label>Typ usterki</label>
+          <div class="val"><span class="tag-project" style="background:var(--primary-light); color:var(--primary); font-size:11.5px;">${escapeHtml(r.typ)}</span></div>
+        </div>
+        <div class="meta-field">
+          <label>Element / Urządzenie</label>
+          <div class="val">${escapeHtml(r.element || '—')}</div>
+        </div>
+        <div class="meta-field">
+          <label>VIN / Nadwozie</label>
+          <div class="val" style="font-family:var(--font-mono); font-size:12px;">${escapeHtml(r.vin || '—')}</div>
+        </div>
+        <div class="meta-field">
+          <label>Zgłaszający</label>
+          <div class="val">${escapeHtml(r.created_by || 'Technik')}</div>
+        </div>
+        <div class="meta-field">
+          <label>Data zgłoszenia</label>
+          <div class="val">${formatDateTime(r.created)}</div>
+        </div>
+        ${isFixed ? `
+        <div class="meta-field" style="grid-column: 1 / -1;">
+          <label>Naprawione przez / Data naprawy</label>
+          <div class="val" style="color:var(--green); font-weight:600;">✓ ${escapeHtml(r.fixed_by || 'Technik')} (${formatDateTime(r.fixed_at)})</div>
+        </div>
+        ` : ''}
+      </div>
+    </div>
+
+    <!-- Opis zaobserwowanego problemu -->
+    <div class="detail-section-card">
+      <div class="section-card-title">📝 Opis zaobserwowanego problemu</div>
+      <div class="problem-text-box" style="font-size:13.5px; line-height:1.55; padding:14px; border-left:4px solid var(--primary);">${escapeHtml(r.opisProblem)}</div>
+    </div>
+
+    <!-- Zdjęcia problemu -->
+    <div class="detail-section-card">
+      <div class="section-card-title">
+        <span>📸 Zdjęcia problemu</span>
+      </div>
+      <div class="photo-gallery-grid" id="modal-preview-photos-box" style="grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));">
+        <div style="font-size:12px; color:var(--text-dim);">Ładowanie zdjęć...</div>
+      </div>
+    </div>
+
+    <!-- Załączniki i dokumenty -->
+    <div class="detail-section-card">
+      <div class="section-card-title">
+        <span>📎 Załączniki do problemu (Raporty VSWR / PDF)</span>
+      </div>
+      <div id="modal-preview-docs-box" style="display:flex; flex-direction:column; gap:6px;">
+        <div style="font-size:12px; color:var(--text-dim);">Ładowanie załączników...</div>
+      </div>
+    </div>
+
+    <!-- Warianty rozwiązań i napraw -->
+    <div class="detail-section-card" style="border-top:2px solid var(--primary);">
+      <div class="section-card-title">
+        <span>💡 Warianty rozwiązań i napraw</span>
+        <button class="btn-primary-action" style="padding:4px 12px; font-size:12px;" onclick="promptAddSolution('${r.id}')">+ Dodaj wariant naprawy</button>
+      </div>
+      <div id="modal-preview-solutions-box">
+        <div style="font-size:12px; color:var(--text-dim);">Ładowanie wariantów...</div>
+      </div>
+    </div>
+  `;
+
+  openModal('modal-defect-preview');
+
+  // Załaduj zdjęcia, dokumenty i warianty do kontenerów
+  loadRecordPhotos(recId);
+  loadRecordDocs(recId);
+  loadRecordSolutions(recId);
+}
 
 async function loadRecordPhotos(recId) {
-  const box = document.getElementById('detail-photos-box');
-  if (!box) return;
+  const boxes = [
+    document.getElementById('detail-photos-box'),
+    document.getElementById('modal-preview-photos-box')
+  ].filter(Boolean);
+  if (boxes.length === 0) return;
+
   try {
     const photos = await apiCall(`/api/records/${recId}/photos`);
     if (!photos || photos.length === 0) {
-      box.innerHTML = `<div style="font-size:12px; color:var(--text-dim); grid-column:span 3;">Brak zdjęć dla tej usterki.</div>`;
+      boxes.forEach(b => {
+        b.innerHTML = `<div style="font-size:12px; color:var(--text-dim); grid-column:span 3;">Brak zdjęć dla tej usterki.</div>`;
+      });
       return;
     }
-    box.innerHTML = '';
     
     // Pobierz pełne dane wszystkich zdjęć usterki
     const fullPhotos = await Promise.all(
@@ -2049,146 +2634,169 @@ async function loadRecordPhotos(recId) {
     );
     const photoUrls = fullPhotos.map(p => `data:image/jpeg;base64,${p.data}`);
 
-    fullPhotos.forEach((full, i) => {
-      const ph = photos[i];
-      const div = document.createElement('div');
-      div.className = 'photo-thumb-card';
-      div.innerHTML = `
-        <img src="data:image/jpeg;base64,${full.data}" alt="Foto usterki">
-        <button type="button" style="position:absolute; top:4px; right:4px; background:rgba(0,0,0,0.7); color:#FFF; border:none; border-radius:50%; width:20px; height:20px; font-size:11px; cursor:pointer;" onclick="event.stopPropagation(); deleteDirectPhoto('${ph.id}', '${recId}')">✕</button>
-      `;
-      div.onclick = () => openLightboxGallery(photoUrls, i);
-      box.appendChild(div);
+    boxes.forEach(b => {
+      b.innerHTML = '';
+      const isModal = (b.id === 'modal-preview-photos-box');
+      fullPhotos.forEach((full, i) => {
+        const ph = photos[i];
+        const div = document.createElement('div');
+        div.className = 'photo-thumb-card';
+        div.innerHTML = `
+          <img src="data:image/jpeg;base64,${full.data}" alt="Foto usterki" title="Kliknij, aby powiększyć zdjęcie">
+          ${!isModal ? `<button type="button" style="position:absolute; top:4px; right:4px; background:rgba(0,0,0,0.7); color:#FFF; border:none; border-radius:50%; width:20px; height:20px; font-size:11px; cursor:pointer;" onclick="event.stopPropagation(); deleteDirectPhoto('${ph.id}', '${recId}')" title="Usuń zdjęcie">✕</button>` : ''}
+        `;
+        div.onclick = () => openLightboxGallery(photoUrls, i);
+        b.appendChild(div);
+      });
     });
   } catch(e) {
-    box.innerHTML = `<div style="font-size:12px; color:var(--red);">Błąd ładowania zdjęć.</div>`;
+    boxes.forEach(b => {
+      b.innerHTML = `<div style="font-size:12px; color:var(--red);">Błąd ładowania zdjęć.</div>`;
+    });
   }
 }
 
 async function loadRecordSolutions(recId) {
-  const box = document.getElementById('detail-solutions-box');
-  if (!box) return;
+  const targets = [
+    { box: document.getElementById('detail-solutions-box'), prefix: 'det' },
+    { box: document.getElementById('modal-preview-solutions-box'), prefix: 'mod' }
+  ].filter(t => t.box !== null);
+
+  if (targets.length === 0) return;
+
   try {
     const solutions = await apiCall(`/api/records/${recId}/solutions`);
     if (!solutions || solutions.length === 0) {
-      box.innerHTML = `<div style="font-size:12px; color:var(--text-dim); padding:8px 0;">Brak wprowadzonych wariantów napraw. Kliknij „+ Dodaj wariant”, aby opisać wykonaną diagnozę i kroki naprawy.</div>`;
+      targets.forEach(t => {
+        t.box.innerHTML = `<div style="font-size:12px; color:var(--text-dim); padding:8px 0;">Brak wprowadzonych wariantów napraw. Kliknij „+ Dodaj wariant naprawy”, aby opisać wykonaną diagnozę i kroki naprawy.</div>`;
+      });
       return;
     }
-    box.innerHTML = '';
-    for (const sol of solutions) {
-      const card = document.createElement('div');
-      card.className = 'solution-item-card';
-      card.innerHTML = `
-        <div class="sol-header">
-          <span class="sol-title">Wariant ${sol.numer}: ${escapeHtml(sol.tytul)}</span>
-          <div style="display:flex; gap:6px;">
-            <button class="btn-secondary-action" style="padding:3px 8px; font-size:11.5px;" onclick="uploadSolutionPhoto('${sol.id}', '${recId}')">📷 +Foto</button>
-            <button class="btn-secondary-action" style="padding:3px 8px; font-size:11.5px;" onclick="uploadSolutionDoc('${sol.id}', '${recId}')">📎 +Plik/PDF</button>
-            <button class="btn-secondary-action" style="padding:3px 8px; font-size:11.5px; color:var(--red);" onclick="deleteSolution('${sol.id}', '${recId}')">✕ Usuń</button>
+
+    targets.forEach(t => {
+      t.box.innerHTML = '';
+      for (const sol of solutions) {
+        const card = document.createElement('div');
+        card.className = 'solution-item-card';
+        card.innerHTML = `
+          <div class="sol-header">
+            <span class="sol-title">Wariant ${sol.numer}: ${escapeHtml(sol.tytul)}</span>
+            <div style="display:flex; gap:6px;">
+              <button class="btn-secondary-action" style="padding:3px 8px; font-size:11.5px;" onclick="uploadSolutionPhoto('${sol.id}', '${recId}')">📷 +Foto</button>
+              <button class="btn-secondary-action" style="padding:3px 8px; font-size:11.5px;" onclick="uploadSolutionDoc('${sol.id}', '${recId}')">📎 +Plik/PDF</button>
+              <button class="btn-secondary-action" style="padding:3px 8px; font-size:11.5px; color:var(--red);" onclick="deleteSolution('${sol.id}', '${recId}')">✕ Usuń</button>
+            </div>
           </div>
-        </div>
-        <div style="font-size:13px; line-height:1.45; white-space:pre-wrap; margin-bottom:10px;">${escapeHtml(sol.opis || '(brak opisu)')}</div>
+          <div style="font-size:13px; line-height:1.45; white-space:pre-wrap; margin-bottom:10px;">${escapeHtml(sol.opis || '(brak opisu)')}</div>
+          <div id="sol-photos-${t.prefix}-${sol.id}" style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px;"></div>
+          <div id="sol-docs-${t.prefix}-${sol.id}" style="display:flex; flex-direction:column; gap:4px;"></div>
+        `;
+        t.box.appendChild(card);
 
-        
-        <!-- Zdjęcia wariantu -->
-        <div id="sol-photos-${sol.id}" style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px;"></div>
-        <!-- Dokumenty wariantu -->
-        <div id="sol-docs-${sol.id}" style="display:flex; flex-direction:column; gap:4px;"></div>
-      `;
-      box.appendChild(card);
-
-      // Zdjęcia wariantu — pobranie wszystkich i spięcie w pełną galerię
-      apiCall(`/api/solutions/${sol.id}/photos`).then(async pList => {
-        const phBox = document.getElementById(`sol-photos-${sol.id}`);
-        if (!phBox || !pList || pList.length === 0) return;
-        
-        const fullPhotos = await Promise.all(
-          pList.map(pm => apiCall(`/api/solution-photos/${pm.id}`))
-        );
-        const solPhotoUrls = fullPhotos.map(p => `data:image/jpeg;base64,${p.data}`);
-
-        phBox.innerHTML = '';
-        fullPhotos.forEach((full, pIdx) => {
-          const img = document.createElement('img');
-          img.src = `data:image/jpeg;base64,${full.data}`;
-          img.style.cssText = 'width:64px; height:50px; object-fit:cover; border-radius:4px; border:1px solid var(--border); cursor:pointer; transition:transform 0.15s ease;';
-          img.onmouseover = () => img.style.transform = 'scale(1.05)';
-          img.onmouseout = () => img.style.transform = 'scale(1)';
-          img.onclick = () => openLightboxGallery(solPhotoUrls, pIdx);
-          phBox.appendChild(img);
+        // Zdjęcia wariantu
+        apiCall(`/api/solutions/${sol.id}/photos`).then(async pList => {
+          const phBox = document.getElementById(`sol-photos-${t.prefix}-${sol.id}`);
+          if (!phBox || !pList || pList.length === 0) return;
+          const fullPhotos = await Promise.all(
+            pList.map(pm => apiCall(`/api/solution-photos/${pm.id}`))
+          );
+          const solPhotoUrls = fullPhotos.map(p => `data:image/jpeg;base64,${p.data}`);
+          phBox.innerHTML = '';
+          fullPhotos.forEach((full, pIdx) => {
+            const img = document.createElement('img');
+            img.src = `data:image/jpeg;base64,${full.data}`;
+            img.style.cssText = 'width:64px; height:50px; object-fit:cover; border-radius:4px; border:1px solid var(--border); cursor:pointer; transition:transform 0.15s ease;';
+            img.onmouseover = () => img.style.transform = 'scale(1.05)';
+            img.onmouseout = () => img.style.transform = 'scale(1)';
+            img.onclick = () => openLightboxGallery(solPhotoUrls, pIdx);
+            phBox.appendChild(img);
+          });
         });
-      });
 
-      // Dokumenty wariantu
-      apiCall(`/api/solutions/${sol.id}/documents`).then(dList => {
-        const dBox = document.getElementById(`sol-docs-${sol.id}`);
-        if (!dBox || !dList || dList.length === 0) return;
-        dBox.innerHTML = dList.map(d => {
-          const isPdf = (d.filename || '').toLowerCase().endsWith('.pdf');
-          const thumbUrl = `/api/solution-documents/${d.id}/thumb`;
-          const rawUrl = `/api/solution-documents/${d.id}/raw`;
-          const openUrl = `/api/solution-documents/${d.id}/open`;
-          return `
-            <div style="display:flex; align-items:center; gap:10px; padding:6px 10px; background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius-md); margin-top:4px;">
-              <div style="width:38px; height:48px; background:var(--bg-card-subtle); border-radius:4px; overflow:hidden; display:flex; align-items:center; justify-content:center; border:1px solid var(--border); cursor:pointer; flex-shrink:0;" onclick="openPdfPreview('${rawUrl}', '${escapeHtml(d.filename)}', '${openUrl}', '${d.id}')">
-                ${isPdf ? `<img src="${thumbUrl}" alt="PDF" style="width:100%; height:100%; object-fit:cover;" onerror="this.onerror=null; this.parentElement.innerHTML='<span style=\\'font-size:18px;\\'>📄</span>';">` : '<span style="font-size:18px;">📄</span>'}
-              </div>
-              <div style="flex:1; min-width:0; cursor:pointer;" onclick="openPdfPreview('${rawUrl}', '${escapeHtml(d.filename)}', '${openUrl}', '${d.id}')">
-                <div style="font-size:12.5px; font-weight:600; color:var(--primary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="${escapeHtml(d.filename)}">${escapeHtml(d.filename)}</div>
-                <div style="font-size:11px; color:var(--text-muted); display:flex; align-items:center; gap:6px; margin-top:2px;">
-                  <span style="background:var(--primary-light); color:var(--primary); font-size:9.5px; font-weight:700; padding:1px 5px; border-radius:3px;">${isPdf ? 'PDF' : 'DOKUMENT'}</span>
-                  <span>${formatBytes(d.filesize)}</span>
+        // Dokumenty wariantu
+        apiCall(`/api/solutions/${sol.id}/documents`).then(dList => {
+          const dBox = document.getElementById(`sol-docs-${t.prefix}-${sol.id}`);
+          if (!dBox || !dList || dList.length === 0) return;
+          dBox.innerHTML = dList.map(d => {
+            const isPdf = (d.filename || '').toLowerCase().endsWith('.pdf');
+            const thumbUrl = `/api/solution-documents/${d.id}/thumb`;
+            const rawUrl = `/api/solution-documents/${d.id}/raw`;
+            const openUrl = `/api/solution-documents/${d.id}/open`;
+            return `
+              <div style="display:flex; align-items:center; gap:10px; padding:6px 10px; background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius-md); margin-top:4px;">
+                <div style="width:38px; height:48px; background:var(--bg-card-subtle); border-radius:4px; overflow:hidden; display:flex; align-items:center; justify-content:center; border:1px solid var(--border); cursor:pointer; flex-shrink:0;" onclick="openPdfPreview('${rawUrl}', '${escapeHtml(d.filename)}', '${openUrl}', '${d.id}')">
+                  ${isPdf ? `<img src="${thumbUrl}" alt="PDF" style="width:100%; height:100%; object-fit:cover;" onerror="this.onerror=null; this.parentElement.innerHTML='<span style=\\'font-size:18px;\\'>📄</span>';">` : '<span style="font-size:18px;">📄</span>'}
+                </div>
+                <div style="flex:1; min-width:0; cursor:pointer;" onclick="openPdfPreview('${rawUrl}', '${escapeHtml(d.filename)}', '${openUrl}', '${d.id}')">
+                  <div style="font-size:12.5px; font-weight:600; color:var(--primary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="${escapeHtml(d.filename)}">${escapeHtml(d.filename)}</div>
+                  <div style="font-size:11px; color:var(--text-muted); display:flex; align-items:center; gap:6px; margin-top:2px;">
+                    <span style="background:var(--primary-light); color:var(--primary); font-size:9.5px; font-weight:700; padding:1px 5px; border-radius:3px;">${isPdf ? 'PDF' : 'DOKUMENT'}</span>
+                    <span>${formatBytes(d.filesize)}</span>
+                  </div>
+                </div>
+                <div style="display:flex; gap:4px; flex-shrink:0;">
+                  <button class="btn-secondary-action" style="padding:3px 8px; font-size:11px;" title="Podgląd / Otwórz" onclick="openPdfPreview('${rawUrl}', '${escapeHtml(d.filename)}', '${openUrl}', '${d.id}')">👁 Otwórz</button>
+                  <button class="btn-secondary-action" style="padding:3px 6px; font-size:11px; color:var(--red);" title="Usuń" onclick="deleteSolutionDoc('${d.id}', '${recId}')">✕</button>
                 </div>
               </div>
-              <div style="display:flex; gap:4px; flex-shrink:0;">
-                <button class="btn-secondary-action" style="padding:3px 8px; font-size:11px;" title="Podgląd / Otwórz" onclick="openPdfPreview('${rawUrl}', '${escapeHtml(d.filename)}', '${openUrl}', '${d.id}')">👁 Otwórz</button>
-                <button class="btn-secondary-action" style="padding:3px 6px; font-size:11px; color:var(--red);" title="Usuń" onclick="deleteSolutionDoc('${d.id}', '${recId}')">✕</button>
-              </div>
-            </div>
-          `;
-        }).join('');
-      });
-    }
+            `;
+          }).join('');
+        });
+      }
+    });
   } catch(e) {
-    box.innerHTML = `<div style="font-size:12px; color:var(--red);">Błąd ładowania wariantów.</div>`;
+    targets.forEach(t => {
+      t.box.innerHTML = `<div style="font-size:12px; color:var(--red);">Błąd ładowania wariantów.</div>`;
+    });
   }
 }
 
 async function loadRecordDocs(recId) {
-  const box = document.getElementById('detail-docs-box');
-  if (!box) return;
+  const boxes = [
+    document.getElementById('detail-docs-box'),
+    document.getElementById('modal-preview-docs-box')
+  ].filter(Boolean);
+  if (boxes.length === 0) return;
+
   try {
     const docs = await apiCall(`/api/records/${recId}/documents`);
     if (!docs || docs.length === 0) {
-      box.innerHTML = `<div style="font-size:12px; color:var(--text-dim);">Brak załączonych plików PDF/CSV.</div>`;
+      boxes.forEach(b => {
+        b.innerHTML = `<div style="font-size:12px; color:var(--text-dim);">Brak załączonych plików PDF/CSV.</div>`;
+      });
       return;
     }
-    box.innerHTML = docs.map(d => {
-      const isPdf = (d.filename || '').toLowerCase().endsWith('.pdf');
-      const thumbUrl = `/api/documents/${d.id}/thumb`;
-      const rawUrl = `/api/documents/${d.id}/raw`;
-      const openUrl = `/api/documents/${d.id}/open`;
-      return `
-        <div style="display:flex; align-items:center; gap:10px; padding:6px 10px; background:var(--bg-card-subtle); border:1px solid var(--border); border-radius:var(--radius-md);">
-          <div style="width:38px; height:48px; background:var(--bg-card); border-radius:4px; overflow:hidden; display:flex; align-items:center; justify-content:center; border:1px solid var(--border); cursor:pointer; flex-shrink:0;" onclick="openPdfPreview('${rawUrl}', '${escapeHtml(d.filename)}', '${openUrl}', '${d.id}')">
-            ${isPdf ? `<img src="${thumbUrl}" alt="PDF" style="width:100%; height:100%; object-fit:cover;" onerror="this.onerror=null; this.parentElement.innerHTML='<span style=\\'font-size:18px;\\'>📄</span>';">` : '<span style="font-size:18px;">📄</span>'}
-          </div>
-          <div style="flex:1; min-width:0; cursor:pointer;" onclick="openPdfPreview('${rawUrl}', '${escapeHtml(d.filename)}', '${openUrl}', '${d.id}')">
-            <div style="font-size:12.5px; font-weight:600; color:var(--primary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="${escapeHtml(d.filename)}">${escapeHtml(d.filename)}</div>
-            <div style="font-size:11px; color:var(--text-muted); display:flex; align-items:center; gap:6px; margin-top:2px;">
-              <span style="background:var(--primary-light); color:var(--primary); font-size:9.5px; font-weight:700; padding:1px 5px; border-radius:3px;">${isPdf ? 'PDF' : 'DOKUMENT'}</span>
-              <span>${formatBytes(d.filesize)}</span>
+    boxes.forEach(box => {
+      const isModal = (box.id === 'modal-preview-docs-box');
+      box.innerHTML = docs.map(d => {
+        const isPdf = (d.filename || '').toLowerCase().endsWith('.pdf');
+        const thumbUrl = `/api/documents/${d.id}/thumb`;
+        const rawUrl = `/api/documents/${d.id}/raw`;
+        const openUrl = `/api/documents/${d.id}/open`;
+        return `
+          <div style="display:flex; align-items:center; gap:10px; padding:6px 10px; background:var(--bg-card-subtle); border:1px solid var(--border); border-radius:var(--radius-md);">
+            <div style="width:38px; height:48px; background:var(--bg-card); border-radius:4px; overflow:hidden; display:flex; align-items:center; justify-content:center; border:1px solid var(--border); cursor:pointer; flex-shrink:0;" onclick="openPdfPreview('${rawUrl}', '${escapeHtml(d.filename)}', '${openUrl}', '${d.id}')">
+              ${isPdf ? `<img src="${thumbUrl}" alt="PDF" style="width:100%; height:100%; object-fit:cover;" onerror="this.onerror=null; this.parentElement.innerHTML='<span style=\\'font-size:18px;\\'>📄</span>';">` : '<span style="font-size:18px;">📄</span>'}
+            </div>
+            <div style="flex:1; min-width:0; cursor:pointer;" onclick="openPdfPreview('${rawUrl}', '${escapeHtml(d.filename)}', '${openUrl}', '${d.id}')">
+              <div style="font-size:12.5px; font-weight:600; color:var(--primary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="${escapeHtml(d.filename)}">${escapeHtml(d.filename)}</div>
+              <div style="font-size:11px; color:var(--text-muted); display:flex; align-items:center; gap:6px; margin-top:2px;">
+                <span style="background:var(--primary-light); color:var(--primary); font-size:9.5px; font-weight:700; padding:1px 5px; border-radius:3px;">${isPdf ? 'PDF' : 'DOKUMENT'}</span>
+                <span>${formatBytes(d.filesize)}</span>
+              </div>
+            </div>
+            <div style="display:flex; gap:4px; flex-shrink:0;">
+              <button class="btn-secondary-action" style="padding:3px 8px; font-size:11px;" title="Podgląd / Otwórz" onclick="openPdfPreview('${rawUrl}', '${escapeHtml(d.filename)}', '${openUrl}', '${d.id}')">👁 Otwórz</button>
+              ${!isModal ? `<button class="btn-secondary-action" style="padding:3px 6px; font-size:11px; color:var(--red);" title="Usuń" onclick="deleteRecordDoc('${d.id}', '${recId}')">✕</button>` : ''}
             </div>
           </div>
-          <div style="display:flex; gap:4px; flex-shrink:0;">
-            <button class="btn-secondary-action" style="padding:3px 8px; font-size:11px;" title="Podgląd / Otwórz" onclick="openPdfPreview('${rawUrl}', '${escapeHtml(d.filename)}', '${openUrl}', '${d.id}')">👁 Otwórz</button>
-            <button class="btn-secondary-action" style="padding:3px 6px; font-size:11px; color:var(--red);" title="Usuń" onclick="deleteRecordDoc('${d.id}', '${recId}')">✕</button>
-          </div>
-        </div>
-      `;
-    }).join('');
+        `;
+      }).join('');
+    });
   } catch(e) {
-    box.innerHTML = `<div style="font-size:12px; color:var(--red);">Błąd załączników.</div>`;
+    boxes.forEach(b => {
+      b.innerHTML = `<div style="font-size:12px; color:var(--red);">Błąd załączników.</div>`;
+    });
   }
 }
 
@@ -2389,6 +2997,7 @@ document.getElementById('form-defect-submit').addEventListener('submit', async (
 
 /* ── EDYCJA ISTNIEJĄCEJ USTERKI ── */
 async function startEditRecord(recId) {
+  closeModal('modal-defect-preview');
   const r = STATE.records.find(x => x.id === recId);
   if (!r) return;
 
@@ -2426,6 +3035,9 @@ async function markAsFixed(recId) {
     showToast(`Oznaczono jako naprawioną (${tech})`, 'success');
     await loadAllData();
     selectRecord(recId);
+    if (document.getElementById('modal-defect-preview')?.style.display === 'flex') {
+      openDefectPreview(recId);
+    }
   } catch (err) {
     showToast(`Błąd: ${err.message}`, 'error');
   }
@@ -2441,6 +3053,9 @@ async function reopenDefect(recId) {
     showToast('Usterka otwarta ponownie', 'info');
     await loadAllData();
     selectRecord(recId);
+    if (document.getElementById('modal-defect-preview')?.style.display === 'flex') {
+      openDefectPreview(recId);
+    }
   } catch (err) {
     showToast(`Błąd: ${err.message}`, 'error');
   }
@@ -2451,6 +3066,7 @@ async function deleteRecordConfirm(recId) {
   try {
     await apiCall(`/api/records/${recId}`, 'DELETE');
     showToast('Usterka usunięta', 'info');
+    closeModal('modal-defect-preview');
     STATE.selectedRecordId = null;
     document.getElementById('detail-empty-state').style.display = 'flex';
     document.getElementById('detail-content').style.display = 'none';
@@ -2638,7 +3254,7 @@ function renderProjectsTable() {
   }
 
   tbody.innerHTML = entries.sort((a,b) => a[0].localeCompare(b[0])).map(([ps, meta]) => `
-    <tr>
+    <tr ondblclick="editProjectDialog('${escapeHtml(ps)}')" title="Kliknij dwukrotnie, aby edytować projekt PS">
       <td><span class="tag-project" style="font-size:13px;">${escapeHtml(ps)}</span></td>
       <td><b>${escapeHtml(meta.klient || '—')}</b></td>
       <td>${escapeHtml(meta.model || '—')}</td>
@@ -2650,16 +3266,101 @@ function renderProjectsTable() {
   `).join('');
 }
 
+function renderProjectModalDropdowns(selectedKlient = '', selectedModel = '') {
+  const kSel = document.getElementById('pe-klient');
+  const mSel = document.getElementById('pe-model');
+  const klienci = STATE.lists.klienci || [];
+  const modele = STATE.lists.modele || [];
+
+  let kHtml = `<option value="">— Wybierz klienta —</option>` +
+    klienci.map(k => `<option value="${escapeHtml(k)}" ${k === selectedKlient ? 'selected' : ''}>${escapeHtml(k)}</option>`).join('') +
+    `<option value="__NEW_CLIENT__" style="color:var(--primary); font-weight:600;">➕ Dodaj nowego klienta...</option>`;
+  kSel.innerHTML = kHtml;
+
+  let mHtml = `<option value="">— Wybierz model —</option>` +
+    modele.map(m => `<option value="${escapeHtml(m)}" ${m === selectedModel ? 'selected' : ''}>${escapeHtml(m)}</option>`).join('') +
+    `<option value="__NEW_MODEL__" style="color:var(--primary); font-weight:600;">➕ Dodaj nowy model...</option>`;
+  mSel.innerHTML = mHtml;
+
+  if (selectedKlient) kSel.value = selectedKlient;
+  if (selectedModel) mSel.value = selectedModel;
+}
+
+function handleProjectDropdownChange(type, value) {
+  if (type === 'client') {
+    if (value === '__NEW_CLIENT__') {
+      toggleQuickAdd('client', true);
+      document.getElementById('pe-klient').value = '';
+    }
+  } else if (type === 'model') {
+    if (value === '__NEW_MODEL__') {
+      toggleQuickAdd('model', true);
+      document.getElementById('pe-model').value = '';
+    }
+  }
+}
+
+function toggleQuickAdd(type, show) {
+  const boxId = type === 'client' ? 'quick-add-client-box' : 'quick-add-model-box';
+  const inpId = type === 'client' ? 'quick-client-input' : 'quick-model-input';
+  const box = document.getElementById(boxId);
+  const inp = document.getElementById(inpId);
+  if (!box) return;
+
+  const isVisible = show !== undefined ? show : (box.style.display === 'none' || !box.style.display);
+  box.style.display = isVisible ? 'block' : 'none';
+  if (isVisible && inp) {
+    inp.value = '';
+    setTimeout(() => inp.focus(), 50);
+  }
+}
+
+async function submitQuickAdd(type) {
+  const isClient = type === 'client';
+  const key = isClient ? 'klienci' : 'modele';
+  const inpId = isClient ? 'quick-client-input' : 'quick-model-input';
+  const inp = document.getElementById(inpId);
+  const val = (inp ? inp.value : '').trim();
+
+  if (!val) {
+    showToast(isClient ? 'Wpisz nazwę klienta' : 'Wpisz nazwę modelu auta', 'warning');
+    if (inp) inp.focus();
+    return;
+  }
+
+  STATE.lists[key] = STATE.lists[key] || [];
+  if (!STATE.lists[key].includes(val)) {
+    STATE.lists[key].push(val);
+    STATE.lists[key].sort((a, b) => a.localeCompare(b));
+    try {
+      await apiCall('/api/lists', 'PUT', STATE.lists);
+      showToast(isClient ? `Dodano nowego klienta: ${val}` : `Dodano nowy model: ${val}`, 'success');
+    } catch(err) {
+      showToast(`Błąd zapisu: ${err.message}`, 'error');
+      return;
+    }
+  } else {
+    showToast(isClient ? `Klient "${val}" już istnieje na liście` : `Model "${val}" już istnieje na liście`, 'info');
+  }
+
+  toggleQuickAdd(type, false);
+
+  const curKlient = isClient ? val : document.getElementById('pe-klient').value;
+  const curModel = isClient ? document.getElementById('pe-model').value : val;
+  renderProjectModalDropdowns(curKlient, curModel);
+
+  renderFormDropdowns();
+  renderDictionaries();
+}
+
 function openNewProjectDialog() {
   document.getElementById('modal-project-title').textContent = 'Nowy Projekt PS';
   document.getElementById('pe-old-ps').value = '';
   document.getElementById('pe-ps').value = '';
+  toggleQuickAdd('client', false);
+  toggleQuickAdd('model', false);
 
-  const kSel = document.getElementById('pe-klient');
-  const mSel = document.getElementById('pe-model');
-  kSel.innerHTML = (STATE.lists.klienci || []).map(k => `<option value="${escapeHtml(k)}">${escapeHtml(k)}</option>`).join('');
-  mSel.innerHTML = (STATE.lists.modele || []).map(m => `<option value="${escapeHtml(m)}">${escapeHtml(m)}</option>`).join('');
-
+  renderProjectModalDropdowns('', '');
   openModal('modal-project-edit');
 }
 
@@ -2668,12 +3369,10 @@ function editProjectDialog(ps) {
   document.getElementById('modal-project-title').textContent = `Edycja Projektu: ${ps}`;
   document.getElementById('pe-old-ps').value = ps;
   document.getElementById('pe-ps').value = ps;
+  toggleQuickAdd('client', false);
+  toggleQuickAdd('model', false);
 
-  const kSel = document.getElementById('pe-klient');
-  const mSel = document.getElementById('pe-model');
-  kSel.innerHTML = (STATE.lists.klienci || []).map(k => `<option value="${escapeHtml(k)}" ${k === meta.klient ? 'selected' : ''}>${escapeHtml(k)}</option>`).join('');
-  mSel.innerHTML = (STATE.lists.modele || []).map(m => `<option value="${escapeHtml(m)}" ${m === meta.model ? 'selected' : ''}>${escapeHtml(m)}</option>`).join('');
-
+  renderProjectModalDropdowns(meta.klient || '', meta.model || '');
   openModal('modal-project-edit');
 }
 
@@ -2684,7 +3383,10 @@ document.getElementById('form-project-edit').addEventListener('submit', async (e
   const klient = document.getElementById('pe-klient').value;
   const model = document.getElementById('pe-model').value;
 
-  if (!newPs || !klient || !model) return;
+  if (!newPs || !klient || !model || klient === '__NEW_CLIENT__' || model === '__NEW_MODEL__') {
+    showToast('Wypełnij wszystkie wymagane pola projektu', 'warning');
+    return;
+  }
 
   STATE.lists.projekty = STATE.lists.projekty || {};
   if (oldPs && oldPs !== newPs) {
@@ -2727,30 +3429,55 @@ async function deleteProject(ps) {
   }
 }
 
-/* ── SŁOWNIKI (KLIENCI, TYPY) ── */
+/* ── SŁOWNIKI (KLIENCI, MODELE, TYPY) ── */
 function renderDictionaries() {
   const kBox = document.getElementById('dict-list-klienci');
+  const mBox = document.getElementById('dict-list-modele');
   const tBox = document.getElementById('dict-list-typy');
 
-  kBox.innerHTML = (STATE.lists.klienci || []).map((k, idx) => `
-    <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 10px; background:var(--bg-card-subtle); border:1px solid var(--border); border-radius:var(--radius-md);">
-      <b>${escapeHtml(k)}</b>
-      <div style="display:flex; gap:6px;">
-        <button class="btn-secondary-action" style="padding:2px 6px; font-size:11px;" onclick="renameDictItem('klienci', ${idx})">Zmień</button>
-        <button class="btn-secondary-action" style="padding:2px 6px; font-size:11px; color:var(--red);" onclick="deleteDictItem('klienci', ${idx})">✕</button>
-      </div>
-    </div>
-  `).join('');
+  if (kBox) {
+    kBox.innerHTML = (STATE.lists.klienci || []).map((k, idx) => {
+      const shortCode = getClientShortName(k);
+      const isShortSame = (shortCode === k);
+      const fullName = isShortSame ? k : k.replace(/^[^—–\-:]+[\—\–\-:]\s*/, '');
+      return `
+        <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 10px; background:var(--bg-card-subtle); border:1px solid var(--border); border-radius:var(--radius-md);">
+          <div style="display:flex; align-items:center; gap:8px; overflow:hidden;">
+            <span class="tag-project" style="font-weight:700; font-size:11.5px; flex-shrink:0;">${escapeHtml(shortCode)}</span>
+            <span style="font-weight:600; font-size:12.5px; color:var(--text-main); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="${escapeHtml(k)}">${escapeHtml(fullName)}</span>
+          </div>
+          <div style="display:flex; gap:6px; flex-shrink:0;">
+            <button class="btn-secondary-action" style="padding:2px 6px; font-size:11px;" onclick="renameDictItem('klienci', ${idx})">Zmień</button>
+            <button class="btn-secondary-action" style="padding:2px 6px; font-size:11px; color:var(--red);" onclick="deleteDictItem('klienci', ${idx})">✕</button>
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
 
-  tBox.innerHTML = (STATE.lists.typy || []).map((t, idx) => `
-    <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 10px; background:var(--bg-card-subtle); border:1px solid var(--border); border-radius:var(--radius-md);">
-      <b>${escapeHtml(t)}</b>
-      <div style="display:flex; gap:6px;">
-        <button class="btn-secondary-action" style="padding:2px 6px; font-size:11px;" onclick="renameDictItem('typy', ${idx})">Zmień</button>
-        <button class="btn-secondary-action" style="padding:2px 6px; font-size:11px; color:var(--red);" onclick="deleteDictItem('typy', ${idx})">✕</button>
+  if (mBox) {
+    mBox.innerHTML = (STATE.lists.modele || []).map((m, idx) => `
+      <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 10px; background:var(--bg-card-subtle); border:1px solid var(--border); border-radius:var(--radius-md);">
+        <b>${escapeHtml(m)}</b>
+        <div style="display:flex; gap:6px;">
+          <button class="btn-secondary-action" style="padding:2px 6px; font-size:11px;" onclick="renameDictItem('modele', ${idx})">Zmień</button>
+          <button class="btn-secondary-action" style="padding:2px 6px; font-size:11px; color:var(--red);" onclick="deleteDictItem('modele', ${idx})">✕</button>
+        </div>
       </div>
-    </div>
-  `).join('');
+    `).join('');
+  }
+
+  if (tBox) {
+    tBox.innerHTML = (STATE.lists.typy || []).map((t, idx) => `
+      <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 10px; background:var(--bg-card-subtle); border:1px solid var(--border); border-radius:var(--radius-md);">
+        <b>${escapeHtml(t)}</b>
+        <div style="display:flex; gap:6px;">
+          <button class="btn-secondary-action" style="padding:2px 6px; font-size:11px;" onclick="renameDictItem('typy', ${idx})">Zmień</button>
+          <button class="btn-secondary-action" style="padding:2px 6px; font-size:11px; color:var(--red);" onclick="deleteDictItem('typy', ${idx})">✕</button>
+        </div>
+      </div>
+    `).join('');
+  }
 }
 
 async function addDictionaryItem(key, inputId) {
@@ -2791,25 +3518,35 @@ async function deleteDictItem(key, idx) {
 }
 
 /* ── ZARZĄDZANIE UŻYTKOWNIKAMI (WIDOK) ── */
+STATE.cachedUsersList = [];
+
 async function renderUsersTable() {
   const tbody = document.getElementById('users-tbody');
   try {
     const users = await apiCall('/api/users');
+    STATE.cachedUsersList = users;
     tbody.innerHTML = users.map(u => `
-      <tr>
+      <tr ondblclick="editUserDialog('${u.id}')" title="Kliknij dwukrotnie, aby edytować użytkownika">
         <td><b>${escapeHtml(u.username)}</b></td>
-        <td>${escapeHtml(u.full_name)}</td>
+        <td>
+          <div>${escapeHtml(u.full_name)}</div>
+          ${u.must_change_password ? '<div style="font-size:11px; color:#D97706; font-weight:600; margin-top:2px;">⚠️ Wymaga zmiany hasła</div>' : ''}
+        </td>
+        <td>
+          <div style="font-size:12px; color:var(--text);">${escapeHtml(u.email || '—')}</div>
+          ${u.phone ? `<div style="font-size:11px; color:var(--text-muted);">${escapeHtml(u.phone)}</div>` : ''}
+        </td>
         <td><span class="tag-project">${escapeHtml(u.role)}</span></td>
         <td>${u.is_active ? '<span style="color:var(--green); font-weight:600;">Aktywny</span>' : '<span style="color:var(--red); font-weight:600;">Nieaktywny</span>'}</td>
         <td style="text-align:right;">
-          <button class="btn-secondary-action" style="padding:3px 8px; font-size:11.5px;" onclick="editUserDialog('${u.id}', '${escapeHtml(u.username)}', '${escapeHtml(u.full_name)}', '${escapeHtml(u.role)}')">Edytuj</button>
+          <button class="btn-secondary-action" style="padding:3px 8px; font-size:11.5px;" onclick="editUserDialog('${u.id}')">Edytuj</button>
           <button class="btn-secondary-action" style="padding:3px 8px; font-size:11.5px;" onclick="adminResetPwPrompt('${u.id}', '${escapeHtml(u.username)}')">Hasło</button>
           ${u.role !== 'admin' ? `<button class="btn-secondary-action" style="padding:3px 8px; font-size:11.5px; color:var(--red);" onclick="deleteUserConfirm('${u.id}')">Usuń</button>` : ''}
         </td>
       </tr>
     `).join('');
   } catch(e) {
-    tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; padding:20px; color:var(--red);">Wymagane uprawnienia administratora.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; padding:20px; color:var(--red);">Wymagane uprawnienia administratora.</td></tr>`;
   }
 }
 
@@ -2818,22 +3555,31 @@ function openNewUserDialog() {
   document.getElementById('ue-id').value = '';
   document.getElementById('ue-username').value = '';
   document.getElementById('ue-fullname').value = '';
+  document.getElementById('ue-email').value = '';
+  document.getElementById('ue-phone').value = '';
   document.getElementById('ue-role').value = 'technik';
   document.getElementById('ue-password').value = '';
   document.getElementById('ue-password').required = true;
   document.getElementById('ue-pw-hint').textContent = '(wymagane min. 4 znaki)';
+  document.getElementById('ue-must-change').checked = true;
   openModal('modal-user-edit');
 }
 
-function editUserDialog(id, username, fullname, role) {
-  document.getElementById('modal-user-title').textContent = `Edycja użytkownika: ${username}`;
-  document.getElementById('ue-id').value = id;
-  document.getElementById('ue-username').value = username;
-  document.getElementById('ue-fullname').value = fullname;
-  document.getElementById('ue-role').value = role;
+function editUserDialog(id) {
+  const u = (STATE.cachedUsersList || []).find(item => item.id === id);
+  if (!u) return;
+
+  document.getElementById('modal-user-title').textContent = `Edycja użytkownika: ${u.username}`;
+  document.getElementById('ue-id').value = u.id;
+  document.getElementById('ue-username').value = u.username || '';
+  document.getElementById('ue-fullname').value = u.full_name || '';
+  document.getElementById('ue-email').value = u.email || '';
+  document.getElementById('ue-phone').value = u.phone || '';
+  document.getElementById('ue-role').value = u.role || 'technik';
   document.getElementById('ue-password').value = '';
   document.getElementById('ue-password').required = false;
   document.getElementById('ue-pw-hint').textContent = '(zostaw puste aby nie zmieniać)';
+  document.getElementById('ue-must-change').checked = Boolean(u.must_change_password);
   openModal('modal-user-edit');
 }
 
@@ -2842,18 +3588,21 @@ document.getElementById('form-user-edit').addEventListener('submit', async (e) =
   const id = document.getElementById('ue-id').value;
   const username = document.getElementById('ue-username').value.trim();
   const full_name = document.getElementById('ue-fullname').value.trim();
+  const email = document.getElementById('ue-email').value.trim();
+  const phone = document.getElementById('ue-phone').value.trim();
   const role = document.getElementById('ue-role').value;
   const password = document.getElementById('ue-password').value;
+  const must_change_password = document.getElementById('ue-must-change').checked ? 1 : 0;
 
   try {
     if (id) {
-      await apiCall(`/api/users/${id}`, 'PUT', { username, full_name, role, is_active: 1 });
+      await apiCall(`/api/users/${id}`, 'PUT', { username, full_name, email, phone, role, is_active: 1, must_change_password });
       if (password) {
-        await apiCall(`/api/users/${id}/reset-password`, 'POST', { new_password: password });
+        await apiCall(`/api/users/${id}/reset-password`, 'POST', { new_password: password, must_change_password });
       }
       showToast('Użytkownik zaktualizowany!', 'success');
     } else {
-      await apiCall('/api/users', 'POST', { username, full_name, role, password });
+      await apiCall('/api/users', 'POST', { username, full_name, email, phone, role, password, must_change_password });
       showToast('Nowy użytkownik utworzony!', 'success');
     }
     closeModal('modal-user-edit');
@@ -2865,11 +3614,13 @@ document.getElementById('form-user-edit').addEventListener('submit', async (e) =
 });
 
 async function adminResetPwPrompt(userId, username) {
-  const newPw = prompt(`Wpisz nowe hasło dla użytkownika ${username}:`);
+  const newPw = prompt(`Wpisz nowe hasło tymczasowe dla użytkownika ${username}:`);
   if (!newPw || !newPw.trim()) return;
+  const mustChange = confirm(`Czy wymusić zmianę tego hasła przy najbliższym logowaniu użytkownika ${username}?`);
   try {
-    await apiCall(`/api/users/${userId}/reset-password`, 'POST', { new_password: newPw.trim() });
-    showToast('Hasło zmienione!', 'success');
+    await apiCall(`/api/users/${userId}/reset-password`, 'POST', { new_password: newPw.trim(), must_change_password: mustChange ? 1 : 0 });
+    showToast(`Hasło dla ${username} zostało zmienione!`, 'success');
+    renderUsersTable();
   } catch(err) { showToast(`Błąd: ${err.message}`, 'error'); }
 }
 
@@ -3019,25 +3770,83 @@ document.getElementById('btn-lightbox-next').onclick = () => {
 
 window.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
-    if (document.getElementById('modal-pdf-viewer').style.display === 'flex') {
+    if (document.getElementById('modal-defect-preview')?.style.display === 'flex') {
+      closeModal('modal-defect-preview');
+    }
+    if (document.getElementById('modal-pdf-viewer')?.style.display === 'flex') {
       closeModal('modal-pdf-viewer');
       document.getElementById('pdf-viewer-frame').src = '';
     }
-    if (document.getElementById('lightbox').style.display === 'flex') {
+    if (document.getElementById('lightbox')?.style.display === 'flex') {
       closeLightbox();
     }
+    ['modal-quick-switch', 'modal-project-edit', 'modal-user-edit', 'modal-multi-ps', 'modal-reset-password'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el && el.style.display === 'flex') closeModal(id);
+    });
   }
-  if (document.getElementById('lightbox').style.display === 'flex') {
+  if (e.ctrlKey && (e.key === 'b' || e.key === 'B')) {
+    e.preventDefault();
+    toggleSidebar();
+  }
+  if (document.getElementById('lightbox')?.style.display === 'flex') {
     if (e.key === 'ArrowLeft') document.getElementById('btn-lightbox-prev').click();
     if (e.key === 'ArrowRight') document.getElementById('btn-lightbox-next').click();
   }
 });
 
 
+/* ── ERGONOMIA I UKŁAD OKNA ── */
+function initLayoutPreferences() {
+  if (localStorage.getItem('ru_sidebar_collapsed') === '1') {
+    document.querySelector('.sidebar')?.classList.add('collapsed');
+  }
+  if (localStorage.getItem('ru_detail_pane_hidden') === '1') {
+    document.getElementById('detail-pane')?.classList.add('hidden');
+    document.querySelector('.master-pane')?.classList.add('full-width');
+    updateDetailToggleBtn(true);
+  }
+}
+
+function toggleSidebar() {
+  const sb = document.querySelector('.sidebar');
+  if (!sb) return;
+  sb.classList.toggle('collapsed');
+  localStorage.setItem('ru_sidebar_collapsed', sb.classList.contains('collapsed') ? '1' : '0');
+}
+
+function toggleDetailPane() {
+  const dp = document.getElementById('detail-pane');
+  const mp = document.querySelector('.master-pane');
+  if (!dp) return;
+  const isHidden = dp.classList.toggle('hidden');
+  if (mp) mp.classList.toggle('full-width', isHidden);
+  localStorage.setItem('ru_detail_pane_hidden', isHidden ? '1' : '0');
+  updateDetailToggleBtn(isHidden);
+}
+
+function updateDetailToggleBtn(isHidden) {
+  const txt = document.getElementById('text-toggle-detail');
+  const btn = document.getElementById('btn-toggle-detail-pane');
+  if (txt) txt.textContent = isHidden ? 'Pokaż panel' : 'Ukryj panel';
+  if (btn) {
+    btn.style.background = isHidden ? 'var(--primary-light)' : '';
+    btn.style.borderColor = isHidden ? 'var(--primary)' : '';
+    btn.style.color = isHidden ? 'var(--primary)' : '';
+  }
+}
+
+
 /* ── OBSŁUGA SCHOWKA I DRAG & DROP ── */
 function setupEventListeners() {
   // Przełącznik motywu
   document.getElementById('btn-toggle-theme').onclick = toggleTheme;
+
+  // Przełączniki zwijania pasków
+  const btnSide = document.getElementById('btn-toggle-sidebar');
+  if (btnSide) btnSide.onclick = toggleSidebar;
+  const btnDetail = document.getElementById('btn-toggle-detail-pane');
+  if (btnDetail) btnDetail.onclick = toggleDetailPane;
 
   // Filtry live search w dashboardzie
   document.getElementById('filter-search').oninput = renderDefectsTable;
@@ -3118,6 +3927,7 @@ function setupEventListeners() {
       STATE.activeUser = res.user;
       closeModal('modal-login');
       updateUserBadge();
+      checkMustChangePassword();
       showToast(`Witaj, ${res.user.full_name || res.user.username}!`, 'success');
       await loadAllData();
       startPolling();
@@ -3126,6 +3936,157 @@ function setupEventListeners() {
       errBox.style.display = 'block';
     }
   };
+
+  // Formularz wymuszonej zmiany hasła przy 1. logowaniu
+  document.getElementById('form-force-change-password').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const newPw = document.getElementById('force-new-password').value;
+    const confPw = document.getElementById('force-confirm-password').value;
+    const errBox = document.getElementById('force-pw-error');
+    errBox.style.display = 'none';
+
+    if (!newPw || newPw.length < 4) {
+      errBox.textContent = 'Hasło musi mieć co najmniej 4 znaki.';
+      errBox.style.display = 'block';
+      return;
+    }
+    if (newPw !== confPw) {
+      errBox.textContent = 'Podane hasła nie są identyczne.';
+      errBox.style.display = 'block';
+      return;
+    }
+
+    try {
+      await apiCall('/api/auth/change-password', 'POST', { new_password: newPw });
+      if (STATE.activeUser) STATE.activeUser.must_change_password = false;
+      document.getElementById('modal-force-change-password').style.display = 'none';
+      showToast('Nowe hasło zostało zapisane! Witaj w systemie.', 'success');
+    } catch(err) {
+      errBox.textContent = err.message || 'Wystąpił błąd podczas zmiany hasła.';
+      errBox.style.display = 'block';
+    }
+  });
+
+  // Obsługa żądania kodu resetu hasła (Krok 1)
+  document.getElementById('form-reset-request').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const identifier = document.getElementById('reset-identifier').value.trim();
+    const msgBox = document.getElementById('reset-step1-msg');
+    const btn = document.getElementById('btn-send-reset-code');
+    msgBox.style.display = 'none';
+
+    if (!identifier) return;
+
+    btn.disabled = true;
+    btn.textContent = 'Wysyłanie...';
+
+    try {
+      const res = await apiCall('/api/auth/request-reset', 'POST', { identifier });
+      btn.disabled = false;
+      btn.textContent = 'Wyślij kod weryfikacyjny ►';
+
+      if (res.email_sent) {
+        showToast('Kod weryfikacyjny został wysłany na Twój adres e-mail!', 'success');
+        goToResetStep(2);
+      } else {
+        msgBox.style.display = 'block';
+        msgBox.style.background = 'rgba(234, 179, 8, 0.15)';
+        msgBox.style.color = '#CA8A04';
+        msgBox.style.border = '1px solid rgba(234, 179, 8, 0.3)';
+        msgBox.innerHTML = `<strong>Informacja:</strong> ${escapeHtml(res.message || 'Skontaktuj się z Administratorem.')}`;
+        if (res.has_email === false) {
+          msgBox.innerHTML += `<div style="margin-top:6px; font-size:12px;">Dla tego konta nie uzupełniono adresu e-mail. Administrator może nadać nowe hasło w panelu Użytkownicy.</div>`;
+        } else {
+          setTimeout(() => goToResetStep(2), 2500);
+        }
+      }
+    } catch(err) {
+      btn.disabled = false;
+      btn.textContent = 'Wyślij kod weryfikacyjny ►';
+      msgBox.style.display = 'block';
+      msgBox.style.background = 'var(--red-bg)';
+      msgBox.style.color = 'var(--red-text)';
+      msgBox.style.border = '1px solid var(--border)';
+      msgBox.textContent = err.message || 'Wystąpił błąd podczas generowania kodu.';
+    }
+  });
+
+  // Obsługa zatwierdzenia nowego hasła kodem PIN (Krok 2)
+  document.getElementById('form-reset-submit').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const code = document.getElementById('reset-code').value.trim();
+    const newPw = document.getElementById('reset-new-password').value;
+    const confPw = document.getElementById('reset-confirm-password').value;
+    const msgBox = document.getElementById('reset-step2-msg');
+    msgBox.style.display = 'none';
+
+    if (!code || code.length !== 6) {
+      msgBox.style.display = 'block';
+      msgBox.style.background = 'var(--red-bg)';
+      msgBox.style.color = 'var(--red-text)';
+      msgBox.textContent = 'Wprowadź poprawny 6-cyfrowy kod PIN.';
+      return;
+    }
+    if (!newPw || newPw.length < 4) {
+      msgBox.style.display = 'block';
+      msgBox.style.background = 'var(--red-bg)';
+      msgBox.style.color = 'var(--red-text)';
+      msgBox.textContent = 'Hasło musi mieć co najmniej 4 znaki.';
+      return;
+    }
+    if (newPw !== confPw) {
+      msgBox.style.display = 'block';
+      msgBox.style.background = 'var(--red-bg)';
+      msgBox.style.color = 'var(--red-text)';
+      msgBox.textContent = 'Podane hasła nie są identyczne.';
+      return;
+    }
+
+    try {
+      const res = await apiCall('/api/auth/reset-password', 'POST', { code, new_password: newPw });
+      showToast(res.message || 'Hasło zostało zmienione! Możesz się zalogować.', 'success');
+      closeResetPasswordModal();
+    } catch(err) {
+      msgBox.style.display = 'block';
+      msgBox.style.background = 'var(--red-bg)';
+      msgBox.style.color = 'var(--red-text)';
+      msgBox.textContent = err.message || 'Nieprawidłowy lub wygasły kod weryfikacyjny.';
+    }
+  });
+
+  // Wymuszenie natychmiastowego focusu po kliknięciu myszą w polach logowania
+  const loginUserEl = document.getElementById('login-username');
+  const loginPassEl = document.getElementById('login-password');
+  if (loginUserEl) {
+    loginUserEl.addEventListener('pointerdown', () => { setTimeout(() => loginUserEl.focus(), 10); });
+    loginUserEl.addEventListener('click', () => { loginUserEl.focus(); });
+  }
+  if (loginPassEl) {
+    loginPassEl.addEventListener('pointerdown', () => { setTimeout(() => loginPassEl.focus(), 10); });
+    loginPassEl.addEventListener('click', () => { loginPassEl.focus(); });
+  }
+
+  // Przywracanie focusu na pole loginu po aktywacji okna aplikacji
+  window.addEventListener('focus', () => {
+    const loginModal = document.getElementById('modal-login');
+    if (loginModal && loginModal.style.display !== 'none' && !STATE.activeUser) {
+      if (loginUserEl && document.activeElement !== loginUserEl && document.activeElement !== loginPassEl) {
+        setTimeout(() => loginUserEl.focus(), 50);
+      }
+    }
+  });
+
+  // Globalny router klawiszy dla okna logowania - jeśli okno ma focus, a pole nie, kieruj klawisze do loginu
+  window.addEventListener('keydown', (e) => {
+    const loginModal = document.getElementById('modal-login');
+    if (loginModal && loginModal.style.display !== 'none' && !STATE.activeUser) {
+      if (loginUserEl && document.activeElement !== loginUserEl && document.activeElement !== loginPassEl) {
+        if (e.key && e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
+          loginUserEl.focus();
+        }
+      }
+    }
+  });
 
   // Zmiana hasła
   document.getElementById('btn-change-password').onclick = async () => {

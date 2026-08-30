@@ -4,12 +4,12 @@
   "PORT": 5050,
   "SECRET_BACKUP_DIR": "",
   "SMTP": {
-    "ENABLED": false,
-    "SERVER": "smtp.twojafirma.pl",
+    "ENABLED": true,
+    "SERVER": "smtp.gmail.com",
     "PORT": 587,
     "USE_TLS": true,
-    "USER": "rejestr-usterek@twojafirma.pl",
-    "PASSWORD": "",
-    "SENDER_NAME": "Rejestr Usterek — Powiadomienia"
+    "USER": "rejestr.usterek.was@gmail.com",
+    "PASSWORD": "iggbskxsvpknsjjn",
+    "SENDER_NAME": "Rejestr Usterek"
   }
 }
