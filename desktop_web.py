@@ -312,6 +312,12 @@ def main():
             pass
 
         def on_started():
+            # Otwórz okno zmaksymalizowane, zgodnie z poprzednim desktop.py
+            try:
+                window.maximize()
+            except Exception:
+                pass
+
             def _delayed_focus_loop():
                 for delay in (0.15, 0.4, 0.8, 1.5):
                     time.sleep(delay)
@@ -320,7 +326,7 @@ def main():
                     except Exception:
                         pass
                     _force_activate_app()
-            
+
             t = threading.Thread(target=_delayed_focus_loop, daemon=True, name="FocusActivator")
             t.start()
 

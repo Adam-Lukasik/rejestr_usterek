@@ -426,6 +426,29 @@
     display: flex;
   }
 
+  /* Formularz edycji/dodawania usterki jako pełnoekranowy overlay */
+  #view-new-defect.active {
+    position: fixed;
+    inset: 0;
+    z-index: 1200;
+    background: var(--bg-app);
+    display: flex;
+    flex-direction: column;
+  }
+  #view-new-defect.active .form-container-view {
+    flex: 1;
+    overflow-y: auto;
+    padding: 24px 32px;
+    width: 100%;
+    max-width: none;
+  }
+  #view-new-defect.active .form-card {
+    max-width: 1300px;
+    margin: 0 auto;
+    width: 100%;
+    min-height: 100%;
+  }
+
   /* ════════════ WIDOK 1: REJESTR USTEREK (MASTER-DETAIL) ════════════ */
   .dashboard-header {
     padding: 14px 20px;
@@ -968,6 +991,11 @@
     border-color: var(--primary);
     background: var(--primary-light);
   }
+  .upload-dropzone.drop-active {
+    border-color: var(--primary);
+    background: var(--primary-light);
+    transform: scale(1.01);
+  }
 
   /* ════════════ MODALE I POPUPY ════════════ */
   .modal-backdrop {
@@ -978,7 +1006,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    z-index: 1000;
+    z-index: 2000;
     padding: 16px;
   }
   .modal-box {
@@ -1084,7 +1112,7 @@
     position: fixed;
     inset: 0;
     background: rgba(0, 0, 0, 0.95);
-    z-index: 2000;
+    z-index: 3000;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -1119,7 +1147,7 @@
     position: fixed;
     bottom: 20px;
     right: 20px;
-    z-index: 3000;
+    z-index: 5000;
     display: flex;
     flex-direction: column;
     gap: 8px;
@@ -1388,7 +1416,10 @@
               <div>
                 <!-- Projekt PS i Wybór -->
                 <div class="form-group">
-                  <label for="f-projekt">Projekt PS * <span>(wybór automatycznie uzupełnia klienta i model)</span></label>
+                  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:5px;">
+                    <label for="f-projekt" style="margin-bottom:0;">Projekt PS * <span>(wybór automatycznie uzupełnia klienta i model)</span></label>
+                    <button type="button" class="btn-quick-add" onclick="openNewProjectDialog()" title="Dodaj nowy projekt PS do bazy">＋ Nowy projekt PS</button>
+                  </div>
                   <div style="display:flex; gap:8px;">
                     <select id="f-projekt" required style="flex:1;"></select>
                     <button type="button" class="btn-secondary-action" id="btn-open-multi-ps" title="Wybierz wiele projektów PS">+ Wiele PS</button>
@@ -1397,18 +1428,27 @@
 
                 <div class="form-row">
                   <div class="form-group">
-                    <label for="f-klient">Klient *</label>
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:5px;">
+                      <label for="f-klient" style="margin-bottom:0;">Klient *</label>
+                      <button type="button" class="btn-quick-add" onclick="quickAddClient()" title="Dodaj nowego klienta">＋ Nowy klient</button>
+                    </div>
                     <select id="f-klient" required></select>
                   </div>
                   <div class="form-group">
-                    <label for="f-model">Model auta bazowego *</label>
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:5px;">
+                      <label for="f-model" style="margin-bottom:0;">Model auta bazowego *</label>
+                      <button type="button" class="btn-quick-add" onclick="quickAddModel()" title="Dodaj nowy model auta">＋ Nowy model</button>
+                    </div>
                     <select id="f-model" required></select>
                   </div>
                 </div>
 
                 <div class="form-row">
                   <div class="form-group">
-                    <label for="f-typ">Typ usterki *</label>
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:5px;">
+                      <label for="f-typ" style="margin-bottom:0;">Typ usterki *</label>
+                      <button type="button" class="btn-quick-add" onclick="quickAddDefectType()" title="Dodaj nowy typ usterki do słownika">＋ Nowy typ</button>
+                    </div>
                     <select id="f-typ" required></select>
                   </div>
                   <div class="form-group">
@@ -1455,9 +1495,12 @@
                   <div class="upload-dropzone" id="dropzone-photos">
                     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--primary); margin-bottom:6px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
                     <div style="font-size:12.5px; font-weight:600;">Kliknij, aby wybrać zdjęcie z dysku</div>
-                    <div style="font-size:11px; color:var(--text-dim); margin-top:2px;">lub wklej zrzut ekranu (Ctrl+V)</div>
+                    <div style="font-size:11px; color:var(--text-dim); margin-top:2px;">lub przeciągnij zdjęcie / wklej zrzut ekranu (Ctrl+V)</div>
                     <input type="file" id="input-file-photos" accept="image/*" multiple style="display:none;">
                   </div>
+                  <button type="button" class="btn-secondary-action" id="btn-paste-photo" style="width:100%; justify-content:center; margin-top:8px;">
+                    📋 Wklej ze schowka
+                  </button>
                 </div>
 
                 <!-- Dokumenty załączniki -->
@@ -1469,6 +1512,17 @@
                   </button>
                   <input type="file" id="input-file-docs" multiple style="display:none;">
                 </div>
+              </div>
+            </div>
+
+            <!-- Sekcja wariantów naprawy w formularzu edycji -->
+            <div class="detail-section-card" id="form-solutions-section" style="margin-top:20px; border-top:2px solid var(--primary); display:none;">
+              <div class="section-card-title" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+                <span>💡 Warianty rozwiązań i napraw</span>
+                <button type="button" class="btn-primary-action" style="padding:5px 12px; font-size:12.5px;" onclick="formPromptAddSolution()">+ Dodaj wariant naprawy</button>
+              </div>
+              <div id="form-solutions-list" style="margin-top:12px; display:flex; flex-direction:column; gap:12px;">
+                <!-- Renderowane warianty z możliwością pełnej edycji -->
               </div>
             </div>
 
@@ -1982,6 +2036,8 @@ const STATE = {
   currentView: 'dashboard',
   selectedRecordId: null,
   editingRecordId: null,
+  activeSolutionId: null,
+  lastSelectedPS: '',
   theme: localStorage.getItem('ru_theme') || 'light',
   pendingPhotos: [], // [{filename, data: base64, isNew: true}]
   pendingDocs: [],   // [{filename, data: base64, filesize: int, isNew: true}]
@@ -2219,7 +2275,11 @@ function setupNavigation() {
   document.querySelectorAll('.sidebar-nav .nav-item').forEach(item => {
     item.addEventListener('click', () => {
       const view = item.dataset.view;
-      switchView(view);
+      if (view === 'new-defect') {
+        switchToNewDefect();
+      } else {
+        switchView(view);
+      }
     });
   });
 }
@@ -2435,7 +2495,6 @@ async function selectRecord(recId) {
     <div class="detail-section-card">
       <div class="section-card-title">
         <span>📸 Zdjęcia problemu</span>
-        <button class="btn-secondary-action" style="padding:2px 8px; font-size:11px;" onclick="uploadDirectPhoto('${r.id}')">+ Dodaj foto</button>
       </div>
       <div class="photo-gallery-grid" id="detail-photos-box">
         <div style="font-size:12px; color:var(--text-dim);">Ładowanie zdjęć...</div>
@@ -2446,7 +2505,6 @@ async function selectRecord(recId) {
     <div class="detail-section-card">
       <div class="section-card-title">
         <span>📎 Załączniki do problemu (Raporty VSWR / PDF)</span>
-        <button class="btn-secondary-action" style="padding:2px 8px; font-size:11px;" onclick="uploadDirectDoc('${r.id}')">+ Dodaj plik</button>
       </div>
       <div id="detail-docs-box" style="display:flex; flex-direction:column; gap:6px;">
         <div style="font-size:12px; color:var(--text-dim);">Ładowanie załączników...</div>
@@ -2457,7 +2515,6 @@ async function selectRecord(recId) {
     <div class="detail-section-card" style="border-top:2px solid var(--primary);">
       <div class="section-card-title">
         <span>💡 Warianty rozwiązań i napraw</span>
-        <button class="btn-primary-action" style="padding:4px 10px; font-size:11.5px;" onclick="promptAddSolution('${r.id}')">+ Dodaj wariant</button>
       </div>
       <div id="detail-solutions-box">
         <div style="font-size:12px; color:var(--text-dim);">Ładowanie wariantów...</div>
@@ -2596,7 +2653,6 @@ async function openDefectPreview(recId) {
     <div class="detail-section-card" style="border-top:2px solid var(--primary);">
       <div class="section-card-title">
         <span>💡 Warianty rozwiązań i napraw</span>
-        <button class="btn-primary-action" style="padding:4px 12px; font-size:12px;" onclick="promptAddSolution('${r.id}')">+ Dodaj wariant naprawy</button>
       </div>
       <div id="modal-preview-solutions-box">
         <div style="font-size:12px; color:var(--text-dim);">Ładowanie wariantów...</div>
@@ -2636,14 +2692,11 @@ async function loadRecordPhotos(recId) {
 
     boxes.forEach(b => {
       b.innerHTML = '';
-      const isModal = (b.id === 'modal-preview-photos-box');
       fullPhotos.forEach((full, i) => {
-        const ph = photos[i];
         const div = document.createElement('div');
         div.className = 'photo-thumb-card';
         div.innerHTML = `
           <img src="data:image/jpeg;base64,${full.data}" alt="Foto usterki" title="Kliknij, aby powiększyć zdjęcie">
-          ${!isModal ? `<button type="button" style="position:absolute; top:4px; right:4px; background:rgba(0,0,0,0.7); color:#FFF; border:none; border-radius:50%; width:20px; height:20px; font-size:11px; cursor:pointer;" onclick="event.stopPropagation(); deleteDirectPhoto('${ph.id}', '${recId}')" title="Usuń zdjęcie">✕</button>` : ''}
         `;
         div.onclick = () => openLightboxGallery(photoUrls, i);
         b.appendChild(div);
@@ -2668,7 +2721,7 @@ async function loadRecordSolutions(recId) {
     const solutions = await apiCall(`/api/records/${recId}/solutions`);
     if (!solutions || solutions.length === 0) {
       targets.forEach(t => {
-        t.box.innerHTML = `<div style="font-size:12px; color:var(--text-dim); padding:8px 0;">Brak wprowadzonych wariantów napraw. Kliknij „+ Dodaj wariant naprawy”, aby opisać wykonaną diagnozę i kroki naprawy.</div>`;
+        t.box.innerHTML = `<div style="font-size:12px; color:var(--text-dim); padding:8px 0;">Brak wprowadzonych wariantów napraw.</div>`;
       });
       return;
     }
@@ -2681,11 +2734,6 @@ async function loadRecordSolutions(recId) {
         card.innerHTML = `
           <div class="sol-header">
             <span class="sol-title">Wariant ${sol.numer}: ${escapeHtml(sol.tytul)}</span>
-            <div style="display:flex; gap:6px;">
-              <button class="btn-secondary-action" style="padding:3px 8px; font-size:11.5px;" onclick="uploadSolutionPhoto('${sol.id}', '${recId}')">📷 +Foto</button>
-              <button class="btn-secondary-action" style="padding:3px 8px; font-size:11.5px;" onclick="uploadSolutionDoc('${sol.id}', '${recId}')">📎 +Plik/PDF</button>
-              <button class="btn-secondary-action" style="padding:3px 8px; font-size:11.5px; color:var(--red);" onclick="deleteSolution('${sol.id}', '${recId}')">✕ Usuń</button>
-            </div>
           </div>
           <div style="font-size:13px; line-height:1.45; white-space:pre-wrap; margin-bottom:10px;">${escapeHtml(sol.opis || '(brak opisu)')}</div>
           <div id="sol-photos-${t.prefix}-${sol.id}" style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px;"></div>
@@ -2693,7 +2741,7 @@ async function loadRecordSolutions(recId) {
         `;
         t.box.appendChild(card);
 
-        // Zdjęcia wariantu
+        // Zdjęcia wariantu (podgląd)
         apiCall(`/api/solutions/${sol.id}/photos`).then(async pList => {
           const phBox = document.getElementById(`sol-photos-${t.prefix}-${sol.id}`);
           if (!phBox || !pList || pList.length === 0) return;
@@ -2713,7 +2761,7 @@ async function loadRecordSolutions(recId) {
           });
         });
 
-        // Dokumenty wariantu
+        // Dokumenty wariantu (podgląd)
         apiCall(`/api/solutions/${sol.id}/documents`).then(dList => {
           const dBox = document.getElementById(`sol-docs-${t.prefix}-${sol.id}`);
           if (!dBox || !dList || dList.length === 0) return;
@@ -2736,7 +2784,6 @@ async function loadRecordSolutions(recId) {
                 </div>
                 <div style="display:flex; gap:4px; flex-shrink:0;">
                   <button class="btn-secondary-action" style="padding:3px 8px; font-size:11px;" title="Podgląd / Otwórz" onclick="openPdfPreview('${rawUrl}', '${escapeHtml(d.filename)}', '${openUrl}', '${d.id}')">👁 Otwórz</button>
-                  <button class="btn-secondary-action" style="padding:3px 6px; font-size:11px; color:var(--red);" title="Usuń" onclick="deleteSolutionDoc('${d.id}', '${recId}')">✕</button>
                 </div>
               </div>
             `;
@@ -2767,7 +2814,6 @@ async function loadRecordDocs(recId) {
       return;
     }
     boxes.forEach(box => {
-      const isModal = (box.id === 'modal-preview-docs-box');
       box.innerHTML = docs.map(d => {
         const isPdf = (d.filename || '').toLowerCase().endsWith('.pdf');
         const thumbUrl = `/api/documents/${d.id}/thumb`;
@@ -2787,7 +2833,6 @@ async function loadRecordDocs(recId) {
             </div>
             <div style="display:flex; gap:4px; flex-shrink:0;">
               <button class="btn-secondary-action" style="padding:3px 8px; font-size:11px;" title="Podgląd / Otwórz" onclick="openPdfPreview('${rawUrl}', '${escapeHtml(d.filename)}', '${openUrl}', '${d.id}')">👁 Otwórz</button>
-              ${!isModal ? `<button class="btn-secondary-action" style="padding:3px 6px; font-size:11px; color:var(--red);" title="Usuń" onclick="deleteRecordDoc('${d.id}', '${recId}')">✕</button>` : ''}
             </div>
           </div>
         `;
@@ -2828,15 +2873,51 @@ function openPdfPreview(rawUrl, title, openEndpoint, docId) {
 
 
 /* ── ZARZĄDZANIE FORMULARZEM (DODAWANIE / EDYCJA) ── */
-function resetDefectForm() {
+function resetDefectForm(preserveLastPS = true) {
+  const lastPS = preserveLastPS ? (STATE.lastSelectedPS || '') : '';
+
   STATE.editingRecordId = null;
+  STATE.activeSolutionId = null;
   STATE.pendingPhotos = [];
   STATE.pendingDocs = [];
   document.getElementById('form-defect-submit').reset();
   document.getElementById('form-heading-text').textContent = 'Nowe zgłoszenie usterki';
   document.getElementById('btn-submit-defect-text').textContent = '✓ Zapisz usterkę';
+
+  // Przywróć ostatnio używany projekt PS (jeśli jest zapamiętany)
+  if (lastPS) {
+    const projSel = document.getElementById('f-projekt');
+    if (projSel) {
+      ensureOptionAndSet(projSel, lastPS);
+      fillClientAndModelFromPS(lastPS);
+    }
+  }
+
   renderFormPhotosPreview();
   renderFormDocsPreview();
+  const solSection = document.getElementById('form-solutions-section');
+  if (solSection) {
+    solSection.style.display = 'none';
+    const solList = document.getElementById('form-solutions-list');
+    if (solList) solList.innerHTML = '';
+  }
+}
+
+function fillClientAndModelFromPS(ps) {
+  if (!ps) return;
+  const projektyDict = STATE.lists.projekty || {};
+  if (projektyDict[ps]) {
+    const meta = projektyDict[ps];
+    if (meta.klient) document.getElementById('f-klient').value = meta.klient;
+    if (meta.model) document.getElementById('f-model').value = meta.model;
+  } else {
+    for (const [k, pList] of Object.entries(STATE.lists.projektyByKlient || {})) {
+      if (pList.includes(ps)) {
+        document.getElementById('f-klient').value = k;
+        break;
+      }
+    }
+  }
 }
 
 function renderFormDropdowns() {
@@ -2844,6 +2925,14 @@ function renderFormDropdowns() {
   const modelSel = document.getElementById('f-model');
   const typSel = document.getElementById('f-typ');
   const projSel = document.getElementById('f-projekt');
+
+  // Zachowaj aktualne wartości formularza, aby tło odświeżenie (np. polling co 4 s)
+  // nie wyczyścił danych podczas dodawania lub edycji usterki.
+  const curProjekt = projSel.value;
+  const curKlient = klientSel.value;
+  const curModel = modelSel.value;
+  const curTyp = typSel.value;
+  const curFix = document.getElementById('f-fixed-by').value;
 
   // Projekty PS
   const projektyDict = STATE.lists.projekty || {};
@@ -2873,56 +2962,99 @@ function renderFormDropdowns() {
 
   // Lista 'Naprawione przez'
   const fixSel = document.getElementById('f-fixed-by');
-  const curFix = fixSel.value;
   fixSel.innerHTML = `<option value="">— brak —</option>` + STATE.users.map(u => `<option value="${escapeHtml(u.full_name || u.username)}">${escapeHtml(u.full_name || u.username)}</option>`).join('');
-  fixSel.value = curFix;
+
+  // Przywróć wartości formularza; jeśli wartość nie istnieje w opcjach, dodaj ją
+  // (ważne przy edycji starych rekordów, gdy słowniki mogły ulec zmianie).
+  ensureOptionAndSet(projSel, curProjekt);
+  ensureOptionAndSet(klientSel, curKlient);
+  ensureOptionAndSet(modelSel, curModel);
+  ensureOptionAndSet(typSel, curTyp);
+  ensureOptionAndSet(fixSel, curFix);
+}
+
+function ensureOptionAndSet(selectEl, value) {
+  if (!value) return;
+  let found = false;
+  for (let i = 0; i < selectEl.options.length; i++) {
+    if (selectEl.options[i].value === value) { found = true; break; }
+  }
+  if (!found) {
+    const opt = document.createElement('option');
+    opt.value = value;
+    opt.textContent = value;
+    selectEl.appendChild(opt);
+  }
+  selectEl.value = value;
 }
 
 // Auto-uzupełnianie klienta i modelu po wyborze PS
 document.getElementById('f-projekt').addEventListener('change', (e) => {
   const ps = e.target.value;
   if (!ps) return;
-  const projektyDict = STATE.lists.projekty || {};
-  if (projektyDict[ps]) {
-    const meta = projektyDict[ps];
-    if (meta.klient) document.getElementById('f-klient').value = meta.klient;
-    if (meta.model) document.getElementById('f-model').value = meta.model;
-  } else {
-    for (const [k, pList] of Object.entries(STATE.lists.projektyByKlient || {})) {
-      if (pList.includes(ps)) {
-        document.getElementById('f-klient').value = k;
-        break;
-      }
-    }
-  }
+  STATE.lastSelectedPS = ps;
+  fillClientAndModelFromPS(ps);
 });
 
 function renderFormPhotosPreview() {
   const box = document.getElementById('form-photos-preview');
+  if (STATE.pendingPhotos.length === 0) {
+    box.innerHTML = '';
+    return;
+  }
   box.innerHTML = STATE.pendingPhotos.map((p, idx) => `
     <div class="photo-thumb-card">
       <img src="data:image/jpeg;base64,${p.data}" alt="Foto">
-      <button type="button" style="position:absolute; top:4px; right:4px; background:rgba(0,0,0,0.7); color:#FFF; border:none; border-radius:50%; width:20px; height:20px; font-size:11px; cursor:pointer;" onclick="removePendingPhoto(${idx})">✕</button>
+      ${p.isNew === false ? '<span style="position:absolute; top:4px; left:4px; background:rgba(37,99,235,0.85); color:#FFF; border:none; border-radius:4px; padding:1px 5px; font-size:10px;">zapisane</span>' : ''}
+      <button type="button" style="position:absolute; top:4px; right:4px; background:rgba(0,0,0,0.7); color:#FFF; border:none; border-radius:50%; width:20px; height:20px; font-size:11px; cursor:pointer;" onclick="removePendingPhoto(${idx})" title="Usuń">✕</button>
     </div>
   `).join('');
 }
 
-function removePendingPhoto(idx) {
+async function removePendingPhoto(idx) {
+  const p = STATE.pendingPhotos[idx];
+  if (!p) return;
+  if (p.isNew === false && p.id && STATE.editingRecordId) {
+    if (!confirm('Usunąć to zdjęcie z usterki?')) return;
+    try {
+      await apiCall(`/api/photos/${p.id}`, 'DELETE');
+      showToast('Zdjęcie usunięte', 'info');
+    } catch (err) {
+      showToast(`Błąd usuwania zdjęcia: ${err.message}`, 'error');
+      return;
+    }
+  }
   STATE.pendingPhotos.splice(idx, 1);
   renderFormPhotosPreview();
 }
 
 function renderFormDocsPreview() {
   const box = document.getElementById('form-docs-preview');
+  if (STATE.pendingDocs.length === 0) {
+    box.innerHTML = '';
+    return;
+  }
   box.innerHTML = STATE.pendingDocs.map((d, idx) => `
-    <div style="display:flex; justify-content:space-between; font-size:12px; padding:4px 8px; background:var(--bg-card-subtle); border:1px solid var(--border); border-radius:4px;">
-      <span>📄 ${escapeHtml(d.filename)} (${formatBytes(d.filesize)})</span>
-      <button type="button" style="background:none; border:none; color:var(--red); cursor:pointer;" onclick="removePendingDoc(${idx})">✕</button>
+    <div style="display:flex; justify-content:space-between; align-items:center; font-size:12px; padding:4px 8px; background:var(--bg-card-subtle); border:1px solid var(--border); border-radius:4px;">
+      <span>📄 ${escapeHtml(d.filename)} ${d.isNew === false ? '<span style="background:var(--primary-light); color:var(--primary); border-radius:4px; padding:1px 5px; font-size:10px;">zapisany</span>' : `(${formatBytes(d.filesize)})`}</span>
+      <button type="button" style="background:none; border:none; color:var(--red); cursor:pointer;" onclick="removePendingDoc(${idx})" title="Usuń">✕</button>
     </div>
   `).join('');
 }
 
-function removePendingDoc(idx) {
+async function removePendingDoc(idx) {
+  const d = STATE.pendingDocs[idx];
+  if (!d) return;
+  if (d.isNew === false && d.id && STATE.editingRecordId) {
+    if (!confirm('Usunąć ten załącznik z usterki?')) return;
+    try {
+      await apiCall(`/api/documents/${d.id}`, 'DELETE');
+      showToast('Załącznik usunięty', 'info');
+    } catch (err) {
+      showToast(`Błąd usuwania załącznika: ${err.message}`, 'error');
+      return;
+    }
+  }
   STATE.pendingDocs.splice(idx, 1);
   renderFormDocsPreview();
 }
@@ -3002,6 +3134,7 @@ async function startEditRecord(recId) {
   if (!r) return;
 
   STATE.editingRecordId = recId;
+  STATE.activeSolutionId = null;
   document.getElementById('form-heading-text').textContent = 'Edycja usterki';
   document.getElementById('btn-submit-defect-text').textContent = '✓ Zapisz zmiany';
 
@@ -3015,12 +3148,54 @@ async function startEditRecord(recId) {
   document.getElementById('f-status').value = r.status || 'open';
   document.getElementById('f-fixed-by').value = r.fixed_by || '';
 
+  // Wczytaj istniejące zdjęcia i dokumenty, aby były widoczne w formularzu
+  // i można je było usunąć podczas edycji.
   STATE.pendingPhotos = [];
   STATE.pendingDocs = [];
+  await loadExistingRecordFilesForEdit(recId);
   renderFormPhotosPreview();
   renderFormDocsPreview();
 
+  // Włącz sekcję wariantów i załaduj warianty w trybie edycji
+  const solSection = document.getElementById('form-solutions-section');
+  if (solSection) {
+    solSection.style.display = 'block';
+    loadFormSolutions(recId);
+  }
+
   switchView('new-defect');
+}
+
+async function loadExistingRecordFilesForEdit(recId) {
+  try {
+    const [photosMeta, docsMeta] = await Promise.all([
+      apiCall(`/api/records/${recId}/photos`).catch(() => []),
+      apiCall(`/api/records/${recId}/documents`).catch(() => [])
+    ]);
+
+    const fullPhotos = await Promise.all(
+      (photosMeta || []).map(ph => apiCall(`/api/photos/${ph.id}`))
+    );
+    STATE.pendingPhotos = fullPhotos.map((p, i) => ({
+      id: photosMeta[i].id,
+      filename: photosMeta[i].filename,
+      data: p.data,
+      isNew: false
+    }));
+
+    const fullDocs = await Promise.all(
+      (docsMeta || []).map(d => apiCall(`/api/documents/${d.id}`))
+    );
+    STATE.pendingDocs = fullDocs.map((d, i) => ({
+      id: docsMeta[i].id,
+      filename: docsMeta[i].filename,
+      data: d.data,
+      filesize: docsMeta[i].filesize || 0,
+      isNew: false
+    }));
+  } catch (e) {
+    showToast('Błąd ładowania istniejących załączników do edycji.', 'error');
+  }
 }
 
 /* ── SZYBKIE AKCJE NA USTERCE ── */
@@ -3076,38 +3251,238 @@ async function deleteRecordConfirm(recId) {
   }
 }
 
-/* ── DODAWANIE WARIANTU ROZWIĄZANIA ── */
-async function promptAddSolution(recId) {
+/* ── ZARZĄDZANIE WARIANTAMI W FORMULARZU EDYCJI ── */
+function highlightActiveSolutionCard(solId) {
+  document.querySelectorAll('#form-solutions-list .solution-item-card').forEach(c => {
+    c.style.outline = 'none';
+    c.style.boxShadow = 'none';
+  });
+  if (solId) {
+    const el = document.getElementById(`form-sol-card-${solId}`);
+    if (el) {
+      el.style.outline = '2px solid var(--primary)';
+      el.style.boxShadow = '0 0 0 3px var(--primary-light)';
+    }
+  }
+}
+
+async function loadFormSolutions(recId) {
+  const box = document.getElementById('form-solutions-list');
+  if (!box) return;
+
+  if (!recId) {
+    box.innerHTML = '<div style="font-size:12px; color:var(--text-dim); padding:8px 0;">Zapisz zgłoszenie, aby dodać warianty naprawy.</div>';
+    return;
+  }
+
+  box.innerHTML = '<div style="font-size:12px; color:var(--text-dim); padding:8px 0;">Ładowanie wariantów...</div>';
+
+  try {
+    const solutions = await apiCall(`/api/records/${recId}/solutions`);
+    if (!solutions || solutions.length === 0) {
+      box.innerHTML = `
+        <div style="font-size:12.5px; color:var(--text-muted); background:var(--bg-card-subtle); padding:16px; border-radius:var(--radius-md); border:1px dashed var(--border); text-align:center;">
+          Brak wariantów napraw dla tej usterki.<br>
+          <button type="button" class="btn-primary-action" style="margin-top:10px; font-size:12px;" onclick="formPromptAddSolution('${recId}')">+ Dodaj pierwszy wariant naprawy</button>
+        </div>
+      `;
+      return;
+    }
+
+    box.innerHTML = '';
+    for (const sol of solutions) {
+      const card = document.createElement('div');
+      card.className = 'solution-item-card';
+      card.id = `form-sol-card-${sol.id}`;
+      card.style.border = '1px solid var(--border)';
+      card.style.background = 'var(--bg-card)';
+      card.style.transition = 'all 0.15s ease';
+      card.style.cursor = 'default';
+
+      // Drag & Drop na kartę wariantu
+      card.ondragenter = (e) => { e.preventDefault(); e.stopPropagation(); card.style.borderColor = 'var(--primary)'; card.style.boxShadow = '0 0 0 2px var(--primary-light)'; };
+      card.ondragover = (e) => { e.preventDefault(); e.stopPropagation(); };
+      card.ondragleave = (e) => { e.preventDefault(); e.stopPropagation(); card.style.borderColor = 'var(--border)'; card.style.boxShadow = 'none'; };
+      card.ondrop = async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        card.style.borderColor = 'var(--border)';
+        card.style.boxShadow = 'none';
+        STATE.activeSolutionId = sol.id;
+        highlightActiveSolutionCard(sol.id);
+        if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+          for (const f of e.dataTransfer.files) {
+            if (f.type.startsWith('image/')) {
+              await uploadSolutionFileObject(sol.id, recId, f, 'photo');
+            } else {
+              await uploadSolutionFileObject(sol.id, recId, f, 'doc');
+            }
+          }
+          loadFormSolutions(recId);
+        }
+      };
+
+      card.onclick = () => {
+        STATE.activeSolutionId = sol.id;
+        highlightActiveSolutionCard(sol.id);
+      };
+
+      const safeTytul = escapeHtml(sol.tytul).replace(/'/g, "\\'");
+      const safeOpis = escapeHtml(sol.opis || '').replace(/'/g, "\\'");
+
+      card.innerHTML = `
+        <div class="sol-header" style="flex-wrap:wrap; gap:8px;">
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span class="sol-title" style="font-size:13.5px; font-weight:700;">Wariant ${sol.numer}: ${escapeHtml(sol.tytul)}</span>
+            <span style="font-size:10.5px; color:var(--text-dim); background:var(--bg-card-subtle); padding:2px 6px; border-radius:4px; border:1px solid var(--border);">kliknij kartę aby wklejać Ctrl+V</span>
+          </div>
+          <div style="display:flex; gap:6px; flex-wrap:wrap;">
+            <button type="button" class="btn-secondary-action" style="padding:3px 8px; font-size:11.5px;" onclick="event.stopPropagation(); formEditSolutionText('${sol.id}', '${recId}', '${safeTytul}', '${safeOpis}')" title="Edytuj tytuł i opis wariantu">✏ Edytuj opis</button>
+            <button type="button" class="btn-secondary-action" style="padding:3px 8px; font-size:11.5px;" onclick="event.stopPropagation(); uploadSolutionPhoto('${sol.id}', '${recId}', true)" title="Dodaj zdjęcie z dysku">📷 +Foto</button>
+            <button type="button" class="btn-secondary-action" style="padding:3px 8px; font-size:11.5px;" onclick="event.stopPropagation(); pasteToSolution('${sol.id}', '${recId}')" title="Wklej zdjęcie lub plik ze schowka">📋 Wklej ze schowka</button>
+            <button type="button" class="btn-secondary-action" style="padding:3px 8px; font-size:11.5px;" onclick="event.stopPropagation(); uploadSolutionDoc('${sol.id}', '${recId}', true)" title="Dodaj plik / raport PDF">📎 +Plik/PDF</button>
+            <button type="button" class="btn-secondary-action" style="padding:3px 8px; font-size:11.5px; color:var(--red);" onclick="event.stopPropagation(); deleteSolution('${sol.id}', '${recId}', true)" title="Usuń ten wariant">🗑 Usuń wariant</button>
+          </div>
+        </div>
+        <div style="font-size:13px; line-height:1.45; white-space:pre-wrap; margin-bottom:10px; padding:8px 10px; background:var(--bg-card-subtle); border-radius:var(--radius-sm); border:1px solid var(--border);">${escapeHtml(sol.opis || '(brak opisu)')}</div>
+        <div id="form-sol-photos-${sol.id}" style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px;"></div>
+        <div id="form-sol-docs-${sol.id}" style="display:flex; flex-direction:column; gap:4px;"></div>
+      `;
+      box.appendChild(card);
+
+      // Zdjęcia wariantu
+      apiCall(`/api/solutions/${sol.id}/photos`).then(async pList => {
+        const phBox = document.getElementById(`form-sol-photos-${sol.id}`);
+        if (!phBox) return;
+        if (!pList || pList.length === 0) {
+          phBox.innerHTML = '';
+          return;
+        }
+        const fullPhotos = await Promise.all(
+          pList.map(pm => apiCall(`/api/solution-photos/${pm.id}`))
+        );
+        const solPhotoUrls = fullPhotos.map(p => `data:image/jpeg;base64,${p.data}`);
+        phBox.innerHTML = '';
+        fullPhotos.forEach((full, pIdx) => {
+          const ph = pList[pIdx];
+          const div = document.createElement('div');
+          div.className = 'photo-thumb-card';
+          div.style.position = 'relative';
+          div.innerHTML = `
+            <img src="data:image/jpeg;base64,${full.data}" alt="Foto wariantu" title="Kliknij, aby powiększyć">
+            <button type="button" style="position:absolute; top:4px; right:4px; background:rgba(0,0,0,0.7); color:#FFF; border:none; border-radius:50%; width:20px; height:20px; font-size:11px; cursor:pointer;" onclick="event.stopPropagation(); deleteSolutionPhoto('${ph.id}', '${sol.id}', '${recId}')" title="Usuń zdjęcie">✕</button>
+          `;
+          div.onclick = () => openLightboxGallery(solPhotoUrls, pIdx);
+          phBox.appendChild(div);
+        });
+      });
+
+      // Dokumenty wariantu
+      apiCall(`/api/solutions/${sol.id}/documents`).then(dList => {
+        const dBox = document.getElementById(`form-sol-docs-${sol.id}`);
+        if (!dBox) return;
+        if (!dList || dList.length === 0) {
+          dBox.innerHTML = '';
+          return;
+        }
+        dBox.innerHTML = dList.map(d => {
+          const isPdf = (d.filename || '').toLowerCase().endsWith('.pdf');
+          const thumbUrl = `/api/solution-documents/${d.id}/thumb`;
+          const rawUrl = `/api/solution-documents/${d.id}/raw`;
+          const openUrl = `/api/solution-documents/${d.id}/open`;
+          return `
+            <div style="display:flex; align-items:center; gap:10px; padding:6px 10px; background:var(--bg-card-subtle); border:1px solid var(--border); border-radius:var(--radius-md); margin-top:4px;">
+              <div style="width:38px; height:48px; background:var(--bg-card); border-radius:4px; overflow:hidden; display:flex; align-items:center; justify-content:center; border:1px solid var(--border); cursor:pointer; flex-shrink:0;" onclick="openPdfPreview('${rawUrl}', '${escapeHtml(d.filename)}', '${openUrl}', '${d.id}')">
+                ${isPdf ? `<img src="${thumbUrl}" alt="PDF" style="width:100%; height:100%; object-fit:cover;" onerror="this.onerror=null; this.parentElement.innerHTML='<span style=\\'font-size:18px;\\'>📄</span>';">` : '<span style="font-size:18px;">📄</span>'}
+              </div>
+              <div style="flex:1; min-width:0; cursor:pointer;" onclick="openPdfPreview('${rawUrl}', '${escapeHtml(d.filename)}', '${openUrl}', '${d.id}')">
+                <div style="font-size:12.5px; font-weight:600; color:var(--primary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="${escapeHtml(d.filename)}">${escapeHtml(d.filename)}</div>
+                <div style="font-size:11px; color:var(--text-muted); display:flex; align-items:center; gap:6px; margin-top:2px;">
+                  <span style="background:var(--primary-light); color:var(--primary); font-size:9.5px; font-weight:700; padding:1px 5px; border-radius:3px;">${isPdf ? 'PDF' : 'DOKUMENT'}</span>
+                  <span>${formatBytes(d.filesize)}</span>
+                </div>
+              </div>
+              <div style="display:flex; gap:4px; flex-shrink:0;">
+                <button type="button" class="btn-secondary-action" style="padding:3px 8px; font-size:11px;" title="Podgląd / Otwórz" onclick="openPdfPreview('${rawUrl}', '${escapeHtml(d.filename)}', '${openUrl}', '${d.id}')">👁 Otwórz</button>
+                <button type="button" class="btn-secondary-action" style="padding:3px 6px; font-size:11px; color:var(--red);" title="Usuń" onclick="deleteSolutionDoc('${d.id}', '${recId}', true)">✕</button>
+              </div>
+            </div>
+          `;
+        }).join('');
+      });
+    }
+
+    if (STATE.activeSolutionId) {
+      highlightActiveSolutionCard(STATE.activeSolutionId);
+    }
+  } catch(e) {
+    box.innerHTML = `<div style="font-size:12px; color:var(--red);">Błąd ładowania wariantów: ${e.message}</div>`;
+  }
+}
+
+async function formPromptAddSolution(recId) {
+  recId = recId || STATE.editingRecordId;
+  if (!recId) {
+    showToast('Zapisz najpierw formularz usterki', 'warning');
+    return;
+  }
   const tytul = prompt('Wpisz tytuł wariantu naprawy (np. "Wymiana wiązki", "Regulacja zawiasu"):');
   if (!tytul || !tytul.trim()) return;
   const opis = prompt('Wpisz opis kroków naprawczych / przyczyny:') || '';
 
   try {
-    await apiCall(`/api/records/${recId}/solutions`, 'POST', {
+    const res = await apiCall(`/api/records/${recId}/solutions`, 'POST', {
       tytul: tytul.trim(),
       opis: opis.trim(),
       created_by: STATE.activeUser.full_name || STATE.activeUser.username || 'Technik'
     });
     showToast('Wariant rozwiązania dodany!', 'success');
-    loadRecordSolutions(recId);
+    if (res && res.id) {
+      STATE.activeSolutionId = res.id;
+    }
+    loadFormSolutions(recId);
   } catch(e) {
     showToast(`Błąd dodawania: ${e.message}`, 'error');
   }
 }
 
-async function deleteSolution(solId, recId) {
-  if (!confirm('Usunąć ten wariant rozwiązania?')) return;
+async function formEditSolutionText(solId, recId, currentTytul, currentOpis) {
+  recId = recId || STATE.editingRecordId;
+  const tytul = prompt('Edytuj tytuł wariantu naprawy:', currentTytul || '');
+  if (tytul === null) return;
+  if (!tytul.trim()) {
+    showToast('Tytuł nie może być pusty', 'error');
+    return;
+  }
+  const opis = prompt('Edytuj opis kroków naprawczych / diagnozy:', currentOpis || '');
+  if (opis === null) return;
+
+  try {
+    await apiCall(`/api/solutions/${solId}`, 'PUT', {
+      tytul: tytul.trim(),
+      opis: opis.trim()
+    });
+    showToast('Zaktualizowano wariant naprawy', 'success');
+    loadFormSolutions(recId);
+  } catch(e) {
+    showToast(`Błąd zapisu: ${e.message}`, 'error');
+  }
+}
+
+async function deleteSolution(solId, recId, isEditForm = false) {
+  if (!confirm('Usunąć ten wariant rozwiązania wraz ze wszystkimi jego zdjęciami i plikami?')) return;
   try {
     await apiCall(`/api/solutions/${solId}`, 'DELETE');
     showToast('Wariant usunięty', 'info');
-    loadRecordSolutions(recId);
+    if (STATE.activeSolutionId === solId) STATE.activeSolutionId = null;
+    if (isEditForm) loadFormSolutions(recId);
+    else loadRecordSolutions(recId);
   } catch(e) {
     showToast(`Błąd: ${e.message}`, 'error');
   }
 }
 
-/* ── ZDJĘCIA I DOKUMENTY WARIANTÓW ── */
-function uploadSolutionPhoto(solId, recId) {
+function uploadSolutionPhoto(solId, recId, isEditForm = false) {
   const input = document.createElement('input');
   input.type = 'file';
   input.accept = 'image/*';
@@ -3120,7 +3495,8 @@ function uploadSolutionPhoto(solId, recId) {
       try {
         await apiCall(`/api/solutions/${solId}/photos`, 'POST', { filename: file.name, data: b64 });
         showToast('Zdjęcie dodane do wariantu', 'success');
-        loadRecordSolutions(recId);
+        if (isEditForm) loadFormSolutions(recId);
+        else loadRecordSolutions(recId);
       } catch(err) { showToast(`Błąd: ${err.message}`, 'error'); }
     };
     reader.readAsDataURL(file);
@@ -3128,7 +3504,79 @@ function uploadSolutionPhoto(solId, recId) {
   input.click();
 }
 
-function uploadSolutionDoc(solId, recId) {
+async function uploadSolutionFileObject(solId, recId, file, type = 'photo') {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const b64 = reader.result.split(',')[1];
+      try {
+        if (type === 'photo') {
+          await apiCall(`/api/solutions/${solId}/photos`, 'POST', {
+            filename: file.name || `wklejone_${new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')}.png`,
+            data: b64
+          });
+          showToast('Wklejono zdjęcie do wariantu', 'success');
+        } else {
+          await apiCall(`/api/solutions/${solId}/documents`, 'POST', {
+            filename: file.name || `dokument_${new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')}.pdf`,
+            data: b64
+          });
+          showToast('Wklejono dokument do wariantu', 'success');
+        }
+      } catch(err) {
+        showToast(`Błąd wklejania: ${err.message}`, 'error');
+      }
+      resolve();
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+async function pasteToSolution(solId, recId) {
+  STATE.activeSolutionId = solId;
+  highlightActiveSolutionCard(solId);
+
+  if (navigator.clipboard && navigator.clipboard.read) {
+    try {
+      const items = await navigator.clipboard.read();
+      let found = false;
+      for (const item of items) {
+        for (const type of item.types) {
+          if (type.startsWith('image/')) {
+            const blob = await item.getType(type);
+            const ext = type.split('/')[1] || 'png';
+            const filename = `wklejone_wariant_${new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5)}.${ext}`;
+            const file = new File([blob], filename, { type });
+            await uploadSolutionFileObject(solId, recId, file, 'photo');
+            found = true;
+            break;
+          }
+        }
+        if (found) break;
+      }
+      if (found) {
+        loadFormSolutions(recId);
+        return;
+      }
+    } catch (e) {
+      console.warn('Clipboard direct read:', e);
+    }
+  }
+  showToast('Kliknij na ten wariant i użyj skrótu Ctrl+V, aby wkleić ze schowka.', 'info');
+}
+
+async function deleteSolutionPhoto(photoId, solId, recId) {
+  if (!confirm('Usunąć to zdjęcie z wariantu?')) return;
+  try {
+    await apiCall(`/api/solution-photos/${photoId}`, 'DELETE');
+    showToast('Zdjęcie usunięte z wariantu', 'info');
+    loadFormSolutions(recId);
+  } catch(e) {
+    showToast(`Błąd: ${e.message}`, 'error');
+  }
+}
+
+function uploadSolutionDoc(solId, recId, isEditForm = false) {
   const input = document.createElement('input');
   input.type = 'file';
   input.onchange = async (e) => {
@@ -3140,7 +3588,8 @@ function uploadSolutionDoc(solId, recId) {
       try {
         await apiCall(`/api/solutions/${solId}/documents`, 'POST', { filename: file.name, data: b64 });
         showToast('Dokument dodany do wariantu', 'success');
-        loadRecordSolutions(recId);
+        if (isEditForm) loadFormSolutions(recId);
+        else loadRecordSolutions(recId);
       } catch(err) { showToast(`Błąd: ${err.message}`, 'error'); }
     };
     reader.readAsDataURL(file);
@@ -3158,82 +3607,13 @@ async function downloadSolutionDoc(docId, filename) {
   } catch(e) { showToast('Błąd pobierania', 'error'); }
 }
 
-async function deleteSolutionDoc(docId, recId) {
-  if (!confirm('Usunąć ten dokument?')) return;
+async function deleteSolutionDoc(docId, recId, isEditForm = false) {
+  if (!confirm('Usunąć ten dokument z wariantu?')) return;
   try {
     await apiCall(`/api/solution-documents/${docId}`, 'DELETE');
-    showToast('Dokument usunięty', 'info');
-    loadRecordSolutions(recId);
-  } catch(e) { showToast(`Błąd: ${e.message}`, 'error'); }
-}
-
-/* ── BEZPOŚREDNIE DODAWANIE PLIKÓW DO USTERKI ── */
-function uploadDirectPhoto(recId) {
-  const input = document.createElement('input');
-  input.type = 'file';
-  input.accept = 'image/*';
-  input.onchange = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = async () => {
-      const b64 = reader.result.split(',')[1];
-      try {
-        await apiCall(`/api/records/${recId}/photos`, 'POST', { filename: file.name, data: b64 });
-        showToast('Zdjęcie dodane!', 'success');
-        loadRecordPhotos(recId);
-      } catch(err) { showToast(`Błąd: ${err.message}`, 'error'); }
-    };
-    reader.readAsDataURL(file);
-  };
-  input.click();
-}
-
-async function deleteDirectPhoto(photoId, recId) {
-  if (!confirm('Usunąć to zdjęcie?')) return;
-  try {
-    await apiCall(`/api/photos/${photoId}`, 'DELETE');
-    showToast('Zdjęcie usunięte', 'info');
-    loadRecordPhotos(recId);
-  } catch(e) { showToast(`Błąd: ${e.message}`, 'error'); }
-}
-
-function uploadDirectDoc(recId) {
-  const input = document.createElement('input');
-  input.type = 'file';
-  input.onchange = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = async () => {
-      const b64 = reader.result.split(',')[1];
-      try {
-        await apiCall(`/api/records/${recId}/documents`, 'POST', { filename: file.name, data: b64 });
-        showToast('Dokument dodany!', 'success');
-        loadRecordDocs(recId);
-      } catch(err) { showToast(`Błąd: ${err.message}`, 'error'); }
-    };
-    reader.readAsDataURL(file);
-  };
-  input.click();
-}
-
-async function downloadRecordDoc(docId, filename) {
-  try {
-    const doc = await apiCall(`/api/documents/${docId}`);
-    const a = document.createElement('a');
-    a.href = `data:application/octet-stream;base64,${doc.data}`;
-    a.download = filename;
-    a.click();
-  } catch(e) { showToast('Błąd pobierania', 'error'); }
-}
-
-async function deleteRecordDoc(docId, recId) {
-  if (!confirm('Usunąć ten załącznik?')) return;
-  try {
-    await apiCall(`/api/documents/${docId}`, 'DELETE');
-    showToast('Załącznik usunięty', 'info');
-    loadRecordDocs(recId);
+    showToast('Dokument usunięty z wariantu', 'info');
+    if (isEditForm) loadFormSolutions(recId);
+    else loadRecordSolutions(recId);
   } catch(e) { showToast(`Błąd: ${e.message}`, 'error'); }
 }
 
@@ -3362,6 +3742,7 @@ function openNewProjectDialog() {
 
   renderProjectModalDropdowns('', '');
   openModal('modal-project-edit');
+  setTimeout(() => document.getElementById('pe-ps')?.focus(), 60);
 }
 
 function editProjectDialog(ps) {
@@ -3374,6 +3755,7 @@ function editProjectDialog(ps) {
 
   renderProjectModalDropdowns(meta.klient || '', meta.model || '');
   openModal('modal-project-edit');
+  setTimeout(() => document.getElementById('pe-ps')?.focus(), 60);
 }
 
 document.getElementById('form-project-edit').addEventListener('submit', async (e) => {
@@ -3411,6 +3793,14 @@ document.getElementById('form-project-edit').addEventListener('submit', async (e
     closeModal('modal-project-edit');
     renderProjectsTable();
     renderFormDropdowns();
+
+    // Jeśli jesteśmy w widoku formularza zgłoszenia, automatycznie ustaw nowo dodany projekt PS
+    const projSel = document.getElementById('f-projekt');
+    if (projSel) {
+      ensureOptionAndSet(projSel, newPs);
+      STATE.lastSelectedPS = newPs;
+      fillClientAndModelFromPS(newPs);
+    }
   } catch(err) {
     showToast(`Błąd: ${err.message}`, 'error');
   }
@@ -3493,6 +3883,84 @@ async function addDictionaryItem(key, inputId) {
     showToast('Pozycja dodana!', 'success');
     renderDictionaries();
     renderFormDropdowns();
+  }
+}
+
+async function quickAddDefectType() {
+  const newType = prompt('Wpisz nazwę nowego typu usterki (np. "Zabudowa meblowa", "Ogrzewanie"):');
+  if (!newType || !newType.trim()) return;
+  const val = newType.trim();
+
+  STATE.lists.typy = STATE.lists.typy || [];
+  if (!STATE.lists.typy.includes(val)) {
+    STATE.lists.typy.push(val);
+    STATE.lists.typy.sort((a, b) => a.localeCompare(b));
+    try {
+      await apiCall('/api/lists', 'PUT', STATE.lists);
+      showToast(`Dodano nowy typ usterki: ${val}`, 'success');
+      renderDictionaries();
+      renderFormDropdowns();
+      const typSel = document.getElementById('f-typ');
+      if (typSel) ensureOptionAndSet(typSel, val);
+    } catch(err) {
+      showToast(`Błąd zapisu: ${err.message}`, 'error');
+    }
+  } else {
+    const typSel = document.getElementById('f-typ');
+    if (typSel) ensureOptionAndSet(typSel, val);
+    showToast(`Typ "${val}" jest już na liście i został wybrany.`, 'info');
+  }
+}
+
+async function quickAddClient() {
+  const newClient = prompt('Wpisz nazwę nowego klienta (np. "LAS - London Ambulance Service"):');
+  if (!newClient || !newClient.trim()) return;
+  const val = newClient.trim();
+
+  STATE.lists.klienci = STATE.lists.klienci || [];
+  if (!STATE.lists.klienci.includes(val)) {
+    STATE.lists.klienci.push(val);
+    STATE.lists.klienci.sort((a, b) => a.localeCompare(b));
+    try {
+      await apiCall('/api/lists', 'PUT', STATE.lists);
+      showToast(`Dodano nowego klienta: ${val}`, 'success');
+      renderDictionaries();
+      renderFormDropdowns();
+      const klientSel = document.getElementById('f-klient');
+      if (klientSel) ensureOptionAndSet(klientSel, val);
+    } catch(err) {
+      showToast(`Błąd zapisu: ${err.message}`, 'error');
+    }
+  } else {
+    const klientSel = document.getElementById('f-klient');
+    if (klientSel) ensureOptionAndSet(klientSel, val);
+    showToast(`Klient "${val}" jest już na liście i został wybrany.`, 'info');
+  }
+}
+
+async function quickAddModel() {
+  const newModel = prompt('Wpisz nazwę nowego modelu pojazdu (np. "MAN TGE 2025", "Mercedes Sprinter 2024"):');
+  if (!newModel || !newModel.trim()) return;
+  const val = newModel.trim();
+
+  STATE.lists.modele = STATE.lists.modele || [];
+  if (!STATE.lists.modele.includes(val)) {
+    STATE.lists.modele.push(val);
+    STATE.lists.modele.sort((a, b) => a.localeCompare(b));
+    try {
+      await apiCall('/api/lists', 'PUT', STATE.lists);
+      showToast(`Dodano nowy model: ${val}`, 'success');
+      renderDictionaries();
+      renderFormDropdowns();
+      const modelSel = document.getElementById('f-model');
+      if (modelSel) ensureOptionAndSet(modelSel, val);
+    } catch(err) {
+      showToast(`Błąd zapisu: ${err.message}`, 'error');
+    }
+  } else {
+    const modelSel = document.getElementById('f-model');
+    if (modelSel) ensureOptionAndSet(modelSel, val);
+    showToast(`Model "${val}" jest już na liście i został wybrany.`, 'info');
   }
 }
 
@@ -3881,16 +4349,94 @@ function setupEventListeners() {
   };
 
   // Obsługa schowka (Ctrl+V) globalnie dla formularza
-  window.addEventListener('paste', (e) => {
+  window.addEventListener('paste', async (e) => {
     if (STATE.currentView !== 'new-defect') return;
-    const items = (e.clipboardData || e.originalEvent.clipboardData).items;
-    for (const item of items) {
-      if (item.kind === 'file' && item.type.startsWith('image/')) {
-        handleFormImageFile(item.getAsFile());
-        break;
+    const cd = e.clipboardData || (e.originalEvent && e.originalEvent.clipboardData);
+    if (!cd) return;
+
+    // 1. Jeśli użytkownik ma aktywny wariant naprawy w trybie edycji:
+    if (STATE.editingRecordId && STATE.activeSolutionId) {
+      const solId = STATE.activeSolutionId;
+      let solHandled = false;
+
+      if (cd.files && cd.files.length > 0) {
+        for (const file of cd.files) {
+          e.preventDefault();
+          if (file.type.startsWith('image/')) {
+            await uploadSolutionFileObject(solId, STATE.editingRecordId, file, 'photo');
+          } else {
+            await uploadSolutionFileObject(solId, STATE.editingRecordId, file, 'doc');
+          }
+          solHandled = true;
+        }
+      }
+
+      if (!solHandled && cd.items) {
+        for (const item of cd.items) {
+          if (item.kind === 'file') {
+            const file = item.getAsFile();
+            if (file) {
+              e.preventDefault();
+              if (file.type.startsWith('image/')) {
+                await uploadSolutionFileObject(solId, STATE.editingRecordId, file, 'photo');
+              } else {
+                await uploadSolutionFileObject(solId, STATE.editingRecordId, file, 'doc');
+              }
+              solHandled = true;
+              break;
+            }
+          }
+        }
+      }
+
+      if (solHandled) {
+        loadFormSolutions(STATE.editingRecordId);
+        return;
+      }
+    }
+
+    // 2. Domyślna obsługa dla zdjęć i załączników zgłoszenia usterki
+    let handled = false;
+
+    // Nowe przeglądarki / WebView2 udostępniają obraz ze schowka jako plik
+    if (cd.files && cd.files.length > 0) {
+      for (const file of cd.files) {
+        if (file.type.startsWith('image/')) {
+          e.preventDefault();
+          handleFormImageFile(file);
+          handled = true;
+        } else if (file.type === 'application/pdf' || (file.name || '').endsWith('.pdf') || (file.name || '').endsWith('.csv')) {
+          e.preventDefault();
+          handleFormDocFile(file);
+          handled = true;
+        }
+      }
+    }
+
+    // Klasyczne ClipboardData.items
+    if (!handled && cd.items) {
+      for (const item of cd.items) {
+        if (item.kind === 'file') {
+          const file = item.getAsFile();
+          if (file) {
+            e.preventDefault();
+            if (file.type.startsWith('image/')) {
+              handleFormImageFile(file);
+              handled = true;
+              break;
+            } else {
+              handleFormDocFile(file);
+              handled = true;
+              break;
+            }
+          }
+        }
       }
     }
   });
+
+  // Przycisk wklejania zapewnia także fallback dla WebView2/Edge
+  document.getElementById('btn-paste-photo').onclick = pastePhotoFromClipboard;
 
   // Dropzone zdjęć w formularzu
   const dropzone = document.getElementById('dropzone-photos');
@@ -3900,6 +4446,18 @@ function setupEventListeners() {
     for (const f of e.target.files) handleFormImageFile(f);
     fileInput.value = '';
   };
+
+  // Drag & drop dla zdjęć
+  ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(ev => dropzone.addEventListener(ev, (e) => { e.preventDefault(); e.stopPropagation(); }));
+  ['dragenter', 'dragover'].forEach(ev => dropzone.addEventListener(ev, () => dropzone.classList.add('drop-active')));
+  ['dragleave', 'drop'].forEach(ev => dropzone.addEventListener(ev, () => dropzone.classList.remove('drop-active')));
+  dropzone.addEventListener('drop', (e) => {
+    if (e.dataTransfer && e.dataTransfer.files) {
+      for (const f of e.dataTransfer.files) {
+        if (f.type.startsWith('image/')) handleFormImageFile(f);
+      }
+    }
+  });
 
   // Dokumenty w formularzu
   const docBtn = document.getElementById('btn-add-doc-form');
@@ -4128,6 +4686,31 @@ function handleFormImageFile(file) {
     showToast('Zdjęcie dodane do zgłoszenia', 'success');
   };
   reader.readAsDataURL(file);
+}
+
+async function pastePhotoFromClipboard() {
+  // Próba bezpośredniego odczytu schowka przez Clipboard API (działa w WebView2/Edge)
+  if (navigator.clipboard && navigator.clipboard.read) {
+    try {
+      const items = await navigator.clipboard.read();
+      let found = false;
+      for (const item of items) {
+        for (const type of item.types) {
+          if (type.startsWith('image/')) {
+            const blob = await item.getType(type);
+            const ext = type.split('/')[1] || 'png';
+            const filename = `wklejone_${new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5)}.${ext}`;
+            handleFormImageFile(new File([blob], filename, { type }));
+            found = true;
+          }
+        }
+      }
+      if (found) return;
+    } catch (e) {
+      // Brak uprawnień lub pusty schowek — przekaż do fallbacku Ctrl+V
+    }
+  }
+  showToast('Użyj skrótu Ctrl+V, aby wkleić obraz ze schowka.', 'info');
 }
 
 function handleFormDocFile(file) {
