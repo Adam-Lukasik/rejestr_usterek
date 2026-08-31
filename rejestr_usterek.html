@@ -968,6 +968,11 @@
     border-color: var(--primary);
     background: var(--primary-light);
   }
+  .upload-dropzone.drop-active {
+    border-color: var(--primary);
+    background: var(--primary-light);
+    transform: scale(1.01);
+  }
 
   /* ════════════ MODALE I POPUPY ════════════ */
   .modal-backdrop {
@@ -1455,9 +1460,12 @@
                   <div class="upload-dropzone" id="dropzone-photos">
                     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--primary); margin-bottom:6px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
                     <div style="font-size:12.5px; font-weight:600;">Kliknij, aby wybrać zdjęcie z dysku</div>
-                    <div style="font-size:11px; color:var(--text-dim); margin-top:2px;">lub wklej zrzut ekranu (Ctrl+V)</div>
+                    <div style="font-size:11px; color:var(--text-dim); margin-top:2px;">lub przeciągnij zdjęcie / wklej zrzut ekranu (Ctrl+V)</div>
                     <input type="file" id="input-file-photos" accept="image/*" multiple style="display:none;">
                   </div>
+                  <button type="button" class="btn-secondary-action" id="btn-paste-photo" style="width:100%; justify-content:center; margin-top:8px;">
+                    📋 Wklej ze schowka
+                  </button>
                 </div>
 
                 <!-- Dokumenty załączniki -->
@@ -2845,6 +2853,14 @@ function renderFormDropdowns() {
   const typSel = document.getElementById('f-typ');
   const projSel = document.getElementById('f-projekt');
 
+  // Zachowaj aktualne wartości formularza, aby tło odświeżenie (np. polling co 4 s)
+  // nie wyczyścił danych podczas dodawania lub edycji usterki.
+  const curProjekt = projSel.value;
+  const curKlient = klientSel.value;
+  const curModel = modelSel.value;
+  const curTyp = typSel.value;
+  const curFix = document.getElementById('f-fixed-by').value;
+
   // Projekty PS
   const projektyDict = STATE.lists.projekty || {};
   let psList = Object.keys(projektyDict).sort();
@@ -2873,9 +2889,30 @@ function renderFormDropdowns() {
 
   // Lista 'Naprawione przez'
   const fixSel = document.getElementById('f-fixed-by');
-  const curFix = fixSel.value;
   fixSel.innerHTML = `<option value="">— brak —</option>` + STATE.users.map(u => `<option value="${escapeHtml(u.full_name || u.username)}">${escapeHtml(u.full_name || u.username)}</option>`).join('');
-  fixSel.value = curFix;
+
+  // Przywróć wartości formularza; jeśli wartość nie istnieje w opcjach, dodaj ją
+  // (ważne przy edycji starych rekordów, gdy słowniki mogły ulec zmianie).
+  ensureOptionAndSet(projSel, curProjekt);
+  ensureOptionAndSet(klientSel, curKlient);
+  ensureOptionAndSet(modelSel, curModel);
+  ensureOptionAndSet(typSel, curTyp);
+  ensureOptionAndSet(fixSel, curFix);
+}
+
+function ensureOptionAndSet(selectEl, value) {
+  if (!value) return;
+  let found = false;
+  for (let i = 0; i < selectEl.options.length; i++) {
+    if (selectEl.options[i].value === value) { found = true; break; }
+  }
+  if (!found) {
+    const opt = document.createElement('option');
+    opt.value = value;
+    opt.textContent = value;
+    selectEl.appendChild(opt);
+  }
+  selectEl.value = value;
 }
 
 // Auto-uzupełnianie klienta i modelu po wyborze PS
@@ -2899,30 +2936,63 @@ document.getElementById('f-projekt').addEventListener('change', (e) => {
 
 function renderFormPhotosPreview() {
   const box = document.getElementById('form-photos-preview');
+  if (STATE.pendingPhotos.length === 0) {
+    box.innerHTML = '';
+    return;
+  }
   box.innerHTML = STATE.pendingPhotos.map((p, idx) => `
     <div class="photo-thumb-card">
       <img src="data:image/jpeg;base64,${p.data}" alt="Foto">
-      <button type="button" style="position:absolute; top:4px; right:4px; background:rgba(0,0,0,0.7); color:#FFF; border:none; border-radius:50%; width:20px; height:20px; font-size:11px; cursor:pointer;" onclick="removePendingPhoto(${idx})">✕</button>
+      ${p.isNew === false ? '<span style="position:absolute; top:4px; left:4px; background:rgba(37,99,235,0.85); color:#FFF; border:none; border-radius:4px; padding:1px 5px; font-size:10px;">zapisane</span>' : ''}
+      <button type="button" style="position:absolute; top:4px; right:4px; background:rgba(0,0,0,0.7); color:#FFF; border:none; border-radius:50%; width:20px; height:20px; font-size:11px; cursor:pointer;" onclick="removePendingPhoto(${idx})" title="Usuń">✕</button>
     </div>
   `).join('');
 }
 
-function removePendingPhoto(idx) {
+async function removePendingPhoto(idx) {
+  const p = STATE.pendingPhotos[idx];
+  if (!p) return;
+  if (p.isNew === false && p.id && STATE.editingRecordId) {
+    if (!confirm('Usunąć to zdjęcie z usterki?')) return;
+    try {
+      await apiCall(`/api/photos/${p.id}`, 'DELETE');
+      showToast('Zdjęcie usunięte', 'info');
+    } catch (err) {
+      showToast(`Błąd usuwania zdjęcia: ${err.message}`, 'error');
+      return;
+    }
+  }
   STATE.pendingPhotos.splice(idx, 1);
   renderFormPhotosPreview();
 }
 
 function renderFormDocsPreview() {
   const box = document.getElementById('form-docs-preview');
+  if (STATE.pendingDocs.length === 0) {
+    box.innerHTML = '';
+    return;
+  }
   box.innerHTML = STATE.pendingDocs.map((d, idx) => `
-    <div style="display:flex; justify-content:space-between; font-size:12px; padding:4px 8px; background:var(--bg-card-subtle); border:1px solid var(--border); border-radius:4px;">
-      <span>📄 ${escapeHtml(d.filename)} (${formatBytes(d.filesize)})</span>
-      <button type="button" style="background:none; border:none; color:var(--red); cursor:pointer;" onclick="removePendingDoc(${idx})">✕</button>
+    <div style="display:flex; justify-content:space-between; align-items:center; font-size:12px; padding:4px 8px; background:var(--bg-card-subtle); border:1px solid var(--border); border-radius:4px;">
+      <span>📄 ${escapeHtml(d.filename)} ${d.isNew === false ? '<span style="background:var(--primary-light); color:var(--primary); border-radius:4px; padding:1px 5px; font-size:10px;">zapisany</span>' : `(${formatBytes(d.filesize)})`}</span>
+      <button type="button" style="background:none; border:none; color:var(--red); cursor:pointer;" onclick="removePendingDoc(${idx})" title="Usuń">✕</button>
     </div>
   `).join('');
 }
 
-function removePendingDoc(idx) {
+async function removePendingDoc(idx) {
+  const d = STATE.pendingDocs[idx];
+  if (!d) return;
+  if (d.isNew === false && d.id && STATE.editingRecordId) {
+    if (!confirm('Usunąć ten załącznik z usterki?')) return;
+    try {
+      await apiCall(`/api/documents/${d.id}`, 'DELETE');
+      showToast('Załącznik usunięty', 'info');
+    } catch (err) {
+      showToast(`Błąd usuwania załącznika: ${err.message}`, 'error');
+      return;
+    }
+  }
   STATE.pendingDocs.splice(idx, 1);
   renderFormDocsPreview();
 }
@@ -3015,12 +3085,47 @@ async function startEditRecord(recId) {
   document.getElementById('f-status').value = r.status || 'open';
   document.getElementById('f-fixed-by').value = r.fixed_by || '';
 
+  // Wczytaj istniejące zdjęcia i dokumenty, aby były widoczne w formularzu
+  // i można je było usunąć podczas edycji.
   STATE.pendingPhotos = [];
   STATE.pendingDocs = [];
+  await loadExistingRecordFilesForEdit(recId);
   renderFormPhotosPreview();
   renderFormDocsPreview();
 
   switchView('new-defect');
+}
+
+async function loadExistingRecordFilesForEdit(recId) {
+  try {
+    const [photosMeta, docsMeta] = await Promise.all([
+      apiCall(`/api/records/${recId}/photos`).catch(() => []),
+      apiCall(`/api/records/${recId}/documents`).catch(() => [])
+    ]);
+
+    const fullPhotos = await Promise.all(
+      (photosMeta || []).map(ph => apiCall(`/api/photos/${ph.id}`))
+    );
+    STATE.pendingPhotos = fullPhotos.map((p, i) => ({
+      id: photosMeta[i].id,
+      filename: photosMeta[i].filename,
+      data: p.data,
+      isNew: false
+    }));
+
+    const fullDocs = await Promise.all(
+      (docsMeta || []).map(d => apiCall(`/api/documents/${d.id}`))
+    );
+    STATE.pendingDocs = fullDocs.map((d, i) => ({
+      id: docsMeta[i].id,
+      filename: docsMeta[i].filename,
+      data: d.data,
+      filesize: docsMeta[i].filesize || 0,
+      isNew: false
+    }));
+  } catch (e) {
+    showToast('Błąd ładowania istniejących załączników do edycji.', 'error');
+  }
 }
 
 /* ── SZYBKIE AKCJE NA USTERCE ── */
@@ -3883,14 +3988,38 @@ function setupEventListeners() {
   // Obsługa schowka (Ctrl+V) globalnie dla formularza
   window.addEventListener('paste', (e) => {
     if (STATE.currentView !== 'new-defect') return;
-    const items = (e.clipboardData || e.originalEvent.clipboardData).items;
-    for (const item of items) {
-      if (item.kind === 'file' && item.type.startsWith('image/')) {
-        handleFormImageFile(item.getAsFile());
-        break;
+    const cd = e.clipboardData || (e.originalEvent && e.originalEvent.clipboardData);
+    if (!cd) return;
+
+    let handled = false;
+
+    // Nowe przeglądarki / WebView2 udostępniają obraz ze schowka jako plik
+    if (cd.files && cd.files.length > 0) {
+      for (const file of cd.files) {
+        if (file.type.startsWith('image/')) {
+          e.preventDefault();
+          handleFormImageFile(file);
+          handled = true;
+        }
+      }
+    }
+
+    // Klasyczne ClipboardData.items
+    if (!handled && cd.items) {
+      for (const item of cd.items) {
+        if (item.kind === 'file' && item.type.startsWith('image/')) {
+          e.preventDefault();
+          const file = item.getAsFile();
+          if (file) handleFormImageFile(file);
+          handled = true;
+          break;
+        }
       }
     }
   });
+
+  // Przycisk wklejania zapewnia także fallback dla WebView2/Edge
+  document.getElementById('btn-paste-photo').onclick = pastePhotoFromClipboard;
 
   // Dropzone zdjęć w formularzu
   const dropzone = document.getElementById('dropzone-photos');
@@ -3900,6 +4029,18 @@ function setupEventListeners() {
     for (const f of e.target.files) handleFormImageFile(f);
     fileInput.value = '';
   };
+
+  // Drag & drop dla zdjęć
+  ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(ev => dropzone.addEventListener(ev, (e) => { e.preventDefault(); e.stopPropagation(); }));
+  ['dragenter', 'dragover'].forEach(ev => dropzone.addEventListener(ev, () => dropzone.classList.add('drop-active')));
+  ['dragleave', 'drop'].forEach(ev => dropzone.addEventListener(ev, () => dropzone.classList.remove('drop-active')));
+  dropzone.addEventListener('drop', (e) => {
+    if (e.dataTransfer && e.dataTransfer.files) {
+      for (const f of e.dataTransfer.files) {
+        if (f.type.startsWith('image/')) handleFormImageFile(f);
+      }
+    }
+  });
 
   // Dokumenty w formularzu
   const docBtn = document.getElementById('btn-add-doc-form');
@@ -4128,6 +4269,31 @@ function handleFormImageFile(file) {
     showToast('Zdjęcie dodane do zgłoszenia', 'success');
   };
   reader.readAsDataURL(file);
+}
+
+async function pastePhotoFromClipboard() {
+  // Próba bezpośredniego odczytu schowka przez Clipboard API (działa w WebView2/Edge)
+  if (navigator.clipboard && navigator.clipboard.read) {
+    try {
+      const items = await navigator.clipboard.read();
+      let found = false;
+      for (const item of items) {
+        for (const type of item.types) {
+          if (type.startsWith('image/')) {
+            const blob = await item.getType(type);
+            const ext = type.split('/')[1] || 'png';
+            const filename = `wklejone_${new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5)}.${ext}`;
+            handleFormImageFile(new File([blob], filename, { type }));
+            found = true;
+          }
+        }
+      }
+      if (found) return;
+    } catch (e) {
+      // Brak uprawnień lub pusty schowek — przekaż do fallbacku Ctrl+V
+    }
+  }
+  showToast('Użyj skrótu Ctrl+V, aby wkleić obraz ze schowka.', 'info');
 }
 
 function handleFormDocFile(file) {
