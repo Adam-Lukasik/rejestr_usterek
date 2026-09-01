@@ -1,82 +1,171 @@
-# Instrukcja wdrożenia Rejestru Usterek na serwerze QNAP NAS
+# Instrukcja wdrożenia — Rejestr Usterek na QNAP NAS
 
-Ten dokument jest przeznaczony dla Administratora Sieci / Informatyka w celu jednorazowego uruchomienia usługi **Rejestr Usterek** na firmowym serwerze QNAP NAS (`srv_ost`).
-
----
-
-## 📌 Założenia i Architektura
-- Usługa to lekki mikroserwis Python/Flask z bazą SQLite (tryb WAL) oraz produkcyjnym serwerem WSGI (Waitress).
-- Wszystkie pliki aplikacji i baza SQLite znajdują się w **folderze współdzielonym na dysku NAS** (np. `\\srv_ost\Pomiary\rejestr_usterek`).
-- **Dzięki temu:** kolejne aktualizacje kodu czy kopie zapasowe wykonuje zespół produkcyjny bez angażowania Administratora.
-- **Port usługi:** **`5050`** (wybrany celowo, aby wykluczyć kolizję z wbudowanym w QTS serwerem Apache/multimedia na porcie 5000).
+> **Dla:** Administratora Sieci / Informatyka  
+> **Wersja aplikacji:** aktualna (wrzesień 2026)  
+> **Czas wdrożenia:** ok. 15–20 minut
 
 ---
 
-## 🚀 Metoda 1: Uruchomienie w Container Station (Docker) — ZALECANA
+## Czym jest ta aplikacja?
 
-### 1. Przygotowanie folderu na QNAP
-1. W zasobie sieciowym `\\srv_ost\Pomiary` (lub ścieżce systemowej `/share/Pomiary/` / `/share/CACHEDEV1_DATA/Pomiary/`) utwórz katalog:
-   ```text
-   rejestr_usterek
-   ```
-2. Skopiuj do niego pliki aplikacji: `Dockerfile`, `docker-compose.yml`, `requirements.txt`, `app.py`, `config.json`, `rejestr_usterek.html` oraz bazę `rejestr_usterek.db`.
+**Rejestr Usterek** to wewnętrzna aplikacja webowa do zarządzania usterkami pojazdów.
+Składa się z:
 
-### 2. Uruchomienie w Container Station (GUI)
-1. Otwórz **Container Station** na QNAP.
-2. Przejdź do zakładki **Aplikacje (Applications)** $\rightarrow$ kliknij **Utwórz (Create)**.
-3. Nazwa aplikacji: `rejestr-usterek`
-4. Wklej zawartość pliku `docker-compose.yml` (lub wskaż folder z plikiem).
-5. Kliknij **Utwórz (Create)**.
+| Plik | Rola |
+|---|---|
+| `app.py` | Backend — serwer REST API (Python / Flask) |
+| `rejestr_usterek.html` | Frontend — interfejs użytkownika (jedna strona HTML) |
+| `rejestr_usterek.db` | Baza danych SQLite (tworzona automatycznie przy 1. starcie) |
+| `config.json` | Konfiguracja (port, SMTP, ścieżka bazy) |
 
-*Alternatywnie przez terminal SSH:*
-```bash
-cd /share/Pomiary/rejestr_usterek
-docker-compose up -d --build
+Użytkownicy otwierają aplikację **w przeglądarce** — nie jest potrzebna żadna instalacja na ich komputerach.
+
+---
+
+## Wymagania
+
+- QNAP z zainstalowanym **Container Station** (Docker)
+- Dostęp SSH lub terminal w Container Station
+- Współdzielony folder na NAS dostępny z sieci LAN (np. `\\srv_ost\Pomiary`)
+
+---
+
+## Krok 1 — Przygotowanie folderu na NAS
+
+W zasobie sieciowym utwórz katalog:
+
+```
+\\srv_ost\Pomiary\rejestr_usterek\
 ```
 
----
+*(lub dowolna inna ścieżka — ważne, żeby była dostępna z sieci LAN)*
 
-## 🛠️ Metoda 2: Alternatywna — Uruchomienie bezpośrednio przez Pythona (bez Dockera)
-Gdyby Container Station nie był używany, aplikację można uruchomić natywnie:
-1. Zainstaluj środowisko Python (lub Entware) na QNAP.
-2. Zainstaluj pakiety:
-   ```bash
-   pip install flask flask-cors waitress
-   ```
-3. Uruchom usługę w tle:
-   ```bash
-   nohup python -c "import app; app.init_db(); from waitress import serve; serve(app.app, host='0.0.0.0', port=5050, threads=8)" >> server.log 2>&1 &
-   ```
+Skopiuj do niego **następujące pliki z archiwum ZIP**:
 
----
+```
+app.py
+rejestr_usterek.html
+requirements.txt
+Dockerfile
+docker-compose.yml
+config.json
+rejestr_usterek.db        ← może być pusty — zostanie zainicjowany automatycznie
+```
 
-## ⚙️ Parametry sieciowe i dostęp
-
-- **Protokół:** HTTP
-- **Port:** `5050` (TCP)
-- **Autostart:** włączony domyślnie (`restart: unless-stopped`). Kontener wstaje automatycznie po restarcie QNAP-a.
-- **Dostęp z przeglądarek w sieci LAN:**  
-  👉 `http://srv_ost:5050` (lub `http://<IP_SERWERA_QNAP>:5050`)
-- **Dostęp z aplikacji stanowiskowych (laptopy):**  
-  Stanowiska łączą się automatycznie przez plik startowy `uruchom_srv_ost.bat`.
+> **Uwaga:** pliki `desktop.py`, `desktop_web.py`, `uruchom_*.bat` służą wyłącznie
+> do lokalnego uruchomienia na komputerze Windows — **na serwer nie są potrzebne**.
 
 ---
 
-## ✉️ Konfiguracja powiadomień E-mail (Opcjonalnie)
-W pliku `config.json` w folderze aplikacji można opcjonalnie podać dane firmowego serwera SMTP (np. do wysyłki kodów resetu haseł):
+## Krok 2 — Weryfikacja config.json
+
+Sprawdź plik `config.json` w folderze aplikacji. Powinien wyglądać tak:
+
 ```json
-"SMTP": {
-  "ENABLED": true,
-  "SERVER": "smtp.twojafirma.pl",
-  "PORT": 587,
-  "USE_TLS": true,
-  "USER": "rejestr-usterek@twojafirma.pl",
-  "PASSWORD": "haslo_skrzynki",
-  "SENDER_NAME": "Rejestr Usterek — Powiadomienia"
+{
+  "DB_PATH": "rejestr_usterek.db",
+  "HOST": "0.0.0.0",
+  "PORT": 5050,
+  "SECRET_BACKUP_DIR": "",
+  "SMTP": {
+    "ENABLED": false,
+    "SERVER": "smtp.twojafirma.pl",
+    "PORT": 587,
+    "USE_TLS": true,
+    "USER": "rejestr-usterek@twojafirma.pl",
+    "PASSWORD": "",
+    "SENDER_NAME": "Rejestr Usterek — Powiadomienia"
+  }
 }
 ```
 
+Kluczowe: `PORT` musi być `5050` — port 5000 jest domyślnie zajęty przez usługi QNAP.  
+Konfiguracja SMTP jest opcjonalna i może być włączona później.
+
 ---
 
-## 🔄 Jak przebiegają późniejsze aktualizacje?
-Informatyk nie musi być angażowany do bieżących zmian w kodzie. Zespół podmienia plik `app.py` lub `rejestr_usterek.html` bezpośrednio w folderze `\\srv_ost\Pomiary\rejestr_usterek` i w razie potrzeby klika „Restart” w Container Station.
+## Krok 3 — Uruchomienie przez Container Station
+
+### Opcja A — przez GUI (zalecana)
+
+1. Otwórz **Container Station** w panelu QTS
+2. Przejdź do **Aplikacje (Applications)** → **Utwórz (Create)**
+3. Wskaż folder z plikiem `docker-compose.yml`  
+   *(ścieżka systemowa QNAP, np. `/share/Pomiary/rejestr_usterek`)*
+4. Nazwa aplikacji: `rejestr-usterek`
+5. Kliknij **Utwórz (Create)**
+
+Container Station automatycznie zbuduje obraz i uruchomi kontener.
+
+### Opcja B — przez terminal SSH
+
+```bash
+cd /share/Pomiary/rejestr_usterek
+docker-compose up -d --build
+
+# Weryfikacja — w logach powinno pojawić się:
+# "Serwer Rejestr Usterek uruchomiony na porcie 5050"
+docker logs rejestr_usterek_app
+```
+
+---
+
+## Krok 4 — Reguła firewalla
+
+Port **5050 TCP** musi być otwarty dla ruchu w sieci LAN.  
+Dostęp z internetu **nie jest wymagany ani zalecany**.
+
+---
+
+## Dostęp dla użytkowników
+
+```
+http://srv_ost:5050
+```
+
+*(lub `http://<IP_SERWERA_QNAP>:5050` jeśli nazwa DNS nie działa)*
+
+Użytkownicy otwierają ten adres w przeglądarce (Chrome, Edge, Firefox).  
+**Żadnej instalacji na komputerach użytkowników nie trzeba wykonywać.**
+
+---
+
+## Autostart po restarcie NAS
+
+Kontener startuje automatycznie dzięki `restart: unless-stopped` w `docker-compose.yml`.  
+Nie jest wymagana żadna dodatkowa konfiguracja.
+
+---
+
+## Aktualizacje — bez angażowania informatyka
+
+Użytkownicy mogą samodzielnie aktualizować aplikację:
+
+1. Skopiować nowe pliki (`app.py`, `rejestr_usterek.html`) do folderu  
+   `\\srv_ost\Pomiary\rejestr_usterek\`
+2. W Container Station kliknąć **Restart** przy `rejestr-usterek`
+
+Baza danych (`rejestr_usterek.db`) nigdy nie jest nadpisywana przy aktualizacji.
+
+---
+
+## Kopia zapasowa
+
+Cała baza danych to jeden plik:
+
+```
+\\srv_ost\Pomiary\rejestr_usterek\rejestr_usterek.db
+```
+
+Wystarczy objąć go standardowym harmonogramem kopii QNAP (Hybrid Backup Sync).
+
+---
+
+## Rozwiązywanie problemów
+
+| Objaw | Przyczyna | Rozwiązanie |
+|---|---|---|
+| Strona nie odpowiada | Kontener nie działa | `docker ps` → sprawdź status; `docker logs rejestr_usterek_app` |
+| Błąd „port zajęty" | Konflikt z inną usługą | Zmień `PORT` w `config.json` na np. `5051`, zrestartuj kontener |
+| Błąd bazy danych | Brak uprawnień do pliku | `chmod 664 rejestr_usterek.db` w folderze aplikacji |
+| Kontener nie startuje po restarcie NAS | Container Station nie startuje automatycznie | W ustawieniach QTS włącz autostart Container Station |

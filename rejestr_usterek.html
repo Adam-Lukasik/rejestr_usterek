@@ -5,6 +5,15 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Rejestr Usterek v5.0 — Panel Diagnostyki & Serwisu</title>
 <style>
+  @keyframes fadeInOverlay {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+  }
+  @keyframes slideUpDialog {
+    from { opacity: 0; transform: translateY(12px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
   :root {
     --font-sans: "Segoe UI", -apple-system, BlinkMacSystemFont, Roboto, Helvetica, Arial, sans-serif;
     --font-mono: ui-monospace, SFMono-Regular, "Roboto Mono", Menlo, Consolas, monospace;
@@ -2736,7 +2745,7 @@ async function loadRecordSolutions(recId) {
             <span class="sol-title">Wariant ${sol.numer}: ${escapeHtml(sol.tytul)}</span>
           </div>
           <div style="font-size:13px; line-height:1.45; white-space:pre-wrap; margin-bottom:10px;">${escapeHtml(sol.opis || '(brak opisu)')}</div>
-          <div id="sol-photos-${t.prefix}-${sol.id}" style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px;"></div>
+          <div id="sol-photos-${t.prefix}-${sol.id}" class="photo-gallery-grid" style="grid-template-columns: repeat(auto-fill, minmax(100px, 120px)); gap: 8px; margin-bottom: 8px;"></div>
           <div id="sol-docs-${t.prefix}-${sol.id}" style="display:flex; flex-direction:column; gap:4px;"></div>
         `;
         t.box.appendChild(card);
@@ -2751,13 +2760,11 @@ async function loadRecordSolutions(recId) {
           const solPhotoUrls = fullPhotos.map(p => `data:image/jpeg;base64,${p.data}`);
           phBox.innerHTML = '';
           fullPhotos.forEach((full, pIdx) => {
-            const img = document.createElement('img');
-            img.src = `data:image/jpeg;base64,${full.data}`;
-            img.style.cssText = 'width:64px; height:50px; object-fit:cover; border-radius:4px; border:1px solid var(--border); cursor:pointer; transition:transform 0.15s ease;';
-            img.onmouseover = () => img.style.transform = 'scale(1.05)';
-            img.onmouseout = () => img.style.transform = 'scale(1)';
-            img.onclick = () => openLightboxGallery(solPhotoUrls, pIdx);
-            phBox.appendChild(img);
+            const div = document.createElement('div');
+            div.className = 'photo-thumb-card';
+            div.innerHTML = `<img src="data:image/jpeg;base64,${full.data}" alt="Foto wariantu" title="Kliknij, aby powiększyć">`;
+            div.onclick = () => openLightboxGallery(solPhotoUrls, pIdx);
+            phBox.appendChild(div);
           });
         });
 
@@ -3117,6 +3124,10 @@ document.getElementById('form-defect-submit').addEventListener('submit', async (
       }
     }
 
+    if (STATE.editingRecordId) {
+      await saveAllFormSolutions();
+    }
+
     resetDefectForm();
     await loadAllData();
     STATE.selectedRecordId = recId;
@@ -3266,6 +3277,95 @@ function highlightActiveSolutionCard(solId) {
   }
 }
 
+async function saveAllFormSolutions() {
+  const solCards = document.querySelectorAll('#form-solutions-list .solution-item-card');
+  const promises = [];
+  for (const card of solCards) {
+    const solId = card.id.replace('form-sol-card-', '');
+    if (solId) {
+      const tInput = document.getElementById(`sol-title-input-${solId}`);
+      const oArea = document.getElementById(`sol-opis-input-${solId}`);
+      if (tInput || oArea) {
+        const t = tInput ? (tInput.value || '').trim() : '';
+        const o = oArea ? (oArea.value || '').trim() : '';
+        if (t) {
+          promises.push(apiCall(`/api/solutions/${solId}`, 'PUT', { tytul: t, opis: o }).catch(console.error));
+        }
+      }
+    }
+  }
+  await Promise.all(promises);
+}
+
+async function renderFormSolutionPhotos(solId, recId) {
+  const phBox = document.getElementById(`form-sol-photos-${solId}`);
+  if (!phBox) return;
+  try {
+    const pList = await apiCall(`/api/solutions/${solId}/photos`);
+    if (!pList || pList.length === 0) {
+      phBox.innerHTML = '';
+      return;
+    }
+    const fullPhotos = await Promise.all(
+      pList.map(pm => apiCall(`/api/solution-photos/${pm.id}`))
+    );
+    const solPhotoUrls = fullPhotos.map(p => `data:image/jpeg;base64,${p.data}`);
+    phBox.innerHTML = '';
+    fullPhotos.forEach((full, pIdx) => {
+      const ph = pList[pIdx];
+      const div = document.createElement('div');
+      div.className = 'photo-thumb-card';
+      div.style.position = 'relative';
+      div.innerHTML = `
+        <img src="data:image/jpeg;base64,${full.data}" alt="Foto wariantu" title="Kliknij, aby powiększyć">
+        <button type="button" style="position:absolute; top:4px; right:4px; background:rgba(0,0,0,0.7); color:#FFF; border:none; border-radius:50%; width:20px; height:20px; font-size:11px; cursor:pointer;" onclick="event.stopPropagation(); deleteSolutionPhoto('${ph.id}', '${solId}', '${recId}')" title="Usuń zdjęcie">✕</button>
+      `;
+      div.onclick = () => openLightboxGallery(solPhotoUrls, pIdx);
+      phBox.appendChild(div);
+    });
+  } catch (e) {
+    console.error('Błąd ładowania zdjęć wariantu:', e);
+  }
+}
+
+async function renderFormSolutionDocs(solId, recId) {
+  const dBox = document.getElementById(`form-sol-docs-${solId}`);
+  if (!dBox) return;
+  try {
+    const dList = await apiCall(`/api/solutions/${solId}/documents`);
+    if (!dList || dList.length === 0) {
+      dBox.innerHTML = '';
+      return;
+    }
+    dBox.innerHTML = dList.map(d => {
+      const isPdf = (d.filename || '').toLowerCase().endsWith('.pdf');
+      const thumbUrl = `/api/solution-documents/${d.id}/thumb`;
+      const rawUrl = `/api/solution-documents/${d.id}/raw`;
+      const openUrl = `/api/solution-documents/${d.id}/open`;
+      return `
+        <div style="display:flex; align-items:center; gap:10px; padding:6px 10px; background:var(--bg-card-subtle); border:1px solid var(--border); border-radius:var(--radius-md); margin-top:4px;">
+          <div style="width:38px; height:48px; background:var(--bg-card); border-radius:4px; overflow:hidden; display:flex; align-items:center; justify-content:center; border:1px solid var(--border); cursor:pointer; flex-shrink:0;" onclick="openPdfPreview('${rawUrl}', '${escapeHtml(d.filename)}', '${openUrl}', '${d.id}')">
+            ${isPdf ? `<img src="${thumbUrl}" alt="PDF" style="width:100%; height:100%; object-fit:cover;" onerror="this.onerror=null; this.parentElement.innerHTML='<span style=\\'font-size:18px;\\'>📄</span>';">` : '<span style="font-size:18px;">📄</span>'}
+          </div>
+          <div style="flex:1; min-width:0; cursor:pointer;" onclick="openPdfPreview('${rawUrl}', '${escapeHtml(d.filename)}', '${openUrl}', '${d.id}')">
+            <div style="font-size:12.5px; font-weight:600; color:var(--primary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="${escapeHtml(d.filename)}">${escapeHtml(d.filename)}</div>
+            <div style="font-size:11px; color:var(--text-muted); display:flex; align-items:center; gap:6px; margin-top:2px;">
+              <span style="background:var(--primary-light); color:var(--primary); font-size:9.5px; font-weight:700; padding:1px 5px; border-radius:3px;">${isPdf ? 'PDF' : 'DOKUMENT'}</span>
+              <span>${formatBytes(d.filesize)}</span>
+            </div>
+          </div>
+          <div style="display:flex; gap:4px; flex-shrink:0;">
+            <button type="button" class="btn-secondary-action" style="padding:3px 8px; font-size:11px;" title="Podgląd / Otwórz" onclick="openPdfPreview('${rawUrl}', '${escapeHtml(d.filename)}', '${openUrl}', '${d.id}')">👁 Otwórz</button>
+            <button type="button" class="btn-secondary-action" style="padding:3px 6px; font-size:11px; color:var(--red);" title="Usuń" onclick="deleteSolutionDoc('${d.id}', '${recId}', true, '${solId}')">✕</button>
+          </div>
+        </div>
+      `;
+    }).join('');
+  } catch (e) {
+    console.error('Błąd ładowania dokumentów wariantu:', e);
+  }
+}
+
 async function loadFormSolutions(recId) {
   const box = document.getElementById('form-solutions-list');
   if (!box) return;
@@ -3273,6 +3373,12 @@ async function loadFormSolutions(recId) {
   if (!recId) {
     box.innerHTML = '<div style="font-size:12px; color:var(--text-dim); padding:8px 0;">Zapisz zgłoszenie, aby dodać warianty naprawy.</div>';
     return;
+  }
+
+  // Zapisz ewentualnie edytowane pola wariantów przed przeładowaniem
+  const existingCards = box.querySelectorAll('.solution-item-card');
+  if (existingCards.length > 0) {
+    await saveAllFormSolutions();
   }
 
   box.innerHTML = '<div style="font-size:12px; color:var(--text-dim); padding:8px 0;">Ładowanie wariantów...</div>';
@@ -3318,7 +3424,6 @@ async function loadFormSolutions(recId) {
               await uploadSolutionFileObject(sol.id, recId, f, 'doc');
             }
           }
-          loadFormSolutions(recId);
         }
       };
 
@@ -3327,89 +3432,62 @@ async function loadFormSolutions(recId) {
         highlightActiveSolutionCard(sol.id);
       };
 
-      const safeTytul = escapeHtml(sol.tytul).replace(/'/g, "\\'");
-      const safeOpis = escapeHtml(sol.opis || '').replace(/'/g, "\\'");
-
       card.innerHTML = `
-        <div class="sol-header" style="flex-wrap:wrap; gap:8px;">
-          <div style="display:flex; align-items:center; gap:8px;">
-            <span class="sol-title" style="font-size:13.5px; font-weight:700;">Wariant ${sol.numer}: ${escapeHtml(sol.tytul)}</span>
-            <span style="font-size:10.5px; color:var(--text-dim); background:var(--bg-card-subtle); padding:2px 6px; border-radius:4px; border:1px solid var(--border);">kliknij kartę aby wklejać Ctrl+V</span>
+        <div class="sol-header" style="flex-wrap:wrap; gap:8px; align-items:center;">
+          <div style="display:flex; align-items:center; gap:8px; flex:1; min-width:240px;">
+            <span class="sol-title" style="font-size:13.5px; font-weight:700; white-space:nowrap;">Wariant ${sol.numer}:</span>
+            <input type="text" id="sol-title-input-${sol.id}" class="sol-title-input" value="${escapeHtml(sol.tytul)}" placeholder="Tytuł wariantu (np. Konfiguracja Acetech)" style="font-size:13.5px; font-weight:600; padding:5px 9px; flex:1; min-width:160px; height:32px; background:var(--bg-input); border:1px solid var(--border); border-radius:var(--radius-sm);" title="Kliknij, aby zmienić tytuł wariantu" />
+            <span style="font-size:10.5px; color:var(--text-dim); background:var(--bg-card-subtle); padding:2px 6px; border-radius:4px; border:1px solid var(--border); white-space:nowrap;">kliknij kartę aby wklejać Ctrl+V</span>
           </div>
-          <div style="display:flex; gap:6px; flex-wrap:wrap;">
-            <button type="button" class="btn-secondary-action" style="padding:3px 8px; font-size:11.5px;" onclick="event.stopPropagation(); formEditSolutionText('${sol.id}', '${recId}', '${safeTytul}', '${safeOpis}')" title="Edytuj tytuł i opis wariantu">✏ Edytuj opis</button>
-            <button type="button" class="btn-secondary-action" style="padding:3px 8px; font-size:11.5px;" onclick="event.stopPropagation(); uploadSolutionPhoto('${sol.id}', '${recId}', true)" title="Dodaj zdjęcie z dysku">📷 +Foto</button>
-            <button type="button" class="btn-secondary-action" style="padding:3px 8px; font-size:11.5px;" onclick="event.stopPropagation(); pasteToSolution('${sol.id}', '${recId}')" title="Wklej zdjęcie lub plik ze schowka">📋 Wklej ze schowka</button>
-            <button type="button" class="btn-secondary-action" style="padding:3px 8px; font-size:11.5px;" onclick="event.stopPropagation(); uploadSolutionDoc('${sol.id}', '${recId}', true)" title="Dodaj plik / raport PDF">📎 +Plik/PDF</button>
-            <button type="button" class="btn-secondary-action" style="padding:3px 8px; font-size:11.5px; color:var(--red);" onclick="event.stopPropagation(); deleteSolution('${sol.id}', '${recId}', true)" title="Usuń ten wariant">🗑 Usuń wariant</button>
+          <div style="display:flex; gap:6px; flex-wrap:wrap; align-items:center;">
+            <button type="button" class="btn-secondary-action" style="padding:4px 9px; font-size:11.5px;" onclick="event.stopPropagation(); uploadSolutionPhoto('${sol.id}', '${recId}', true)" title="Dodaj zdjęcie z dysku">📷 +Foto</button>
+            <button type="button" class="btn-secondary-action" style="padding:4px 9px; font-size:11.5px;" onclick="event.stopPropagation(); pasteToSolution('${sol.id}', '${recId}')" title="Wklej zdjęcie lub plik ze schowka">📋 Wklej ze schowka</button>
+            <button type="button" class="btn-secondary-action" style="padding:4px 9px; font-size:11.5px;" onclick="event.stopPropagation(); uploadSolutionDoc('${sol.id}', '${recId}', true)" title="Dodaj plik / raport PDF">📎 +Plik/PDF</button>
+            <button type="button" class="btn-secondary-action" style="padding:4px 9px; font-size:11.5px; color:var(--red);" onclick="event.stopPropagation(); deleteSolution('${sol.id}', '${recId}', true)" title="Usuń ten wariant">🗑 Usuń wariant</button>
           </div>
         </div>
-        <div style="font-size:13px; line-height:1.45; white-space:pre-wrap; margin-bottom:10px; padding:8px 10px; background:var(--bg-card-subtle); border-radius:var(--radius-sm); border:1px solid var(--border);">${escapeHtml(sol.opis || '(brak opisu)')}</div>
-        <div id="form-sol-photos-${sol.id}" style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px;"></div>
+        <div class="form-group" style="margin-bottom:10px;">
+          <textarea id="sol-opis-input-${sol.id}" class="sol-opis-textarea" placeholder="Dokładny opis rozwiązania, diagnozy lub kroków naprawczych wariantu..." style="min-height:85px; width:100%; font-size:13.5px; line-height:1.45;">${escapeHtml(sol.opis || '')}</textarea>
+        </div>
+        <div id="form-sol-photos-${sol.id}" class="photo-gallery-grid" style="grid-template-columns: repeat(auto-fill, minmax(110px, 130px)); gap: 10px; margin-bottom: 10px;"></div>
         <div id="form-sol-docs-${sol.id}" style="display:flex; flex-direction:column; gap:4px;"></div>
       `;
       box.appendChild(card);
 
-      // Zdjęcia wariantu
-      apiCall(`/api/solutions/${sol.id}/photos`).then(async pList => {
-        const phBox = document.getElementById(`form-sol-photos-${sol.id}`);
-        if (!phBox) return;
-        if (!pList || pList.length === 0) {
-          phBox.innerHTML = '';
-          return;
-        }
-        const fullPhotos = await Promise.all(
-          pList.map(pm => apiCall(`/api/solution-photos/${pm.id}`))
-        );
-        const solPhotoUrls = fullPhotos.map(p => `data:image/jpeg;base64,${p.data}`);
-        phBox.innerHTML = '';
-        fullPhotos.forEach((full, pIdx) => {
-          const ph = pList[pIdx];
-          const div = document.createElement('div');
-          div.className = 'photo-thumb-card';
-          div.style.position = 'relative';
-          div.innerHTML = `
-            <img src="data:image/jpeg;base64,${full.data}" alt="Foto wariantu" title="Kliknij, aby powiększyć">
-            <button type="button" style="position:absolute; top:4px; right:4px; background:rgba(0,0,0,0.7); color:#FFF; border:none; border-radius:50%; width:20px; height:20px; font-size:11px; cursor:pointer;" onclick="event.stopPropagation(); deleteSolutionPhoto('${ph.id}', '${sol.id}', '${recId}')" title="Usuń zdjęcie">✕</button>
-          `;
-          div.onclick = () => openLightboxGallery(solPhotoUrls, pIdx);
-          phBox.appendChild(div);
-        });
+      const titleInp = card.querySelector(`#sol-title-input-${sol.id}`);
+      const opisArea = card.querySelector(`#sol-opis-input-${sol.id}`);
+
+      let saveTimer = null;
+      const doAutoSave = () => {
+        clearTimeout(saveTimer);
+        saveTimer = setTimeout(async () => {
+          const t = (titleInp.value || '').trim() || `Wariant ${sol.numer}`;
+          const o = (opisArea.value || '').trim();
+          try {
+            await apiCall(`/api/solutions/${sol.id}`, 'PUT', { tytul: t, opis: o });
+          } catch (e) {
+            console.error('Błąd auto-zapisu wariantu:', e);
+          }
+        }, 600);
+      };
+
+      titleInp.addEventListener('input', doAutoSave);
+      titleInp.addEventListener('change', () => {
+        clearTimeout(saveTimer);
+        const t = (titleInp.value || '').trim() || `Wariant ${sol.numer}`;
+        const o = (opisArea.value || '').trim();
+        apiCall(`/api/solutions/${sol.id}`, 'PUT', { tytul: t, opis: o }).catch(console.error);
+      });
+      opisArea.addEventListener('input', doAutoSave);
+      opisArea.addEventListener('change', () => {
+        clearTimeout(saveTimer);
+        const t = (titleInp.value || '').trim() || `Wariant ${sol.numer}`;
+        const o = (opisArea.value || '').trim();
+        apiCall(`/api/solutions/${sol.id}`, 'PUT', { tytul: t, opis: o }).catch(console.error);
       });
 
-      // Dokumenty wariantu
-      apiCall(`/api/solutions/${sol.id}/documents`).then(dList => {
-        const dBox = document.getElementById(`form-sol-docs-${sol.id}`);
-        if (!dBox) return;
-        if (!dList || dList.length === 0) {
-          dBox.innerHTML = '';
-          return;
-        }
-        dBox.innerHTML = dList.map(d => {
-          const isPdf = (d.filename || '').toLowerCase().endsWith('.pdf');
-          const thumbUrl = `/api/solution-documents/${d.id}/thumb`;
-          const rawUrl = `/api/solution-documents/${d.id}/raw`;
-          const openUrl = `/api/solution-documents/${d.id}/open`;
-          return `
-            <div style="display:flex; align-items:center; gap:10px; padding:6px 10px; background:var(--bg-card-subtle); border:1px solid var(--border); border-radius:var(--radius-md); margin-top:4px;">
-              <div style="width:38px; height:48px; background:var(--bg-card); border-radius:4px; overflow:hidden; display:flex; align-items:center; justify-content:center; border:1px solid var(--border); cursor:pointer; flex-shrink:0;" onclick="openPdfPreview('${rawUrl}', '${escapeHtml(d.filename)}', '${openUrl}', '${d.id}')">
-                ${isPdf ? `<img src="${thumbUrl}" alt="PDF" style="width:100%; height:100%; object-fit:cover;" onerror="this.onerror=null; this.parentElement.innerHTML='<span style=\\'font-size:18px;\\'>📄</span>';">` : '<span style="font-size:18px;">📄</span>'}
-              </div>
-              <div style="flex:1; min-width:0; cursor:pointer;" onclick="openPdfPreview('${rawUrl}', '${escapeHtml(d.filename)}', '${openUrl}', '${d.id}')">
-                <div style="font-size:12.5px; font-weight:600; color:var(--primary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="${escapeHtml(d.filename)}">${escapeHtml(d.filename)}</div>
-                <div style="font-size:11px; color:var(--text-muted); display:flex; align-items:center; gap:6px; margin-top:2px;">
-                  <span style="background:var(--primary-light); color:var(--primary); font-size:9.5px; font-weight:700; padding:1px 5px; border-radius:3px;">${isPdf ? 'PDF' : 'DOKUMENT'}</span>
-                  <span>${formatBytes(d.filesize)}</span>
-                </div>
-              </div>
-              <div style="display:flex; gap:4px; flex-shrink:0;">
-                <button type="button" class="btn-secondary-action" style="padding:3px 8px; font-size:11px;" title="Podgląd / Otwórz" onclick="openPdfPreview('${rawUrl}', '${escapeHtml(d.filename)}', '${openUrl}', '${d.id}')">👁 Otwórz</button>
-                <button type="button" class="btn-secondary-action" style="padding:3px 6px; font-size:11px; color:var(--red);" title="Usuń" onclick="deleteSolutionDoc('${d.id}', '${recId}', true)">✕</button>
-              </div>
-            </div>
-          `;
-        }).join('');
-      });
+      renderFormSolutionPhotos(sol.id, recId);
+      renderFormSolutionDocs(sol.id, recId);
     }
 
     if (STATE.activeSolutionId) {
@@ -3420,53 +3498,182 @@ async function loadFormSolutions(recId) {
   }
 }
 
+/**
+ * showInlineDialog – zamiennik dla prompt() / confirm()
+ * Renderuje modal bezpośrednio w DOM (nie blokuje wątku przeglądarki).
+ *
+ * @param {Object} opts
+ *   title       {string}   – nagłówek okna
+ *   fields      {Array}    – [{id, label, placeholder, type:'input'|'textarea', value}]
+ *   confirmLabel {string}  – tekst przycisku OK
+ *   onConfirm   {Function} – async (values:{id:value}) => void|false  (false = nie zamykaj)
+ */
+function showInlineDialog({ title, fields = [], confirmLabel = 'OK', onConfirm }) {
+  // Usuń poprzedni, jeśli istnieje
+  const existing = document.getElementById('_inlineDialog');
+  if (existing) existing.remove();
+
+  const overlay = document.createElement('div');
+  overlay.id = '_inlineDialog';
+  overlay.style.cssText = `
+    position:fixed; inset:0; z-index:99999;
+    background:rgba(0,0,0,0.45);
+    display:flex; align-items:center; justify-content:center;
+    animation: fadeInOverlay 0.15s ease;
+  `;
+
+  const box = document.createElement('div');
+  box.style.cssText = `
+    background:var(--bg-card);
+    border:1px solid var(--border-subtle);
+    border-radius:var(--radius-lg);
+    box-shadow:var(--shadow-xl);
+    padding:24px 28px 20px;
+    min-width:380px; max-width:540px; width:90%;
+    display:flex; flex-direction:column; gap:16px;
+    animation: slideUpDialog 0.18s ease;
+  `;
+
+  // Nagłówek
+  const h = document.createElement('div');
+  h.style.cssText = 'font-size:15px; font-weight:700; color:var(--text-main);';
+  h.textContent = title;
+  box.appendChild(h);
+
+  // Pola
+  const inputs = {};
+  for (const f of fields) {
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'display:flex; flex-direction:column; gap:5px;';
+
+    const lbl = document.createElement('label');
+    lbl.style.cssText = 'font-size:12px; font-weight:600; color:var(--text-muted);';
+    lbl.textContent = f.label;
+    wrap.appendChild(lbl);
+
+    let el;
+    if (f.type === 'textarea') {
+      el = document.createElement('textarea');
+      el.rows = 4;
+      el.style.cssText = `
+        resize:vertical; font-size:13.5px; padding:8px 10px;
+        border:1.5px solid var(--border-subtle); border-radius:var(--radius-sm);
+        background:var(--bg-input); color:var(--text-main);
+        font-family:var(--font-sans); line-height:1.5;
+        transition:border-color 0.15s;
+        outline:none;
+      `;
+      el.addEventListener('focus', () => el.style.borderColor = 'var(--border-focus)');
+      el.addEventListener('blur',  () => el.style.borderColor = 'var(--border-subtle)');
+    } else {
+      el = document.createElement('input');
+      el.type = 'text';
+      el.style.cssText = `
+        font-size:13.5px; padding:8px 10px;
+        border:1.5px solid var(--border-subtle); border-radius:var(--radius-sm);
+        background:var(--bg-input); color:var(--text-main);
+        font-family:var(--font-sans);
+        transition:border-color 0.15s;
+        outline:none;
+      `;
+      el.addEventListener('focus', () => el.style.borderColor = 'var(--border-focus)');
+      el.addEventListener('blur',  () => el.style.borderColor = 'var(--border-subtle)');
+    }
+    el.placeholder = f.placeholder || '';
+    el.value = f.value !== undefined ? f.value : '';
+    inputs[f.id] = el;
+    wrap.appendChild(el);
+    box.appendChild(wrap);
+  }
+
+  // Przyciski
+  const btnRow = document.createElement('div');
+  btnRow.style.cssText = 'display:flex; gap:10px; justify-content:flex-end; margin-top:4px;';
+
+  const btnCancel = document.createElement('button');
+  btnCancel.type = 'button';
+  btnCancel.textContent = 'Anuluj';
+  btnCancel.style.cssText = `
+    padding:7px 18px; font-size:13px; font-weight:600; border-radius:var(--radius-sm);
+    border:1.5px solid var(--border-subtle); background:var(--bg-card-subtle);
+    color:var(--text-muted); cursor:pointer;
+  `;
+  btnCancel.onclick = () => overlay.remove();
+
+  const btnOk = document.createElement('button');
+  btnOk.type = 'button';
+  btnOk.textContent = confirmLabel;
+  btnOk.style.cssText = `
+    padding:7px 20px; font-size:13px; font-weight:700; border-radius:var(--radius-sm);
+    border:none; background:var(--primary); color:#fff; cursor:pointer;
+  `;
+  btnOk.onclick = async () => {
+    const values = {};
+    for (const [id, el] of Object.entries(inputs)) values[id] = el.value;
+    btnOk.disabled = true;
+    btnOk.textContent = 'Zapisuję...';
+    const result = await onConfirm(values);
+    if (result !== false) overlay.remove();
+    else { btnOk.disabled = false; btnOk.textContent = confirmLabel; }
+  };
+
+  btnRow.appendChild(btnCancel);
+  btnRow.appendChild(btnOk);
+  box.appendChild(btnRow);
+
+  overlay.appendChild(box);
+  document.body.appendChild(overlay);
+
+  // Zamknij kliknięciem w tło
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+
+  // Enter w inpucie = OK, Escape = cancel
+  overlay.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') { overlay.remove(); }
+    if (e.key === 'Enter' && e.target.tagName !== 'TEXTAREA') { e.preventDefault(); btnOk.click(); }
+  });
+
+  // Fokus na pierwszy input
+  setTimeout(() => { const first = Object.values(inputs)[0]; if (first) first.focus(); }, 50);
+}
+
 async function formPromptAddSolution(recId) {
   recId = recId || STATE.editingRecordId;
   if (!recId) {
     showToast('Zapisz najpierw formularz usterki', 'warning');
     return;
   }
-  const tytul = prompt('Wpisz tytuł wariantu naprawy (np. "Wymiana wiązki", "Regulacja zawiasu"):');
-  if (!tytul || !tytul.trim()) return;
-  const opis = prompt('Wpisz opis kroków naprawczych / przyczyny:') || '';
-
-  try {
-    const res = await apiCall(`/api/records/${recId}/solutions`, 'POST', {
-      tytul: tytul.trim(),
-      opis: opis.trim(),
-      created_by: STATE.activeUser.full_name || STATE.activeUser.username || 'Technik'
-    });
-    showToast('Wariant rozwiązania dodany!', 'success');
-    if (res && res.id) {
-      STATE.activeSolutionId = res.id;
+  showInlineDialog({
+    title: 'Nowy wariant naprawy',
+    fields: [
+      { id: 'sol_tytul', label: 'Tytuł wariantu', placeholder: 'np. "Wymiana wiązki", "Konfiguracja Acetech"', type: 'input' }
+    ],
+    confirmLabel: 'Dodaj wariant',
+    onConfirm: async (values) => {
+      const tytul = (values.sol_tytul || '').trim() || 'Nowy wariant';
+      try {
+        const res = await apiCall(`/api/records/${recId}/solutions`, 'POST', {
+          tytul,
+          opis: '',
+          created_by: STATE.activeUser.full_name || STATE.activeUser.username || 'Technik'
+        });
+        showToast('Wariant naprawy dodany!', 'success');
+        if (res && res.id) STATE.activeSolutionId = res.id;
+        await loadFormSolutions(recId);
+        if (res && res.id) {
+          setTimeout(() => {
+            const opisEl = document.getElementById(`sol-opis-input-${res.id}`);
+            if (opisEl) {
+              opisEl.focus();
+              opisEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+          }, 100);
+        }
+      } catch(e) {
+        showToast(`Błąd dodawania: ${e.message}`, 'error');
+      }
     }
-    loadFormSolutions(recId);
-  } catch(e) {
-    showToast(`Błąd dodawania: ${e.message}`, 'error');
-  }
-}
-
-async function formEditSolutionText(solId, recId, currentTytul, currentOpis) {
-  recId = recId || STATE.editingRecordId;
-  const tytul = prompt('Edytuj tytuł wariantu naprawy:', currentTytul || '');
-  if (tytul === null) return;
-  if (!tytul.trim()) {
-    showToast('Tytuł nie może być pusty', 'error');
-    return;
-  }
-  const opis = prompt('Edytuj opis kroków naprawczych / diagnozy:', currentOpis || '');
-  if (opis === null) return;
-
-  try {
-    await apiCall(`/api/solutions/${solId}`, 'PUT', {
-      tytul: tytul.trim(),
-      opis: opis.trim()
-    });
-    showToast('Zaktualizowano wariant naprawy', 'success');
-    loadFormSolutions(recId);
-  } catch(e) {
-    showToast(`Błąd zapisu: ${e.message}`, 'error');
-  }
+  });
 }
 
 async function deleteSolution(solId, recId, isEditForm = false) {
@@ -3495,7 +3702,7 @@ function uploadSolutionPhoto(solId, recId, isEditForm = false) {
       try {
         await apiCall(`/api/solutions/${solId}/photos`, 'POST', { filename: file.name, data: b64 });
         showToast('Zdjęcie dodane do wariantu', 'success');
-        if (isEditForm) loadFormSolutions(recId);
+        if (isEditForm) renderFormSolutionPhotos(solId, recId);
         else loadRecordSolutions(recId);
       } catch(err) { showToast(`Błąd: ${err.message}`, 'error'); }
     };
@@ -3516,12 +3723,14 @@ async function uploadSolutionFileObject(solId, recId, file, type = 'photo') {
             data: b64
           });
           showToast('Wklejono zdjęcie do wariantu', 'success');
+          renderFormSolutionPhotos(solId, recId);
         } else {
           await apiCall(`/api/solutions/${solId}/documents`, 'POST', {
             filename: file.name || `dokument_${new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')}.pdf`,
             data: b64
           });
           showToast('Wklejono dokument do wariantu', 'success');
+          renderFormSolutionDocs(solId, recId);
         }
       } catch(err) {
         showToast(`Błąd wklejania: ${err.message}`, 'error');
@@ -3555,7 +3764,6 @@ async function pasteToSolution(solId, recId) {
         if (found) break;
       }
       if (found) {
-        loadFormSolutions(recId);
         return;
       }
     } catch (e) {
@@ -3570,7 +3778,7 @@ async function deleteSolutionPhoto(photoId, solId, recId) {
   try {
     await apiCall(`/api/solution-photos/${photoId}`, 'DELETE');
     showToast('Zdjęcie usunięte z wariantu', 'info');
-    loadFormSolutions(recId);
+    renderFormSolutionPhotos(solId, recId);
   } catch(e) {
     showToast(`Błąd: ${e.message}`, 'error');
   }
@@ -3588,7 +3796,7 @@ function uploadSolutionDoc(solId, recId, isEditForm = false) {
       try {
         await apiCall(`/api/solutions/${solId}/documents`, 'POST', { filename: file.name, data: b64 });
         showToast('Dokument dodany do wariantu', 'success');
-        if (isEditForm) loadFormSolutions(recId);
+        if (isEditForm) renderFormSolutionDocs(solId, recId);
         else loadRecordSolutions(recId);
       } catch(err) { showToast(`Błąd: ${err.message}`, 'error'); }
     };
@@ -3607,13 +3815,17 @@ async function downloadSolutionDoc(docId, filename) {
   } catch(e) { showToast('Błąd pobierania', 'error'); }
 }
 
-async function deleteSolutionDoc(docId, recId, isEditForm = false) {
+async function deleteSolutionDoc(docId, recId, isEditForm = false, solId = null) {
   if (!confirm('Usunąć ten dokument z wariantu?')) return;
   try {
     await apiCall(`/api/solution-documents/${docId}`, 'DELETE');
     showToast('Dokument usunięty z wariantu', 'info');
-    if (isEditForm) loadFormSolutions(recId);
-    else loadRecordSolutions(recId);
+    if (isEditForm) {
+      if (solId) renderFormSolutionDocs(solId, recId);
+      else loadFormSolutions(recId);
+    } else {
+      loadRecordSolutions(recId);
+    }
   } catch(e) { showToast(`Błąd: ${e.message}`, 'error'); }
 }
 
@@ -4390,7 +4602,8 @@ function setupEventListeners() {
       }
 
       if (solHandled) {
-        loadFormSolutions(STATE.editingRecordId);
+        renderFormSolutionPhotos(solId, STATE.editingRecordId);
+        renderFormSolutionDocs(solId, STATE.editingRecordId);
         return;
       }
     }
