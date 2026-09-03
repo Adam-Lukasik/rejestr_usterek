@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Rejestr Usterek v5.0 — Panel Diagnostyki & Serwisu</title>
+<title>Rejestr Usterek - Panel Diagnostyki i Serwisu</title>
 <style>
   @keyframes fadeInOverlay {
     from { opacity: 0; }
@@ -147,7 +147,8 @@
   .sidebar.collapsed .nav-section-title,
   .sidebar.collapsed .nav-item span,
   .sidebar.collapsed .nav-badge,
-  .sidebar.collapsed .sidebar-footer-btn span {
+  .sidebar.collapsed .sidebar-footer-btn span,
+  .sidebar.collapsed .sidebar-author-card {
     display: none !important;
   }
   .sidebar.collapsed .sidebar-header {
@@ -412,6 +413,40 @@
   .sidebar-footer-btn.logout:hover {
     color: var(--red);
   }
+  .sidebar-author-card {
+    margin-top: 6px;
+    padding-top: 10px;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .sidebar-author-line {
+    font-size: 11px;
+    color: #94A3B8;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    letter-spacing: 0.2px;
+  }
+  .sidebar-author-line strong {
+    color: #E2E8F0;
+    font-weight: 600;
+  }
+  .sidebar-author-email {
+    font-size: 11px;
+    color: #60A5FA;
+    text-decoration: none;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    transition: all 0.15s ease;
+    word-break: break-all;
+  }
+  .sidebar-author-email:hover {
+    color: #93C5FD;
+    text-decoration: underline;
+  }
 
   /* ════════════ GŁÓWNA PRZESTRZEŃ ROBOCZA (MAIN CONTENT) ════════════ */
   .main-viewport {
@@ -458,7 +493,7 @@
     min-height: 100%;
   }
 
-  /* ════════════ WIDOK 1: REJESTR USTEREK (MASTER-DETAIL) ════════════ */
+  /* ════════════ WIDOK 1: REJESTR USTEREK(MASTER-DETAIL) ════════════ */
   .dashboard-header {
     padding: 14px 20px;
     background: var(--bg-card);
@@ -1120,34 +1155,61 @@
   .lightbox-overlay {
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.95);
+    background: rgba(15, 23, 42, 0.96);
+    backdrop-filter: blur(8px);
     z-index: 3000;
     display: flex;
     flex-direction: column;
+    padding: 0;
+    user-select: none;
+    animation: fadeIn 0.15s ease-out;
+  }
+  .lightbox-header {
+    background: var(--bg-sidebar);
+    color: #FFFFFF;
+    padding: 10px 20px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+    width: 100%;
+    box-sizing: border-box;
+    z-index: 10;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+  }
+  .lightbox-body {
+    flex: 1;
+    display: flex;
     align-items: center;
     justify-content: center;
-    padding: 20px;
-    user-select: none;
+    position: relative;
+    overflow: hidden;
+    padding: 14px 20px 6px 20px;
+    min-height: 0;
   }
   .lightbox-img-frame {
-    max-width: 92vw;
-    max-height: 84vh;
+    max-width: 95vw;
+    max-height: 100%;
     display: flex;
     align-items: center;
     justify-content: center;
   }
   .lightbox-img-frame img {
     max-width: 100%;
-    max-height: 84vh;
+    max-height: calc(100vh - 135px);
     object-fit: contain;
     border-radius: var(--radius-md);
-    box-shadow: 0 0 40px rgba(0,0,0,0.8);
+    box-shadow: 0 10px 40px rgba(0,0,0,0.8);
+    border: 1px solid rgba(255,255,255,0.08);
   }
   .lightbox-bar {
     display: flex;
     align-items: center;
-    gap: 16px;
-    margin-top: 14px;
+    justify-content: center;
+    gap: 12px;
+    padding: 10px 20px 14px 20px;
+    flex-shrink: 0;
     color: #FFFFFF;
   }
 
@@ -1231,7 +1293,7 @@
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
         </div>
         <div class="brand-titles">
-          <h1>Rejestr Usterek <span class="version-tag">v5.0</span></h1>
+          <h1>Rejestr Usterek <span class="version-tag">v1.5</span></h1>
           <div class="brand-sub">
             <span class="pulse-dot" id="conn-lamp"></span>
             <span id="conn-text">Łączenie...</span>
@@ -1307,6 +1369,18 @@
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
         <span>Wyloguj</span>
       </button>
+
+      <!-- Informacja o autorze i kontakcie -->
+      <div class="sidebar-author-card">
+        <div class="sidebar-author-line">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          <span>Created by <strong>ad.luka</strong></span>
+        </div>
+        <a class="sidebar-author-email" href="mailto:a.lukasik@was-vehicles.com?subject=Rejestr%20Usterek%20-%20Zg%C5%82oszenie%20/%20Pytanie" title="Kliknij, aby wysłać wiadomość e-mail do autora">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
+          <span>a.lukasik@was-vehicles.com</span>
+        </a>
+      </div>
     </div>
   </aside>
 
@@ -1536,10 +1610,13 @@
             </div>
 
             <!-- Stopka zapisu -->
-            <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:24px; padding-top:16px; border-top:1px solid var(--border);">
+            <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:24px; padding-top:16px; border-top:1px solid var(--border); flex-wrap:wrap; align-items:center;">
               <button type="button" class="btn-secondary-action" onclick="switchToDashboard()">Anuluj</button>
               <button type="submit" class="btn-primary-action" id="btn-submit-defect-text" style="padding:10px 20px; font-size:14px;">
                 ✓ Zapisz usterkę
+              </button>
+              <button type="submit" class="btn-primary-action" id="btn-submit-defect-and-solution" style="padding:10px 20px; font-size:14px; background:linear-gradient(135deg, #0284c7 0%, #2563eb 100%); border:none; box-shadow:0 4px 12px rgba(37,99,235,0.25);">
+                💡 Zapisz usterkę i dodaj pierwszy wariant naprawy
               </button>
             </div>
           </form>
@@ -1861,15 +1938,39 @@
 
 <!-- ════════════ LIGHTBOX DO POWIĘKSZANIA ZDJĘĆ ════════════ -->
 <div class="lightbox-overlay" id="lightbox" style="display:none;" onclick="closeLightbox()">
-  <div class="lightbox-img-frame" onclick="event.stopPropagation()">
-    <img id="lightbox-img" src="" alt="Podgląd zdjęcia">
+  <!-- Górna listwa podglądu zdjęć (z własnym przyciskiem X i akcjami) -->
+  <div class="lightbox-header" onclick="event.stopPropagation()">
+    <div style="display:flex; align-items:center; gap:10px; min-width:0;">
+      <span style="font-size:18px;">🖼️</span>
+      <h3 id="lightbox-header-title" style="margin:0; font-size:14px; font-weight:600; color:#F8FAFC; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+        Podgląd zdjęcia
+      </h3>
+      <span id="lightbox-top-counter" style="background:rgba(255,255,255,0.12); padding:2px 8px; border-radius:12px; font-size:11.5px; font-weight:600; color:#E2E8F0;">
+        1 / 1
+      </span>
+    </div>
+    <div style="display:flex; align-items:center; gap:8px;">
+      <button type="button" class="btn-secondary-action" id="btn-lightbox-top-prev" style="padding:5px 10px; font-size:12px;" title="Poprzednie zdjęcie (Strzałka w lewo)">◄ Poprzednie</button>
+      <button type="button" class="btn-secondary-action" id="btn-lightbox-top-next" style="padding:5px 10px; font-size:12px;" title="Następne zdjęcie (Strzałka w prawo)">Następne ►</button>
+      <button type="button" class="btn-secondary-action" id="btn-lightbox-top-download" style="padding:5px 12px; font-size:12px;" title="Pobierz zdjęcie na dysk">⬇ Pobierz</button>
+      <button type="button" class="btn-close-modal" id="btn-lightbox-top-close" onclick="closeLightbox()" title="Zamknij podgląd zdjęcia (ESC)" style="font-size:20px; line-height:1; padding:4px 8px; margin-left:4px; color:#F1F5F9; background:rgba(255,255,255,0.08); border-radius:6px; cursor:pointer;">✕</button>
+    </div>
   </div>
+
+  <!-- Główny obszar wyświetlania zdjęcia -->
+  <div class="lightbox-body" onclick="closeLightbox()">
+    <div class="lightbox-img-frame" onclick="event.stopPropagation()">
+      <img id="lightbox-img" src="" alt="Podgląd zdjęcia">
+    </div>
+  </div>
+
+  <!-- Dolna listwa z nawigacją i przyciskiem zamknięcia -->
   <div class="lightbox-bar" onclick="event.stopPropagation()">
-    <button class="btn-secondary-action" id="btn-lightbox-prev">◄ Poprzednie</button>
-    <span id="lightbox-counter" style="font-size:12px; font-weight:600;">1 / 1</span>
-    <button class="btn-secondary-action" id="btn-lightbox-next">Następne ►</button>
-    <button class="btn-secondary-action" id="btn-lightbox-download">⬇ Pobierz</button>
-    <button class="btn-secondary-action" onclick="closeLightbox()">✕ Zamknij (ESC)</button>
+    <button type="button" class="btn-secondary-action" id="btn-lightbox-prev">◄ Poprzednie</button>
+    <span id="lightbox-counter" style="font-size:12px; font-weight:600; min-width:40px; text-align:center;">1 / 1</span>
+    <button type="button" class="btn-secondary-action" id="btn-lightbox-next">Następne ►</button>
+    <button type="button" class="btn-secondary-action" id="btn-lightbox-download">⬇ Pobierz</button>
+    <button type="button" class="btn-secondary-action" onclick="closeLightbox()">✕ Zamknij (ESC)</button>
   </div>
 </div>
 
@@ -1918,20 +2019,31 @@
           <label for="login-username">Login</label>
           <input type="text" id="login-username" required placeholder="Wpisz login..." autocomplete="username">
         </div>
-        <div class="form-group" style="margin-bottom:10px;">
-          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
-            <label for="login-password" style="margin-bottom:0;">Hasło</label>
-            <button type="button" onclick="openResetPasswordModal()" style="background:none; border:none; color:#2563EB; font-size:12px; font-weight:600; cursor:pointer; padding:0; text-decoration:none;" onmouseover="this.style.textDecoration='underline'" onmouseout="this.style.textDecoration='none'">
+        <div class="form-group" style="margin-bottom:12px;">
+          <label for="login-password">Hasło</label>
+          <input type="password" id="login-password" required placeholder="Wpisz hasło..." autocomplete="current-password">
+          <div style="display:flex; justify-content:flex-end; margin-top:6px;">
+            <button type="button" onclick="openResetPasswordModal()" style="background:none; border:none; color:#2563EB; font-size:12px; font-weight:600; cursor:pointer; padding:2px 0; text-decoration:none;" onmouseover="this.style.textDecoration='underline'" onmouseout="this.style.textDecoration='none'">
               Nie pamiętasz hasła?
             </button>
           </div>
-          <input type="password" id="login-password" required placeholder="Wpisz hasło..." autocomplete="current-password">
         </div>
         <div id="login-error-box" style="display:none; padding:8px 12px; background:var(--red-bg); color:var(--red-text); border-radius:var(--radius-md); font-size:12px; margin-bottom:14px; font-weight:500;"></div>
-        <button type="submit" class="btn-primary-action" style="width:100%; padding:10px; font-size:14px; justify-content:center; margin-top:8px;">
+        <button type="submit" class="btn-primary-action" style="width:100%; padding:10px; font-size:14px; justify-content:center; margin-top:4px;">
           Zaloguj się
         </button>
       </form>
+      <div style="margin-top:16px; padding-top:14px; border-top:1px solid var(--border-subtle, rgba(255,255,255,0.08)); text-align:center; font-size:11.5px; color:var(--text-muted, #94A3B8); line-height:1.5;">
+        <div>W razie problemów z programem lub kontem:</div>
+        <div style="margin-top:4px; display:inline-flex; align-items:center; gap:6px; flex-wrap:wrap; justify-content:center;">
+          <span>Autor: <strong>ad.luka</strong></span>
+          <span style="opacity:0.4;">•</span>
+          <a href="mailto:a.lukasik@was-vehicles.com?subject=Rejestr%20Usterek%20-%20Pomoc%20z%20logowaniem" style="color:#2563EB; text-decoration:none; font-weight:600; display:inline-flex; align-items:center; gap:4px;" onmouseover="this.style.textDecoration='underline'" onmouseout="this.style.textDecoration='none'">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
+            <span>a.lukasik@was-vehicles.com</span>
+          </a>
+        </div>
+      </div>
     </div>
   </div>
 </div>
@@ -2455,20 +2567,20 @@ async function selectRecord(recId) {
           <div class="val">${escapeHtml(r.typ)}</div>
         </div>
         <div class="meta-field">
-          <label>Element / Urządzenie</label>
-          <div class="val">${escapeHtml(r.element || '—')}</div>
-        </div>
-        <div class="meta-field">
-          <label>VIN / Nadwozie</label>
-          <div class="val" style="font-family:var(--font-mono); font-size:12px;">${escapeHtml(r.vin || '—')}</div>
-        </div>
-        <div class="meta-field">
           <label>Zgłaszający</label>
           <div class="val">${escapeHtml(r.created_by || 'Technik')}</div>
         </div>
         <div class="meta-field">
           <label>Data zgłoszenia</label>
           <div class="val">${formatDateTime(r.created)}</div>
+        </div>
+        <div class="meta-field">
+          <label>Naprawione przez</label>
+          <div class="val" style="${isFixed ? 'color:var(--green); font-weight:600;' : ''}">${isFixed ? escapeHtml(r.fixed_by || 'Technik') : '—'}</div>
+        </div>
+        <div class="meta-field">
+          <label>Data naprawy</label>
+          <div class="val" style="${isFixed && r.fixed_at ? 'color:var(--green); font-weight:600;' : ''}">${isFixed && r.fixed_at ? formatDateTime(r.fixed_at) : '—'}</div>
         </div>
       </div>
 
@@ -2707,7 +2819,7 @@ async function loadRecordPhotos(recId) {
         div.innerHTML = `
           <img src="data:image/jpeg;base64,${full.data}" alt="Foto usterki" title="Kliknij, aby powiększyć zdjęcie">
         `;
-        div.onclick = () => openLightboxGallery(photoUrls, i);
+        div.onclick = () => openLightboxGallery(photoUrls, i, 'Zdjęcia problemu');
         b.appendChild(div);
       });
     });
@@ -2763,7 +2875,7 @@ async function loadRecordSolutions(recId) {
             const div = document.createElement('div');
             div.className = 'photo-thumb-card';
             div.innerHTML = `<img src="data:image/jpeg;base64,${full.data}" alt="Foto wariantu" title="Kliknij, aby powiększyć">`;
-            div.onclick = () => openLightboxGallery(solPhotoUrls, pIdx);
+            div.onclick = () => openLightboxGallery(solPhotoUrls, pIdx, `Zdjęcia wariantu: ${sol.tytul || sol.numer}`);
             phBox.appendChild(div);
           });
         });
@@ -2890,6 +3002,8 @@ function resetDefectForm(preserveLastPS = true) {
   document.getElementById('form-defect-submit').reset();
   document.getElementById('form-heading-text').textContent = 'Nowe zgłoszenie usterki';
   document.getElementById('btn-submit-defect-text').textContent = '✓ Zapisz usterkę';
+  const btnAddSol = document.getElementById('btn-submit-defect-and-solution');
+  if (btnAddSol) btnAddSol.style.display = 'inline-flex';
 
   // Przywróć ostatnio używany projekt PS (jeśli jest zapamiętany)
   if (lastPS) {
@@ -3067,8 +3181,26 @@ async function removePendingDoc(idx) {
 }
 
 /* ── ZAPIS FORMULARZA USTERKI ── */
+let isSubmitAndAddSolution = false;
+
+const btnAddSolEl = document.getElementById('btn-submit-defect-and-solution');
+if (btnAddSolEl) {
+  btnAddSolEl.addEventListener('click', () => {
+    isSubmitAndAddSolution = true;
+  });
+}
+const btnSubmitDefectEl = document.getElementById('btn-submit-defect-text');
+if (btnSubmitDefectEl) {
+  btnSubmitDefectEl.addEventListener('click', () => {
+    isSubmitAndAddSolution = false;
+  });
+}
+
 document.getElementById('form-defect-submit').addEventListener('submit', async (e) => {
   e.preventDefault();
+  const andAddSolution = isSubmitAndAddSolution || (e.submitter && e.submitter.id === 'btn-submit-defect-and-solution');
+  isSubmitAndAddSolution = false;
+
   const projekt = document.getElementById('f-projekt').value.trim();
   const klient = document.getElementById('f-klient').value;
   const model = document.getElementById('f-model').value;
@@ -3083,6 +3215,11 @@ document.getElementById('form-defect-submit').addEventListener('submit', async (
     showToast('Wypełnij wszystkie wymagane pola (*)', 'error');
     return;
   }
+
+  const btnSubmit = document.getElementById('btn-submit-defect-text');
+  const btnAddSol = document.getElementById('btn-submit-defect-and-solution');
+  if (btnSubmit) btnSubmit.disabled = true;
+  if (btnAddSol) btnAddSol.disabled = true;
 
   const recId = STATE.editingRecordId || generateUUID();
   const payload = {
@@ -3128,13 +3265,23 @@ document.getElementById('form-defect-submit').addEventListener('submit', async (
       await saveAllFormSolutions();
     }
 
-    resetDefectForm();
-    await loadAllData();
-    STATE.selectedRecordId = recId;
-    switchToDashboard();
-    selectRecord(recId);
+    if (andAddSolution) {
+      await loadAllData();
+      STATE.selectedRecordId = recId;
+      await startEditRecord(recId);
+      await formPromptAddSolution(recId);
+    } else {
+      resetDefectForm();
+      await loadAllData();
+      STATE.selectedRecordId = recId;
+      switchToDashboard();
+      selectRecord(recId);
+    }
   } catch (err) {
     showToast(`Błąd zapisu: ${err.message}`, 'error');
+  } finally {
+    if (btnSubmit) btnSubmit.disabled = false;
+    if (btnAddSol) btnAddSol.disabled = false;
   }
 });
 
@@ -3148,6 +3295,8 @@ async function startEditRecord(recId) {
   STATE.activeSolutionId = null;
   document.getElementById('form-heading-text').textContent = 'Edycja usterki';
   document.getElementById('btn-submit-defect-text').textContent = '✓ Zapisz zmiany';
+  const btnAddSol = document.getElementById('btn-submit-defect-and-solution');
+  if (btnAddSol) btnAddSol.style.display = 'none';
 
   document.getElementById('f-projekt').value = r.projekt || '';
   document.getElementById('f-klient').value = r.klient || '';
@@ -3320,7 +3469,7 @@ async function renderFormSolutionPhotos(solId, recId) {
         <img src="data:image/jpeg;base64,${full.data}" alt="Foto wariantu" title="Kliknij, aby powiększyć">
         <button type="button" style="position:absolute; top:4px; right:4px; background:rgba(0,0,0,0.7); color:#FFF; border:none; border-radius:50%; width:20px; height:20px; font-size:11px; cursor:pointer;" onclick="event.stopPropagation(); deleteSolutionPhoto('${ph.id}', '${solId}', '${recId}')" title="Usuń zdjęcie">✕</button>
       `;
-      div.onclick = () => openLightboxGallery(solPhotoUrls, pIdx);
+      div.onclick = () => openLightboxGallery(solPhotoUrls, pIdx, 'Zdjęcia wariantu naprawy');
       phBox.appendChild(div);
     });
   } catch (e) {
@@ -4415,50 +4564,85 @@ document.getElementById('btn-run-db-optimize').addEventListener('click', async (
 });
 
 /* ── LIGHTBOX (GALERIA PEŁNOEKRANOWA) ── */
-function openLightboxGallery(photosList, startIndex = 0) {
+function openLightboxGallery(photosList, startIndex = 0, customTitle = null) {
   if (!photosList || photosList.length === 0) return;
   STATE.lightboxPhotos = photosList;
   STATE.lightboxIndex = startIndex;
+  const titleEl = document.getElementById('lightbox-header-title');
+  if (titleEl) {
+    titleEl.textContent = customTitle || 'Podgląd zdjęcia';
+  }
   updateLightboxView();
   document.getElementById('lightbox').style.display = 'flex';
 }
 
 function updateLightboxView() {
   const src = STATE.lightboxPhotos[STATE.lightboxIndex];
+  const countText = `${STATE.lightboxIndex + 1} / ${STATE.lightboxPhotos.length}`;
+  
   document.getElementById('lightbox-img').src = src;
-  document.getElementById('lightbox-counter').textContent = `${STATE.lightboxIndex + 1} / ${STATE.lightboxPhotos.length}`;
-  document.getElementById('btn-lightbox-download').onclick = () => {
+  const counterEl = document.getElementById('lightbox-counter');
+  if (counterEl) counterEl.textContent = countText;
+  const topCounterEl = document.getElementById('lightbox-top-counter');
+  if (topCounterEl) topCounterEl.textContent = countText;
+
+  const downloadFn = () => {
     const a = document.createElement('a');
     a.href = src;
     a.download = `foto_usterka_${Date.now()}.jpg`;
     a.click();
   };
+  const dlBtn = document.getElementById('btn-lightbox-download');
+  if (dlBtn) dlBtn.onclick = downloadFn;
+  const topDlBtn = document.getElementById('btn-lightbox-top-download');
+  if (topDlBtn) topDlBtn.onclick = downloadFn;
+
+  const isSingle = STATE.lightboxPhotos.length <= 1;
+  ['btn-lightbox-prev', 'btn-lightbox-next', 'btn-lightbox-top-prev', 'btn-lightbox-top-next'].forEach(id => {
+    const btn = document.getElementById(id);
+    if (btn) {
+      btn.style.opacity = isSingle ? '0.4' : '1';
+      btn.style.pointerEvents = isSingle ? 'none' : 'auto';
+    }
+  });
 }
 
 function closeLightbox() {
-  document.getElementById('lightbox').style.display = 'none';
+  const lb = document.getElementById('lightbox');
+  if (lb) lb.style.display = 'none';
 }
 
-document.getElementById('btn-lightbox-prev').onclick = () => {
+function prevLightboxPhoto() {
+  if (!STATE.lightboxPhotos || STATE.lightboxPhotos.length === 0) return;
   STATE.lightboxIndex = (STATE.lightboxIndex - 1 + STATE.lightboxPhotos.length) % STATE.lightboxPhotos.length;
   updateLightboxView();
-};
-document.getElementById('btn-lightbox-next').onclick = () => {
+}
+
+function nextLightboxPhoto() {
+  if (!STATE.lightboxPhotos || STATE.lightboxPhotos.length === 0) return;
   STATE.lightboxIndex = (STATE.lightboxIndex + 1) % STATE.lightboxPhotos.length;
   updateLightboxView();
-};
+}
+
+document.getElementById('btn-lightbox-prev')?.addEventListener('click', prevLightboxPhoto);
+document.getElementById('btn-lightbox-next')?.addEventListener('click', nextLightboxPhoto);
+document.getElementById('btn-lightbox-top-prev')?.addEventListener('click', prevLightboxPhoto);
+document.getElementById('btn-lightbox-top-next')?.addEventListener('click', nextLightboxPhoto);
 
 window.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
-    if (document.getElementById('modal-defect-preview')?.style.display === 'flex') {
-      closeModal('modal-defect-preview');
+    if (document.getElementById('lightbox')?.style.display === 'flex') {
+      closeLightbox();
+      return;
     }
     if (document.getElementById('modal-pdf-viewer')?.style.display === 'flex') {
       closeModal('modal-pdf-viewer');
       document.getElementById('pdf-viewer-frame').src = '';
+      return;
     }
-    if (document.getElementById('lightbox')?.style.display === 'flex') {
-      closeLightbox();
+    if (document.getElementById('modal-defect-preview')?.style.display === 'flex') {
+      closeModal('modal-defect-preview');
+      return;
     }
     ['modal-quick-switch', 'modal-project-edit', 'modal-user-edit', 'modal-multi-ps', 'modal-reset-password'].forEach(id => {
       const el = document.getElementById(id);
@@ -4470,8 +4654,8 @@ window.addEventListener('keydown', (e) => {
     toggleSidebar();
   }
   if (document.getElementById('lightbox')?.style.display === 'flex') {
-    if (e.key === 'ArrowLeft') document.getElementById('btn-lightbox-prev').click();
-    if (e.key === 'ArrowRight') document.getElementById('btn-lightbox-next').click();
+    if (e.key === 'ArrowLeft') prevLightboxPhoto();
+    if (e.key === 'ArrowRight') nextLightboxPhoto();
   }
 });
 

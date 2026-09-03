@@ -54,7 +54,7 @@ if errorlevel 1 (
 )
 
 echo ========================================================
-echo   Rejestr Usterek v5.0 -- Panel Diagnostyki i Serwisu
+echo   Rejestr Usterek v1.5 -- Panel Diagnostyki i Serwisu
 echo ========================================================
 echo.
 echo   [1/2] Inicjalizacja bazy danych i serwera lokalnego...

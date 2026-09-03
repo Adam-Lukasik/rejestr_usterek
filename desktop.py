@@ -71,8 +71,8 @@ import requests
 import tempfile
 
 # ═══════════════════════════════════════════════════════════════════
-APP_VERSION = "v5.0"
-APP_TITLE   = f"Rejestr Usterek {APP_VERSION}"
+APP_VERSION = "v1.5"
+APP_TITLE   = "Rejestr Usterek - Panel Diagnostyki i Serwisu"
 BASE_DIR  = Path(__file__).resolve().parent
 CFG_FILE  = BASE_DIR / "desktop_config.json"
 DB_PATH   = BASE_DIR / "rejestr_usterek.db"
@@ -2788,7 +2788,7 @@ class App:
         bot = ttk.Frame(root, padding=(14,4))
         bot.pack(fill="x", side="bottom")
         ttk.Separator(root).pack(fill="x", side="bottom")
-        ttk.Label(bot, text="Rejestr Usterek v5.0   Created by ad.luka",
+        ttk.Label(bot, text=f"Rejestr Usterek {APP_VERSION}   Created by ad.luka",
                    font=FONT_MUTED, foreground=DIM).pack(side="left")
         if _BOOT:
             self._dark_var = tk.BooleanVar(value=UI.get("theme")=="dark")
@@ -3145,11 +3145,16 @@ class App:
         brow.grid(row=3, column=0, columnspan=3, sticky="ew", pady=(10, 0))
         self._save_btn = ttk.Button(brow, text="Zapisz usterkę", command=self._save_form)
         self._save_btn.pack(side="left", padx=(0, 8))
+        self._save_and_sol_btn = ttk.Button(
+            brow, text="Zapisz usterkę i dodaj pierwszy wariant naprawy",
+            command=lambda: self._save_form(and_add_solution=True))
+        self._save_and_sol_btn.pack(side="left", padx=(0, 8))
         self._cancel_btn = ttk.Button(brow, text="Wyczyść", command=self._confirm_clear)
         self._cancel_btn.pack(side="left")
 
         if CURRENT_USER.get("role") == "podglad":
             self._save_btn.configure(state="disabled")
+            self._save_and_sol_btn.configure(state="disabled")
 
     def _on_status_changed(self):
         st = self._status_var.get()
@@ -3386,7 +3391,7 @@ class App:
         return next((r for r in self._records if r["id"]==s[0]), None)
 
     # ── formularz zapisu ──────────────────────────────────────────
-    def _save_form(self):
+    def _save_form(self, and_add_solution=False):
         if CURRENT_USER.get("role") == "podglad":
             messagebox.showwarning(APP_TITLE, "Konto o roli 'Podgląd' nie posiada uprawnień do edycji."); return
 
@@ -3465,19 +3470,29 @@ class App:
         self._form_solutions_hint.grid_remove()
 
         self._reload(force=True)
-        self._nb.select(0)
 
-        # Zaznacz nowo utworzony / zaktualizowany rekord w tabeli
-        try:
-            if self._tree.exists(rec_id):
-                self._tree.selection_set(rec_id)
-                self._tree.see(rec_id)
-                self._on_select()
-        except Exception:
-            pass
+        if and_add_solution:
+            try:
+                rec = API.get(f"/api/records/{rec_id}")
+                self._set_mode("edit")
+                self._fill_form_with_record(rec)
+                self.after(150, lambda: self._form_solutions._add_solution())
+            except Exception as e:
+                messagebox.showwarning(APP_TITLE, f"Usterka zapisana, ale wystąpił problem z otwarciem wariantów:\n{e}")
+        else:
+            self._nb.select(0)
 
-        msg = "Zmiany w usterce zostały zapisane." if is_edit else "Nowa usterka została zarejestrowana."
-        messagebox.showinfo(APP_TITLE, msg)
+            # Zaznacz nowo utworzony / zaktualizowany rekord w tabeli
+            try:
+                if self._tree.exists(rec_id):
+                    self._tree.selection_set(rec_id)
+                    self._tree.see(rec_id)
+                    self._on_select()
+            except Exception:
+                pass
+
+            msg = "Zmiany w usterce zostały zapisane." if is_edit else "Nowa usterka została zarejestrowana."
+            messagebox.showinfo(APP_TITLE, msg)
 
     def _auto_add_to_lists(self, klient, model, typ, projekt):
         changed = False
@@ -3598,18 +3613,26 @@ class App:
         if mode == "new":
             self._form_title_var.set("Nowa usterka")
             self._save_btn.configure(text="Zapisz usterkę", state="normal", command=self._save_form)
+            if hasattr(self, '_save_and_sol_btn'):
+                self._save_and_sol_btn.pack(side="left", padx=(0, 8), before=self._cancel_btn)
             self._cancel_btn.configure(text="Wyczyść", command=self._confirm_clear)
         elif mode == "edit":
             self._form_title_var.set("Edycja usterki")
             self._save_btn.configure(text="Zapisz zmiany", state="normal", command=self._save_form)
+            if hasattr(self, '_save_and_sol_btn'):
+                self._save_and_sol_btn.pack_forget()
             self._cancel_btn.configure(text="Anuluj edycję", command=self._cancel_edit)
         else: # view
             self._form_title_var.set("Podgląd usterki (tylko do odczytu)")
             self._save_btn.configure(text="✎ Edytuj tę usterkę", state="normal", command=self._switch_to_edit)
+            if hasattr(self, '_save_and_sol_btn'):
+                self._save_and_sol_btn.pack_forget()
             self._cancel_btn.configure(text="Zamknij podgląd", command=lambda: self._nb.select(0))
 
         if CURRENT_USER.get("role") == "podglad":
             self._save_btn.configure(state="disabled")
+            if hasattr(self, '_save_and_sol_btn'):
+                self._save_and_sol_btn.configure(state="disabled")
 
     def _fill_form_with_record(self, r):
         self._edit_id = r["id"]

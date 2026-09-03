@@ -24,6 +24,14 @@ try:
 except Exception:
     pass
 
+# ── AppUserModelID — ikona na pasku zadań zgodna ze skrótem na pulpicie ──
+try:
+    ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
+        "RejestrUsterek.Desktop.App"
+    )
+except Exception:
+    pass
+
 # ── Zapobieganie wielokrotnemu uruchomieniu (Single Instance Mutex) ──
 _MUTEX_HANDLE = None
 try:
@@ -55,7 +63,7 @@ logging.basicConfig(
 
 CFG_FILE = BASE_DIR / "config.json"
 DESKTOP_CFG = BASE_DIR / "desktop_config.json"
-APP_TITLE = "Rejestr Usterek"
+APP_TITLE = "Rejestr Usterek - Panel Diagnostyki i Serwisu"
 
 class SplashScreen:
     """Eleganckie okno ładowania (Splash Screen) wyświetlane natychmiast po uruchomieniu."""
@@ -84,7 +92,7 @@ class SplashScreen:
             lbl_title = tk.Label(frame, text="⚡ Rejestr Usterek", font=("Segoe UI", 16, "bold"), fg="#F8FAFC", bg="#0F172A")
             lbl_title.pack(pady=(26, 4))
             
-            lbl_sub = tk.Label(frame, text="Panel Diagnostyki & Serwisu", font=("Segoe UI", 10), fg="#94A3B8", bg="#0F172A")
+            lbl_sub = tk.Label(frame, text="Panel Diagnostyki i Serwisu", font=("Segoe UI", 10), fg="#94A3B8", bg="#0F172A")
             lbl_sub.pack(pady=(0, 18))
             
             style = ttk.Style()
