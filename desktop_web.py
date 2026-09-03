@@ -63,7 +63,7 @@ logging.basicConfig(
 
 CFG_FILE = BASE_DIR / "config.json"
 DESKTOP_CFG = BASE_DIR / "desktop_config.json"
-APP_TITLE = "Rejestr Usterek - Panel Diagnostyki i Serwisu"
+APP_TITLE = "Rejestr Usterek v2.0 - Panel Diagnostyki i Serwisu"
 
 class SplashScreen:
     """Eleganckie okno ładowania (Splash Screen) wyświetlane natychmiast po uruchomieniu."""

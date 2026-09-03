@@ -7,6 +7,8 @@ import hashlib
 import secrets
 import smtplib
 import io
+import urllib.request
+import urllib.parse
 from pathlib import Path
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -14,6 +16,23 @@ import uuid as _uuid
 from datetime import datetime as _dt, timedelta as _td
 from functools import wraps
 from flask import Flask, send_from_directory, request, jsonify, Response
+
+
+def translate_pl_to_en(text: str) -> str:
+    """Automatycznie tłumaczy tekst z języka polskiego na angielski."""
+    if not text or not str(text).strip():
+        return ""
+    text_str = str(text).strip()
+    try:
+        url = "https://translate.googleapis.com/translate_a/single?client=gtx&sl=pl&tl=en&dt=t&q=" + urllib.parse.quote(text_str)
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
+        with urllib.request.urlopen(req, timeout=4.0) as res:
+            data = json.loads(res.read().decode("utf-8"))
+            translated = "".join([segment[0] for segment in data[0] if segment and segment[0]])
+            return translated.strip()
+    except Exception as e:
+        print(f"[TRANSLATE ERROR] Nie udało się przetłumaczyć na EN: {e}")
+        return ""
 
 
 try:
@@ -245,7 +264,9 @@ def init_db():
             status TEXT NOT NULL DEFAULT 'open',
             created_by TEXT,
             fixed_by TEXT,
-            fixed_at TEXT
+            fixed_at TEXT,
+            opisProblem_en TEXT,
+            opisNaprawa_en TEXT
         )
     """)
 
@@ -258,6 +279,10 @@ def init_db():
         cursor.execute("ALTER TABLE records ADD COLUMN fixed_by TEXT")
     if "fixed_at" not in columns:
         cursor.execute("ALTER TABLE records ADD COLUMN fixed_at TEXT")
+    if "opisProblem_en" not in columns:
+        cursor.execute("ALTER TABLE records ADD COLUMN opisProblem_en TEXT")
+    if "opisNaprawa_en" not in columns:
+        cursor.execute("ALTER TABLE records ADD COLUMN opisNaprawa_en TEXT")
 
     # 2. Tabela słowników
     cursor.execute("""
@@ -337,9 +362,18 @@ def init_db():
             opis TEXT,
             created_by TEXT,
             created TEXT NOT NULL,
+            tytul_en TEXT,
+            opis_en TEXT,
             FOREIGN KEY (record_id) REFERENCES records(id)
         )
     """)
+
+    cursor.execute("PRAGMA table_info(solutions)")
+    sol_columns = [col["name"] for col in cursor.fetchall()]
+    if "tytul_en" not in sol_columns:
+        cursor.execute("ALTER TABLE solutions ADD COLUMN tytul_en TEXT")
+    if "opis_en" not in sol_columns:
+        cursor.execute("ALTER TABLE solutions ADD COLUMN opis_en TEXT")
 
     # 9. Zdjęcia przypisane do wariantu rozwiązania
     cursor.execute("""
@@ -477,6 +511,17 @@ def init_db():
 @app.route("/")
 def index():
     return send_from_directory(BASE_DIR, "rejestr_usterek.html")
+
+@app.route("/translations.js")
+def translations_js():
+    return send_from_directory(BASE_DIR, "translations.js")
+
+@app.route("/api/translate", methods=["POST"])
+def api_translate():
+    data = request.get_json() or {}
+    text = data.get("text", "")
+    translated = translate_pl_to_en(text)
+    return jsonify({"translated": translated})
 
 @app.route("/api/auth/login", methods=["POST"])
 def auth_login():
@@ -922,14 +967,25 @@ def create_record():
     if status == "fixed" and not fixed_at:
         fixed_at = _dt.now().isoformat(timespec="seconds")
 
+    opis_prob = data.get("opisProblem", "")
+    opis_nap = data.get("opisNaprawa", "")
+    opis_prob_en = (data.get("opisProblem_en") or "").strip()
+    opis_nap_en = (data.get("opisNaprawa_en") or "").strip()
+
+    if not opis_prob_en and opis_prob:
+        opis_prob_en = translate_pl_to_en(opis_prob)
+    if not opis_nap_en and opis_nap:
+        opis_nap_en = translate_pl_to_en(opis_nap)
+
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute("""
         INSERT INTO records (
             id, created, klient, model, projekt, vin, typ, element,
-            opisProblem, opisNaprawa, status, created_by, fixed_by, fixed_at
+            opisProblem, opisNaprawa, status, created_by, fixed_by, fixed_at,
+            opisProblem_en, opisNaprawa_en
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         data.get("id"),
         data.get("created", _dt.now().isoformat(timespec="seconds")),
@@ -939,16 +995,20 @@ def create_record():
         data.get("vin", ""),
         data.get("typ", ""),
         data.get("element", ""),
-        data.get("opisProblem", ""),
-        data.get("opisNaprawa", ""),
+        opis_prob,
+        opis_nap,
         status,
         data.get("created_by", ""),
         data.get("fixed_by", ""),
-        fixed_at
+        fixed_at,
+        opis_prob_en,
+        opis_nap_en
     ))
     conn.commit()
     conn.close()
 
+    data["opisProblem_en"] = opis_prob_en
+    data["opisNaprawa_en"] = opis_nap_en
     return jsonify(data), 201
 
 @app.route("/api/records/<rec_id>", methods=["PUT"])
@@ -964,6 +1024,16 @@ def update_record(rec_id):
         fixed_at = None
         fixed_by = ""
 
+    opis_prob = data.get("opisProblem", "")
+    opis_nap = data.get("opisNaprawa", "")
+    opis_prob_en = (data.get("opisProblem_en") or "").strip()
+    opis_nap_en = (data.get("opisNaprawa_en") or "").strip()
+
+    if not opis_prob_en and opis_prob:
+        opis_prob_en = translate_pl_to_en(opis_prob)
+    if not opis_nap_en and opis_nap:
+        opis_nap_en = translate_pl_to_en(opis_nap)
+
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute("""
@@ -971,7 +1041,8 @@ def update_record(rec_id):
         SET klient=?, model=?, projekt=?, vin=?, typ=?, element=?,
             opisProblem=?, opisNaprawa=?, status=?,
             created_by=COALESCE(NULLIF(?, ''), created_by),
-            fixed_by=?, fixed_at=?
+            fixed_by=?, fixed_at=?,
+            opisProblem_en=?, opisNaprawa_en=?
         WHERE id=?
     """, (
         data.get("klient", ""),
@@ -980,17 +1051,19 @@ def update_record(rec_id):
         data.get("vin", ""),
         data.get("typ", ""),
         data.get("element", ""),
-        data.get("opisProblem", ""),
-        data.get("opisNaprawa", ""),
+        opis_prob,
+        opis_nap,
         status,
         data.get("created_by", ""),
         fixed_by,
         fixed_at,
+        opis_prob_en,
+        opis_nap_en,
         rec_id
     ))
     conn.commit()
     conn.close()
-    return jsonify({"status": "ok"})
+    return jsonify({"status": "ok", "opisProblem_en": opis_prob_en, "opisNaprawa_en": opis_nap_en})
 
 @app.route("/api/records/<rec_id>/status", methods=["PATCH"])
 def update_status(rec_id):
@@ -1124,7 +1197,7 @@ def get_solutions(rec_id):
     """Zwraca listę wariantów rozwiązań dla danej usterki (bez danych zdjęć)."""
     conn = get_db_connection()
     rows = conn.execute(
-        "SELECT id, record_id, numer, tytul, opis, created_by, created "
+        "SELECT id, record_id, numer, tytul, opis, tytul_en, opis_en, created_by, created "
         "FROM solutions WHERE record_id=? ORDER BY numer ASC",
         (rec_id,)).fetchall()
     conn.close()
@@ -1141,30 +1214,51 @@ def add_solution(rec_id):
         (rec_id,)).fetchone()[0]
     sol_id = str(_uuid.uuid4())
     tytul = data.get("tytul", "").strip() or f"Wariant {max_num + 1}"
+    opis = data.get("opis", "")
+    tytul_en = (data.get("tytul_en") or "").strip()
+    opis_en = (data.get("opis_en") or "").strip()
+
+    if not tytul_en and tytul:
+        tytul_en = translate_pl_to_en(tytul)
+    if not opis_en and opis:
+        opis_en = translate_pl_to_en(opis)
+
     conn.execute("""
-        INSERT INTO solutions (id, record_id, numer, tytul, opis, created_by, created)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO solutions (id, record_id, numer, tytul, opis, created_by, created, tytul_en, opis_en)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         sol_id, rec_id, max_num + 1, tytul,
-        data.get("opis", ""),
+        opis,
         data.get("created_by", ""),
-        _dt.now().isoformat(timespec="seconds")
+        _dt.now().isoformat(timespec="seconds"),
+        tytul_en,
+        opis_en
     ))
     conn.commit()
     conn.close()
-    return jsonify({"id": sol_id, "numer": max_num + 1, "tytul": tytul}), 201
+    return jsonify({"id": sol_id, "numer": max_num + 1, "tytul": tytul, "tytul_en": tytul_en, "opis_en": opis_en}), 201
 
 @app.route("/api/solutions/<sol_id>", methods=["PUT"])
 def update_solution(sol_id):
     """Edytuje tytuł i opis wariantu rozwiązania."""
     data = request.get_json() or {}
+    tytul = data.get("tytul", "").strip()
+    opis = data.get("opis", "")
+    tytul_en = (data.get("tytul_en") or "").strip()
+    opis_en = (data.get("opis_en") or "").strip()
+
+    if not tytul_en and tytul:
+        tytul_en = translate_pl_to_en(tytul)
+    if not opis_en and opis:
+        opis_en = translate_pl_to_en(opis)
+
     conn = get_db_connection()
     conn.execute("""
-        UPDATE solutions SET tytul=?, opis=? WHERE id=?
-    """, (data.get("tytul", ""), data.get("opis", ""), sol_id))
+        UPDATE solutions SET tytul=?, opis=?, tytul_en=?, opis_en=? WHERE id=?
+    """, (tytul, opis, tytul_en, opis_en, sol_id))
     conn.commit()
     conn.close()
-    return jsonify({"status": "ok"})
+    return jsonify({"status": "ok", "tytul_en": tytul_en, "opis_en": opis_en})
 
 @app.route("/api/solutions/<sol_id>", methods=["DELETE"])
 def delete_solution(sol_id):

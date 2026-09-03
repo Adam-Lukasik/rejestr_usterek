@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Rejestr Usterek - Panel Diagnostyki i Serwisu</title>
+<title>Rejestr Usterek v2.0 - Panel Diagnostyki i Serwisu</title>
 <style>
   @keyframes fadeInOverlay {
     from { opacity: 0; }
@@ -241,6 +241,57 @@
     color: #93C5FD;
     padding: 1px 5px;
     border-radius: 4px;
+  }
+  .lang-switcher {
+    display: inline-flex;
+    align-items: center;
+    background: var(--bg-card-subtle);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 2px;
+    gap: 2px;
+  }
+  .lang-btn {
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 11px;
+    font-weight: 600;
+    padding: 3px 8px;
+    border-radius: 14px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    line-height: 1.2;
+  }
+  .lang-btn:hover {
+    color: var(--text-main);
+  }
+  .lang-btn.active {
+    background: var(--primary);
+    color: #FFFFFF !important;
+    box-shadow: 0 1px 3px rgba(37, 99, 235, 0.35);
+  }
+  .badge-lang-tag {
+    font-size: 10px;
+    font-weight: 700;
+    padding: 1px 5px;
+    border-radius: 4px;
+    margin-right: 4px;
+    display: inline-block;
+    vertical-align: middle;
+  }
+  .badge-lang-pl {
+    background: rgba(239, 68, 68, 0.12);
+    color: #DC2626;
+    border: 1px solid rgba(239, 68, 68, 0.25);
+  }
+  .badge-lang-en {
+    background: rgba(37, 99, 235, 0.12);
+    color: #2563EB;
+    border: 1px solid rgba(37, 99, 235, 0.25);
   }
   .brand-sub {
     font-size: 11.5px;
@@ -1276,6 +1327,9 @@
     #modal-defect-body {
       overflow: visible !important;
     }
+    .print-header-banner, .print-signatures-section {
+      display: block !important;
+    }
     .btn-close-modal, #btn-modal-preview-print, .detail-actions-row button, .section-card-title button, button {
       display: none !important;
     }
@@ -1293,7 +1347,7 @@
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
         </div>
         <div class="brand-titles">
-          <h1>Rejestr Usterek <span class="version-tag">v1.5</span></h1>
+          <h1><span data-i18n="nav.appName">Rejestr Usterek</span> <span class="version-tag">v2.0</span></h1>
           <div class="brand-sub">
             <span class="pulse-dot" id="conn-lamp"></span>
             <span id="conn-text">Łączenie...</span>
@@ -1323,51 +1377,59 @@
       
       <div class="nav-item active" data-view="dashboard" id="nav-dashboard" title="Rejestr usterek">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
-        <span>Rejestr usterek</span>
+        <span data-i18n="nav.defects">Rejestr usterek</span>
         <span class="nav-badge alert" id="nav-badge-open">0</span>
       </div>
 
       <div class="nav-item" data-view="new-defect" id="nav-new-defect" title="Nowe zgłoszenie">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
-        <span>Nowe zgłoszenie</span>
+        <span data-i18n="nav.newDefect">Nowe zgłoszenie</span>
       </div>
 
       <div class="nav-section-title">Konfiguracja</div>
 
       <div class="nav-item" data-view="projects" id="nav-projects" title="Baza projektów (PS)">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-        <span>Baza projektów (PS)</span>
+        <span data-i18n="nav.projects">Baza projektów (PS)</span>
       </div>
 
       <div class="nav-item" data-view="dictionaries" id="nav-dictionaries" title="Słowniki">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
-        <span>Słowniki</span>
+        <span data-i18n="nav.dictionaries">Słowniki</span>
       </div>
 
       <div class="nav-item" data-view="users" id="nav-users" title="Użytkownicy">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-        <span>Użytkownicy</span>
+        <span data-i18n="nav.users">Użytkownicy</span>
       </div>
 
       <div class="nav-item" data-view="backup" id="nav-backup" title="Kopie & Eksport">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-        <span>Kopie & Eksport</span>
+        <span data-i18n="nav.backup">Kopie & Eksport</span>
       </div>
     </nav>
 
     <!-- Stopka sidebaru -->
     <div class="sidebar-footer">
+      <div style="padding: 4px 6px 8px 6px; display:flex; align-items:center; justify-content:space-between;">
+        <span style="font-size:11.5px; color:var(--text-sidebar); font-weight:600;">Język / Lang:</span>
+        <div class="lang-switcher">
+          <button type="button" class="lang-btn active" data-lang="pl" onclick="setLanguage('pl')" title="Polski">🇵🇱 PL</button>
+          <button type="button" class="lang-btn" data-lang="en" onclick="setLanguage('en')" title="English">🇬🇧 EN</button>
+        </div>
+      </div>
+
       <button class="sidebar-footer-btn" id="btn-toggle-theme" title="Zmień motyw">
         <span id="theme-icon">🌙</span>
         <span id="theme-text">Tryb ciemny</span>
       </button>
       <button class="sidebar-footer-btn" id="btn-change-password" title="Zmień hasło">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-        <span>Zmień hasło</span>
+        <span data-i18n="nav.changePassword">Zmień hasło</span>
       </button>
       <button class="sidebar-footer-btn logout" id="btn-logout" title="Wyloguj">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-        <span>Wyloguj</span>
+        <span data-i18n="nav.logout">Wyloguj</span>
       </button>
 
       <!-- Informacja o autorze i kontakcie -->
@@ -1394,30 +1456,35 @@
         <div class="kpi-row">
           <div class="kpi-card active" data-filter-status="">
             <div class="kpi-val" id="kpi-total">0</div>
-            <div class="kpi-lbl">Wszystkie</div>
+            <div class="kpi-lbl" data-i18n="status.all">Wszystkie</div>
           </div>
           <div class="kpi-card" data-filter-status="open" style="border-left: 3px solid var(--red);">
             <div class="kpi-val" id="kpi-open" style="color:var(--red)">0</div>
-            <div class="kpi-lbl">Otwarte</div>
+            <div class="kpi-lbl" data-i18n="status.open">Otwarte</div>
           </div>
           <div class="kpi-card" data-filter-status="fixed" style="border-left: 3px solid var(--green);">
             <div class="kpi-val" id="kpi-fixed" style="color:var(--green)">0</div>
-            <div class="kpi-lbl">Naprawione</div>
+            <div class="kpi-lbl" data-i18n="status.fixed">Naprawione</div>
           </div>
         </div>
 
         <div style="display:flex; gap:8px; align-items:center;">
+          <div class="lang-switcher" style="margin-right:2px;" title="Wybierz język / Choose language">
+            <button type="button" class="lang-btn active" data-lang="pl" onclick="setLanguage('pl')" title="Polski">🇵🇱 PL</button>
+            <button type="button" class="lang-btn" data-lang="en" onclick="setLanguage('en')" title="English">🇬🇧 EN</button>
+          </div>
+
           <button class="btn-secondary-action" id="btn-toggle-detail-pane" title="Przełącz panel boczny szczegółów / pełna szerokość tabeli">
             <svg id="icon-toggle-detail" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="15" y1="3" x2="15" y2="21"/></svg>
             <span id="text-toggle-detail">Ukryj panel</span>
           </button>
           <button class="btn-secondary-action" id="btn-export-csv">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-            Eksport CSV
+            <span>Eksport CSV</span>
           </button>
           <button class="btn-primary-action" onclick="switchToNewDefect()">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-            Nowe zgłoszenie
+            <span data-i18n="nav.newDefect">Nowe zgłoszenie</span>
           </button>
         </div>
       </div>
@@ -1426,21 +1493,21 @@
       <div class="filter-bar">
         <div class="search-box">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-          <input type="text" id="filter-search" placeholder="Szukaj: projekt PS, klient, model, VIN, opis problemu, autor...">
+          <input type="text" id="filter-search" data-i18n-placeholder="filters.searchPlaceholder" placeholder="Szukaj: projekt PS, klient, model, VIN, opis problemu, autor...">
         </div>
 
         <select class="select-filter" id="filter-klient">
-          <option value="">Wszyscy klienci</option>
+          <option value="" data-i18n="filters.allClients">Wszyscy klienci</option>
         </select>
 
         <select class="select-filter" id="filter-typ">
-          <option value="">Wszystkie typy</option>
+          <option value="" data-i18n="filters.allTypes">Wszystkie typy</option>
         </select>
 
         <select class="select-filter" id="filter-status">
-          <option value="">Wszystkie statusy</option>
-          <option value="open">Tylko Otwarte</option>
-          <option value="fixed">Tylko Naprawione</option>
+          <option value="" data-i18n="status.all">Wszystkie statusy</option>
+          <option value="open" data-i18n="status.open">Tylko Otwarte</option>
+          <option value="fixed" data-i18n="status.fixed">Tylko Naprawione</option>
         </select>
       </div>
 
@@ -1452,11 +1519,11 @@
             <table class="data-table">
               <thead>
                 <tr>
-                  <th style="width:100px;">Status</th>
-                  <th style="width:115px;">Data</th>
-                  <th style="width:170px;">Projekt / Pojazd</th>
-                  <th>Opis problemu</th>
-                  <th style="width:65px; text-align:center;">Pliki</th>
+                  <th style="width:100px;" data-i18n="table.thStatus">Status</th>
+                  <th style="width:115px;" data-i18n="table.thDate">Data</th>
+                  <th style="width:170px;" data-i18n="table.thVehicle">Projekt / Pojazd</th>
+                  <th data-i18n="table.thProblem">Opis problemu</th>
+                  <th style="width:65px; text-align:center;" data-i18n="table.thActions">Pliki</th>
                 </tr>
               </thead>
               <tbody id="defects-tbody">
@@ -2145,6 +2212,9 @@
 <!-- Kontener Toastów -->
 <div class="toast-container" id="toast-container"></div>
 
+<!-- Moduł Tłumaczeń (i18n) -->
+<script src="/translations.js"></script>
+
 <!-- ════════════ LOGIKA JAVASCRIPT APLIKACJI ════════════ -->
 <script>
 /* ── GŁÓWNY STAN APLIKACJI ── */
@@ -2170,6 +2240,7 @@ const STATE = {
 /* ── START I INICJALIZACJA ── */
 document.addEventListener('DOMContentLoaded', async () => {
   applyTheme(STATE.theme);
+  if (typeof applyLanguage === 'function') applyLanguage(getLanguage());
   initLayoutPreferences();
   setupNavigation();
   setupEventListeners();
@@ -2460,19 +2531,26 @@ function renderDefectsTable() {
   const qTyp = document.getElementById('filter-typ').value;
   const qStatus = document.getElementById('filter-status').value;
 
+  const expandedTerms = (qSearch && typeof expandSearchQuery === 'function') ? expandSearchQuery(qSearch) : [];
+
   const filtered = STATE.records.filter(r => {
     if (qKlient && r.klient !== qKlient) return false;
     if (qTyp && r.typ !== qTyp) return false;
     if (qStatus && r.status !== qStatus) return false;
     if (qSearch) {
-      const hay = `${r.projekt} ${r.klient} ${r.model} ${r.vin} ${r.typ} ${r.element} ${r.opisProblem} ${r.created_by} ${r.fixed_by}`.toLowerCase();
-      if (!hay.includes(qSearch)) return false;
+      const catEn = (typeof translateCategory === 'function') ? translateCategory(r.typ, 'en') : '';
+      const hay = `${r.projekt} ${r.klient} ${r.model} ${r.vin} ${r.typ} ${catEn} ${r.element || ''} ${r.opisProblem || ''} ${r.opisProblem_en || ''} ${r.opisNaprawa || ''} ${r.opisNaprawa_en || ''} ${r.created_by || ''} ${r.fixed_by || ''}`.toLowerCase();
+      
+      const directMatch = hay.includes(qSearch);
+      const synonymMatch = expandedTerms.length > 0 && expandedTerms.some(term => hay.includes(term));
+      if (!directMatch && !synonymMatch) return false;
     }
     return true;
   });
 
   if (filtered.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; padding:40px; color:var(--text-muted);">Brak usterek spełniających wybrane kryteria wyszukiwania.</td></tr>`;
+    const emptyMsg = typeof t === 'function' ? t('table.empty') : 'Brak usterek spełniających wybrane kryteria wyszukiwania.';
+    tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; padding:40px; color:var(--text-muted);">${emptyMsg}</td></tr>`;
     return;
   }
 
@@ -2480,12 +2558,29 @@ function renderDefectsTable() {
     const isSelected = r.id === STATE.selectedRecordId;
     const isFixed = r.status === 'fixed';
     const clientShort = getClientShortName(r.klient);
+    const statusLabel = typeof t === 'function' ? t('status.' + r.status) : (isFixed ? 'Naprawiona' : 'Otwarta');
+    
+    // Wybór wersji opisu: w trybie EN wyświetl opisProblem_en jeśli dostępny
+    const hasEnProb = !!(r.opisProblem_en && r.opisProblem_en.trim());
+    let problemHtml = '';
+    if (CURRENT_LANG === 'en') {
+      if (hasEnProb) {
+        problemHtml = `<span class="badge-lang-tag badge-lang-en">EN</span>${escapeHtml(r.opisProblem_en)}`;
+      } else {
+        problemHtml = `<span class="badge-lang-tag badge-lang-pl">PL</span>${escapeHtml(r.opisProblem)}`;
+      }
+    } else {
+      problemHtml = escapeHtml(r.opisProblem);
+    }
+
+    const catDisplay = (typeof translateCategory === 'function') ? translateCategory(r.typ, CURRENT_LANG) : r.typ;
+
     return `
       <tr class="${isSelected ? 'selected' : ''}" onclick="selectRecord('${r.id}')" ondblclick="openDefectPreview('${r.id}')" title="Kliknij, aby podglądnąć w panelu bocznym. Podwójne kliknięcie otwiera pełne okno podglądu usterki.">
         <td>
           <span class="status-badge ${isFixed ? 'fixed' : 'open'}">
             <span class="dot"></span>
-            ${isFixed ? 'Naprawiona' : 'Otwarta'}
+            ${statusLabel}
           </span>
         </td>
         <td>
@@ -2501,8 +2596,11 @@ function renderDefectsTable() {
           </div>
         </td>
         <td>
-          <div style="font-weight:500; line-height:1.4; overflow:hidden; text-overflow:ellipsis; display:-webkit-box; -webkit-line-clamp:4; -webkit-box-orient:vertical; word-break:break-word;">${escapeHtml(r.opisProblem)}</div>
-          ${r.element ? `<div style="font-size:11px; color:var(--text-dim); margin-top:2px;">Element: ${escapeHtml(r.element)}</div>` : ''}
+          <div style="font-weight:500; line-height:1.4; overflow:hidden; text-overflow:ellipsis; display:-webkit-box; -webkit-line-clamp:4; -webkit-box-orient:vertical; word-break:break-word;">${problemHtml}</div>
+          <div style="font-size:11px; color:var(--text-dim); margin-top:2px;">
+            <span style="color:var(--primary); font-weight:600;">${escapeHtml(catDisplay)}</span>
+            ${r.element ? ` • ${escapeHtml(r.element)}` : ''}
+          </div>
         </td>
         <td style="text-align:center;" id="badge-files-${r.id}">
           <span style="color:var(--text-dim); font-size:11px;">...</span>
@@ -2544,6 +2642,14 @@ async function selectRecord(recId) {
   content.style.display = 'flex';
 
   const isFixed = r.status === 'fixed';
+  const statusLabel = typeof t === 'function' ? t('status.' + r.status) : (isFixed ? 'Naprawiona' : 'Otwarta');
+  const catDisplay = (typeof translateCategory === 'function') ? translateCategory(r.typ, CURRENT_LANG) : r.typ;
+
+  const hasEnProb = !!(r.opisProblem_en && r.opisProblem_en.trim());
+  const probDisplay = (CURRENT_LANG === 'en' && hasEnProb) ? r.opisProblem_en : r.opisProblem;
+  const probBadge = CURRENT_LANG === 'en'
+    ? (hasEnProb ? '<span class="badge-lang-tag badge-lang-en">EN</span>' : '<span class="badge-lang-tag badge-lang-pl">PL</span>')
+    : '';
 
   content.innerHTML = `
     <div class="detail-header-card">
@@ -2551,7 +2657,7 @@ async function selectRecord(recId) {
         <div>
           <span class="status-badge ${isFixed ? 'fixed' : 'open'}" style="margin-bottom:6px;">
             <span class="dot"></span>
-            ${isFixed ? 'Usterka Naprawiona' : 'Usterka Otwarta'}
+            ${statusLabel}
           </span>
           <div class="detail-title">${escapeHtml(r.klient)} — ${escapeHtml(r.model)}</div>
         </div>
@@ -2559,86 +2665,86 @@ async function selectRecord(recId) {
 
       <div class="detail-meta-grid">
         <div class="meta-field">
-          <label>Projekt(y) (PS)</label>
+          <label>${t('detail.project')}</label>
           <div class="val" style="color:var(--primary); font-family:var(--font-mono);">${escapeHtml(r.projekt || '—')}</div>
         </div>
         <div class="meta-field">
-          <label>Typ usterki</label>
-          <div class="val">${escapeHtml(r.typ)}</div>
+          <label>${t('detail.category')}</label>
+          <div class="val"><span class="tag-project" style="font-size:11.5px;">${escapeHtml(catDisplay)}</span></div>
         </div>
         <div class="meta-field">
-          <label>Zgłaszający</label>
+          <label>${t('detail.author')}</label>
           <div class="val">${escapeHtml(r.created_by || 'Technik')}</div>
         </div>
         <div class="meta-field">
-          <label>Data zgłoszenia</label>
+          <label>${t('detail.createdDate')}</label>
           <div class="val">${formatDateTime(r.created)}</div>
         </div>
         <div class="meta-field">
-          <label>Naprawione przez</label>
+          <label>${t('detail.fixedBy')}</label>
           <div class="val" style="${isFixed ? 'color:var(--green); font-weight:600;' : ''}">${isFixed ? escapeHtml(r.fixed_by || 'Technik') : '—'}</div>
         </div>
         <div class="meta-field">
-          <label>Data naprawy</label>
+          <label>${t('detail.fixedDate')}</label>
           <div class="val" style="${isFixed && r.fixed_at ? 'color:var(--green); font-weight:600;' : ''}">${isFixed && r.fixed_at ? formatDateTime(r.fixed_at) : '—'}</div>
         </div>
       </div>
 
       <div class="detail-actions-row">
-        <button class="btn-secondary-action" onclick="openDefectPreview('${r.id}')" title="Otwórz pełne okno podglądu usterki">
-          🔍 Pełny podgląd
+        <button class="btn-secondary-action" onclick="openDefectPreview('${r.id}')" title="${t('detail.title')}">
+          🔍 ${t('table.btnDetails')}
         </button>
         ${!isFixed ? `
           <button class="btn-primary-action" onclick="markAsFixed('${r.id}')">
-            ✓ Oznacz jako naprawioną
+            ✓ ${t('detail.btnMarkFixed')}
           </button>
         ` : `
           <button class="btn-secondary-action" onclick="reopenDefect('${r.id}')">
-            ↺ Otwórz ponownie
+            ↺ ${t('detail.btnMarkOpen')}
           </button>
         `}
         <button class="btn-secondary-action" onclick="startEditRecord('${r.id}')">
-          ✏ Edytuj
+          ✏ ${t('table.btnEdit')}
         </button>
         <button class="btn-secondary-action" style="color:var(--red);" onclick="deleteRecordConfirm('${r.id}')">
-          🗑 Usuń
+          🗑 ${t('table.btnDelete')}
         </button>
       </div>
     </div>
 
     <!-- ── DOKUMENTACJA ZGŁOSZONEJ USTERKI ── -->
     <div class="detail-section-card">
-      <div class="section-card-title">Opis zaobserwowanego problemu</div>
-      <div class="problem-text-box">${escapeHtml(r.opisProblem)}</div>
+      <div class="section-card-title">${t('detail.problem')}</div>
+      <div class="problem-text-box">${probBadge}${escapeHtml(probDisplay)}</div>
     </div>
 
     <!-- Zdjęcia problemu -->
     <div class="detail-section-card">
       <div class="section-card-title">
-        <span>📸 Zdjęcia problemu</span>
+        <span>📸 ${t('detail.photos')}</span>
       </div>
       <div class="photo-gallery-grid" id="detail-photos-box">
-        <div style="font-size:12px; color:var(--text-dim);">Ładowanie zdjęć...</div>
+        <div style="font-size:12px; color:var(--text-dim);">${t('detail.emptyPhotos')}</div>
       </div>
     </div>
 
     <!-- Załączniki i dokumenty do problemu -->
     <div class="detail-section-card">
       <div class="section-card-title">
-        <span>📎 Załączniki do problemu (Raporty VSWR / PDF)</span>
+        <span>📎 ${t('detail.documents')}</span>
       </div>
       <div id="detail-docs-box" style="display:flex; flex-direction:column; gap:6px;">
-        <div style="font-size:12px; color:var(--text-dim);">Ładowanie załączników...</div>
+        <div style="font-size:12px; color:var(--text-dim);">${t('detail.emptyDocs')}</div>
       </div>
     </div>
 
     <!-- ── ROZWIĄZANIA I WARIANTY NAPRAWY ── -->
     <div class="detail-section-card" style="border-top:2px solid var(--primary);">
       <div class="section-card-title">
-        <span>💡 Warianty rozwiązań i napraw</span>
+        <span>💡 ${t('detail.solutions')}</span>
       </div>
       <div id="detail-solutions-box">
-        <div style="font-size:12px; color:var(--text-dim);">Ładowanie wariantów...</div>
+        <div style="font-size:12px; color:var(--text-dim);">${t('detail.emptySolutions')}</div>
       </div>
     </div>
   `;
@@ -2651,7 +2757,7 @@ async function selectRecord(recId) {
   loadRecordSolutions(recId);
 }
 
-/* ── PEŁNY PODGLĄD USTERKI (MODAL / DWUKLIK) ── */
+/* ── PEŁNY PODGLĄD USTERKI (MODAL / DWUKLIK / WYDRUK) ── */
 async function openDefectPreview(recId) {
   STATE.selectedRecordId = recId;
   renderDefectsTable();
@@ -2663,6 +2769,15 @@ async function openDefectPreview(recId) {
   selectRecord(recId);
 
   const isFixed = r.status === 'fixed';
+  const statusLabel = typeof t === 'function' ? t('status.' + r.status) : (isFixed ? 'Naprawiona' : 'Otwarta');
+  const catDisplay = (typeof translateCategory === 'function') ? translateCategory(r.typ, CURRENT_LANG) : r.typ;
+
+  const hasEnProb = !!(r.opisProblem_en && r.opisProblem_en.trim());
+  const probDisplay = (CURRENT_LANG === 'en' && hasEnProb) ? r.opisProblem_en : r.opisProblem;
+  const probBadge = CURRENT_LANG === 'en'
+    ? (hasEnProb ? '<span class="badge-lang-tag badge-lang-en">EN</span>' : '<span class="badge-lang-tag badge-lang-pl">PL</span>')
+    : '';
+
   const modalTitle = document.getElementById('modal-defect-title');
   if (modalTitle) {
     modalTitle.innerHTML = `<span>${escapeHtml(r.klient)} — ${escapeHtml(r.model)}</span> <span class="tag-project" style="margin-left:8px; font-size:12px; vertical-align:middle;">${escapeHtml(r.projekt || '—')}</span>`;
@@ -2672,31 +2787,45 @@ async function openDefectPreview(recId) {
   if (!modalBody) return;
 
   modalBody.innerHTML = `
+    <!-- Nagłówek druku (widoczny tylko na wydruku) -->
+    <div class="print-header-banner" style="display:none; border-bottom:2px solid #000; padding-bottom:8px; margin-bottom:14px;">
+      <div style="display:flex; justify-content:space-between; align-items:flex-end;">
+        <div>
+          <h2 style="margin:0; font-size:18px; font-weight:800; letter-spacing:-0.3px;">${t('print.sheetTitle')}</h2>
+          <div style="font-size:12px; color:#555; margin-top:2px;">${t('print.sheetSubtitle')}</div>
+        </div>
+        <div style="text-align:right; font-size:11.5px;">
+          <div><b>${t('print.defectId')}:</b> ${escapeHtml(r.id)}</div>
+          <div><b>${t('print.reportDate')}:</b> ${formatDateTime(new Date().toISOString())}</div>
+        </div>
+      </div>
+    </div>
+
     <!-- Główny pasek statusu i akcji -->
     <div class="detail-header-card" style="margin-bottom:0;">
       <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:14px; padding-bottom:12px; border-bottom:1px solid var(--border);">
         <div style="display:flex; align-items:center; gap:10px;">
           <span class="status-badge ${isFixed ? 'fixed' : 'open'}" style="font-size:13px; padding:4px 12px;">
             <span class="dot"></span>
-            ${isFixed ? 'Usterka Naprawiona' : 'Usterka Otwarta'}
+            ${statusLabel}
           </span>
           <span style="font-size:12.5px; color:var(--text-muted);">ID: <code style="font-family:var(--font-mono); font-size:11.5px; color:var(--text-dim);">${r.id.slice(0,8)}</code></span>
         </div>
         <div class="detail-actions-row" style="margin-top:0;">
           ${!isFixed ? `
             <button class="btn-primary-action" onclick="markAsFixed('${r.id}')">
-              ✓ Oznacz jako naprawioną
+              ✓ ${t('detail.btnMarkFixed')}
             </button>
           ` : `
             <button class="btn-secondary-action" onclick="reopenDefect('${r.id}')">
-              ↺ Otwórz ponownie
+              ↺ ${t('detail.btnMarkOpen')}
             </button>
           `}
           <button class="btn-secondary-action" onclick="closeModal('modal-defect-preview'); startEditRecord('${r.id}')">
-            ✏ Edytuj usterkę
+            ✏ ${t('detail.btnEdit')}
           </button>
           <button class="btn-secondary-action" style="color:var(--red);" onclick="deleteRecordConfirm('${r.id}')">
-            🗑 Usuń
+            🗑 ${t('table.btnDelete')}
           </button>
         </div>
       </div>
@@ -2704,79 +2833,95 @@ async function openDefectPreview(recId) {
       <!-- Siatka metadanych -->
       <div class="detail-meta-grid" style="grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:14px;">
         <div class="meta-field">
-          <label>Projekt(y) (PS)</label>
+          <label>${t('print.project')}</label>
           <div class="val" style="color:var(--primary); font-family:var(--font-mono); font-size:13.5px; font-weight:700;">${escapeHtml(r.projekt || '—')}</div>
         </div>
         <div class="meta-field">
-          <label>Klient</label>
+          <label>${t('print.client')}</label>
           <div class="val" style="font-weight:600;">${escapeHtml(r.klient)}</div>
         </div>
         <div class="meta-field">
-          <label>Model auta bazowego</label>
+          <label>${t('print.model')}</label>
           <div class="val" style="font-weight:600;">${escapeHtml(r.model)}</div>
         </div>
         <div class="meta-field">
-          <label>Typ usterki</label>
-          <div class="val"><span class="tag-project" style="background:var(--primary-light); color:var(--primary); font-size:11.5px;">${escapeHtml(r.typ)}</span></div>
+          <label>${t('print.category')}</label>
+          <div class="val"><span class="tag-project" style="background:var(--primary-light); color:var(--primary); font-size:11.5px;">${escapeHtml(catDisplay)}</span></div>
         </div>
         <div class="meta-field">
-          <label>Element / Urządzenie</label>
+          <label>${t('print.element')}</label>
           <div class="val">${escapeHtml(r.element || '—')}</div>
         </div>
         <div class="meta-field">
-          <label>VIN / Nadwozie</label>
+          <label>${t('print.vin')}</label>
           <div class="val" style="font-family:var(--font-mono); font-size:12px;">${escapeHtml(r.vin || '—')}</div>
         </div>
         <div class="meta-field">
-          <label>Zgłaszający</label>
+          <label>${t('print.author')}</label>
           <div class="val">${escapeHtml(r.created_by || 'Technik')}</div>
         </div>
         <div class="meta-field">
-          <label>Data zgłoszenia</label>
+          <label>${t('print.createdDate')}</label>
           <div class="val">${formatDateTime(r.created)}</div>
         </div>
         ${isFixed ? `
         <div class="meta-field" style="grid-column: 1 / -1;">
-          <label>Naprawione przez / Data naprawy</label>
+          <label>${t('print.fixedBy')} / ${t('print.fixedDate')}</label>
           <div class="val" style="color:var(--green); font-weight:600;">✓ ${escapeHtml(r.fixed_by || 'Technik')} (${formatDateTime(r.fixed_at)})</div>
         </div>
         ` : ''}
       </div>
     </div>
 
-    <!-- Opis zaobserwowanego problemu -->
+    <!-- Opis problemu -->
     <div class="detail-section-card">
-      <div class="section-card-title">📝 Opis zaobserwowanego problemu</div>
-      <div class="problem-text-box" style="font-size:13.5px; line-height:1.55; padding:14px; border-left:4px solid var(--primary);">${escapeHtml(r.opisProblem)}</div>
+      <div class="section-card-title">${t('print.sectionProblem')}</div>
+      <div class="problem-text-box" style="font-size:13.5px; line-height:1.55; padding:14px; border-left:4px solid var(--primary);">${probBadge}${escapeHtml(probDisplay)}</div>
     </div>
 
     <!-- Zdjęcia problemu -->
     <div class="detail-section-card">
       <div class="section-card-title">
-        <span>📸 Zdjęcia problemu</span>
+        <span>📸 ${t('detail.photos')}</span>
       </div>
       <div class="photo-gallery-grid" id="modal-preview-photos-box" style="grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));">
-        <div style="font-size:12px; color:var(--text-dim);">Ładowanie zdjęć...</div>
+        <div style="font-size:12px; color:var(--text-dim);">${t('detail.emptyPhotos')}</div>
       </div>
     </div>
 
     <!-- Załączniki i dokumenty -->
     <div class="detail-section-card">
       <div class="section-card-title">
-        <span>📎 Załączniki do problemu (Raporty VSWR / PDF)</span>
+        <span>📎 ${t('detail.documents')}</span>
       </div>
       <div id="modal-preview-docs-box" style="display:flex; flex-direction:column; gap:6px;">
-        <div style="font-size:12px; color:var(--text-dim);">Ładowanie załączników...</div>
+        <div style="font-size:12px; color:var(--text-dim);">${t('detail.emptyDocs')}</div>
       </div>
     </div>
 
     <!-- Warianty rozwiązań i napraw -->
     <div class="detail-section-card" style="border-top:2px solid var(--primary);">
       <div class="section-card-title">
-        <span>💡 Warianty rozwiązań i napraw</span>
+        <span>💡 ${t('print.sectionRepair')}</span>
       </div>
       <div id="modal-preview-solutions-box">
-        <div style="font-size:12px; color:var(--text-dim);">Ładowanie wariantów...</div>
+        <div style="font-size:12px; color:var(--text-dim);">${t('solutions.empty')}</div>
+      </div>
+    </div>
+
+    <!-- Sekcja podpisów (widoczna na wydruku) -->
+    <div class="print-signatures-section" style="display:none; margin-top:35px; padding-top:14px; border-top:1px dashed #999;">
+      <div style="font-weight:700; font-size:12px; margin-bottom:28px;">${t('print.sectionSignatures')}</div>
+      <div style="display:flex; justify-content:space-between; gap:30px;">
+        <div style="flex:1; border-top:1px solid #333; padding-top:5px; font-size:11px; text-align:center;">
+          ${t('print.signTech')}
+        </div>
+        <div style="flex:1; border-top:1px solid #333; padding-top:5px; font-size:11px; text-align:center;">
+          ${t('print.signQuality')}
+        </div>
+        <div style="width:140px; border-top:1px solid #333; padding-top:5px; font-size:11px; text-align:center;">
+          ${t('print.signDate')}
+        </div>
       </div>
     </div>
   `;
@@ -2790,6 +2935,7 @@ async function openDefectPreview(recId) {
 }
 
 async function loadRecordPhotos(recId) {
+  const r = STATE.records.find(x => x.id === recId);
   const boxes = [
     document.getElementById('detail-photos-box'),
     document.getElementById('modal-preview-photos-box')
@@ -2800,7 +2946,7 @@ async function loadRecordPhotos(recId) {
     const photos = await apiCall(`/api/records/${recId}/photos`);
     if (!photos || photos.length === 0) {
       boxes.forEach(b => {
-        b.innerHTML = `<div style="font-size:12px; color:var(--text-dim); grid-column:span 3;">Brak zdjęć dla tej usterki.</div>`;
+        b.innerHTML = `<div style="font-size:12px; color:var(--text-dim); grid-column:span 3;">${t('detail.emptyPhotos')}</div>`;
       });
       return;
     }
@@ -2813,13 +2959,11 @@ async function loadRecordPhotos(recId) {
 
     boxes.forEach(b => {
       b.innerHTML = '';
-      fullPhotos.forEach((full, i) => {
+      fullPhotos.forEach((full, pIdx) => {
         const div = document.createElement('div');
         div.className = 'photo-thumb-card';
-        div.innerHTML = `
-          <img src="data:image/jpeg;base64,${full.data}" alt="Foto usterki" title="Kliknij, aby powiększyć zdjęcie">
-        `;
-        div.onclick = () => openLightboxGallery(photoUrls, i, 'Zdjęcia problemu');
+        div.innerHTML = `<img src="data:image/jpeg;base64,${full.data}" alt="Foto" title="Kliknij, aby powiększyć">`;
+        div.onclick = () => openLightboxGallery(photoUrls, pIdx, 'Zdjęcia problemu');
         b.appendChild(div);
       });
     });

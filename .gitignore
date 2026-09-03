@@ -13,6 +13,7 @@ ENV/
 # Baza danych (dane lokalne/warsztatowe)
 *.db
 *.sqlite3
+*.bak*
 
 # Edytory i IDE
 .vscode/
