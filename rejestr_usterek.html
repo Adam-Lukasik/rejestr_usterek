@@ -1373,7 +1373,7 @@
 
     <!-- Nawigacja -->
     <nav class="sidebar-nav">
-      <div class="nav-section-title">Główne Menu</div>
+      <div class="nav-section-title" data-i18n="nav.sectionMain">Główne Menu</div>
       
       <div class="nav-item active" data-view="dashboard" id="nav-dashboard" title="Rejestr usterek">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
@@ -1386,7 +1386,7 @@
         <span data-i18n="nav.newDefect">Nowe zgłoszenie</span>
       </div>
 
-      <div class="nav-section-title">Konfiguracja</div>
+      <div class="nav-section-title" data-i18n="nav.sectionConfig">Konfiguracja</div>
 
       <div class="nav-item" data-view="projects" id="nav-projects" title="Baza projektów (PS)">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
@@ -1412,7 +1412,7 @@
     <!-- Stopka sidebaru -->
     <div class="sidebar-footer">
       <div style="padding: 4px 6px 8px 6px; display:flex; align-items:center; justify-content:space-between;">
-        <span style="font-size:11.5px; color:var(--text-sidebar); font-weight:600;">Język / Lang:</span>
+        <span style="font-size:11.5px; color:var(--text-sidebar); font-weight:600;" data-i18n="nav.langLabel">Język / Lang:</span>
         <div class="lang-switcher">
           <button type="button" class="lang-btn active" data-lang="pl" onclick="setLanguage('pl')" title="Polski">🇵🇱 PL</button>
           <button type="button" class="lang-btn" data-lang="en" onclick="setLanguage('en')" title="English">🇬🇧 EN</button>
@@ -1476,11 +1476,11 @@
 
           <button class="btn-secondary-action" id="btn-toggle-detail-pane" title="Przełącz panel boczny szczegółów / pełna szerokość tabeli">
             <svg id="icon-toggle-detail" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="15" y1="3" x2="15" y2="21"/></svg>
-            <span id="text-toggle-detail">Ukryj panel</span>
+            <span id="text-toggle-detail" data-i18n="detail.togglePanelHide">Ukryj panel</span>
           </button>
           <button class="btn-secondary-action" id="btn-export-csv">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-            <span>Eksport CSV</span>
+            <span data-i18n="detail.exportCsv">Eksport CSV</span>
           </button>
           <button class="btn-primary-action" onclick="switchToNewDefect()">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -1537,8 +1537,8 @@
         <div class="detail-pane" id="detail-pane">
           <div class="detail-empty-state" id="detail-empty-state">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
-            <div style="font-size:14px; font-weight:600; color:var(--text-muted);">Brak wybranej usterki</div>
-            <div style="font-size:12px; margin-top:4px;">Kliknij dowolny wiersz na liście po lewej stronie, aby wyświetlić szczegóły, zdjęcia i warianty rozwiązań.</div>
+            <div style="font-size:14px; font-weight:600; color:var(--text-muted);" data-i18n="detail.noSelection">Brak wybranej usterki</div>
+            <div style="font-size:12px; margin-top:4px;" data-i18n="detail.noSelectionSub">Kliknij dowolny wiersz na liście po lewej stronie, aby wyświetlić szczegóły, zdjęcia i warianty rozwiązań.</div>
           </div>
 
           <div class="detail-content" id="detail-content" style="display:none;">
@@ -2052,14 +2052,14 @@
       <div style="display:flex; gap:10px; align-items:center;">
         <button type="button" id="btn-pdf-system-open" style="background:#2563EB; color:#FFFFFF; font-size:12.5px; font-weight:600; padding:7px 15px; border-radius:6px; border:none; cursor:pointer; display:flex; align-items:center; gap:6px; box-shadow:0 2px 8px rgba(37,99,235,0.4);">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
-          <span>Otwórz w aplikacji Windows</span>
+          <span data-i18n="detail.openInWindows">Otwórz w aplikacji Windows</span>
         </button>
         <button type="button" id="btn-pdf-download" style="background:#334155; color:#F8FAFC; font-size:12.5px; font-weight:500; padding:7px 13px; border-radius:6px; border:1px solid #475569; cursor:pointer; display:flex; align-items:center; gap:6px;">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-          <span>Pobierz</span>
+          <span data-i18n="detail.download">Pobierz</span>
         </button>
         <button type="button" onclick="closeModal('modal-pdf-viewer')" style="background:#DC2626; color:#FFFFFF; padding:7px 14px; font-size:12.5px; font-weight:600; border-radius:6px; border:none; cursor:pointer; display:flex; align-items:center; gap:4px; margin-left:6px;" title="Zamknij podgląd (ESC)">
-          <span>✕ Zamknij (ESC)</span>
+          <span data-i18n="detail.closeModal">✕ Zamknij (ESC)</span>
         </button>
       </div>
     </div>
@@ -2236,11 +2236,13 @@ const STATE = {
   lightboxIndex: 0,
   pollTimer: null
 };
+window.STATE = STATE;
 
 /* ── START I INICJALIZACJA ── */
 document.addEventListener('DOMContentLoaded', async () => {
-  applyTheme(STATE.theme);
+  window.STATE = STATE;
   if (typeof applyLanguage === 'function') applyLanguage(getLanguage());
+  applyTheme(STATE.theme);
   initLayoutPreferences();
   setupNavigation();
   setupEventListeners();
@@ -2355,14 +2357,26 @@ function startPolling() {
 
 /* ── ZARZĄDZANIE MOTYWEM ── */
 function applyTheme(theme) {
-  document.documentElement.setAttribute('data-theme', theme);
+  const currentTheme = theme || (window.STATE ? window.STATE.theme : (localStorage.getItem('ru_theme') || 'light'));
+  document.documentElement.setAttribute('data-theme', currentTheme);
   const icon = document.getElementById('theme-icon');
   const txt = document.getElementById('theme-text');
+  const btn = document.getElementById('btn-toggle-theme');
+  const isEn = (typeof CURRENT_LANG !== 'undefined' && CURRENT_LANG === 'en');
   if (icon && txt) {
-    icon.textContent = theme === 'dark' ? '☀️' : '🌙';
-    txt.textContent = theme === 'dark' ? 'Tryb jasny' : 'Tryb ciemny';
+    icon.textContent = currentTheme === 'dark' ? '☀️' : '🌙';
+    if (currentTheme === 'dark') {
+      txt.textContent = isEn ? 'Light Mode' : 'Tryb jasny';
+    } else {
+      txt.textContent = isEn ? 'Dark Mode' : 'Tryb ciemny';
+    }
   }
-  localStorage.setItem('ru_theme', theme);
+  if (btn) {
+    btn.title = isEn
+      ? (currentTheme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode')
+      : (currentTheme === 'dark' ? 'Włącz tryb jasny' : 'Włącz tryb ciemny');
+  }
+  localStorage.setItem('ru_theme', currentTheme);
 }
 
 function toggleTheme() {
@@ -2428,12 +2442,15 @@ async function loadAllData() {
 function updateConnectionStatus(isOnline) {
   const lamp = document.getElementById('conn-lamp');
   const txt = document.getElementById('conn-text');
+  if (!txt) return;
+  const isEn = (typeof CURRENT_LANG !== 'undefined' && CURRENT_LANG === 'en');
+  const count = (window.STATE && window.STATE.records) ? window.STATE.records.length : 0;
   if (isOnline) {
-    lamp.classList.remove('offline');
-    txt.textContent = `Połączono (${STATE.records.length} usterek)`;
+    if (lamp) lamp.classList.remove('offline');
+    txt.textContent = isEn ? `Connected (${count} defects)` : `Połączono (${count} usterek)`;
   } else {
-    lamp.classList.add('offline');
-    txt.textContent = `Brak połączenia`;
+    if (lamp) lamp.classList.add('offline');
+    txt.textContent = isEn ? `Disconnected` : `Brak połączenia`;
   }
 }
 
@@ -2443,17 +2460,22 @@ function updateUserBadge() {
   const roleEl = document.getElementById('u-role');
   const avEl = document.getElementById('u-avatar');
   const navUsers = document.getElementById('nav-users');
+  const isEn = (typeof CURRENT_LANG !== 'undefined' && CURRENT_LANG === 'en');
 
   if (!u) {
-    if (nameEl) nameEl.textContent = 'Niezalogowany';
+    if (nameEl) nameEl.textContent = isEn ? 'Not logged in' : 'Niezalogowany';
     if (roleEl) roleEl.textContent = '—';
     if (avEl) avEl.textContent = '?';
     if (navUsers) navUsers.style.display = 'none';
     return;
   }
 
-  if (nameEl) nameEl.textContent = u.full_name || u.username || 'Technik';
-  if (roleEl) roleEl.textContent = u.role === 'admin' ? 'Administrator' : (u.role === 'podglad' ? 'Podgląd' : 'Technik');
+  if (nameEl) nameEl.textContent = u.full_name || u.username || (isEn ? 'Technician' : 'Technik');
+  if (roleEl) {
+    if (u.role === 'admin') roleEl.textContent = isEn ? 'Administrator' : 'Administrator';
+    else if (u.role === 'podglad') roleEl.textContent = isEn ? 'Viewer' : 'Podgląd';
+    else roleEl.textContent = isEn ? 'Technician' : 'Technik';
+  }
   if (avEl) avEl.textContent = (u.full_name || u.username || 'T').charAt(0).toUpperCase();
 
   if (navUsers) {
@@ -2984,9 +3006,16 @@ async function loadRecordSolutions(recId) {
 
   try {
     const solutions = await apiCall(`/api/records/${recId}/solutions`);
+    const isEn = (typeof CURRENT_LANG !== 'undefined' && CURRENT_LANG === 'en');
+    const emptyMsg = (typeof t === 'function') ? t('solutions.empty') : (isEn ? 'No repair solution variants entered yet.' : 'Brak wprowadzonych wariantów napraw.');
+    const variantWord = (typeof t === 'function') ? t('solutions.variant') : (isEn ? 'Variant' : 'Wariant');
+    const openBtnLabel = isEn ? 'Open' : 'Otwórz';
+    const docBadgeLabel = isEn ? 'DOCUMENT' : 'DOKUMENT';
+    const noDescMsg = isEn ? '(no description)' : '(brak opisu)';
+
     if (!solutions || solutions.length === 0) {
       targets.forEach(t => {
-        t.box.innerHTML = `<div style="font-size:12px; color:var(--text-dim); padding:8px 0;">Brak wprowadzonych wariantów napraw.</div>`;
+        t.box.innerHTML = `<div style="font-size:12px; color:var(--text-dim); padding:8px 0;">${emptyMsg}</div>`;
       });
       return;
     }
@@ -2994,13 +3023,17 @@ async function loadRecordSolutions(recId) {
     targets.forEach(t => {
       t.box.innerHTML = '';
       for (const sol of solutions) {
+        const solTytul = (isEn && sol.tytul_en && sol.tytul_en.trim()) ? sol.tytul_en : sol.tytul;
+        const solOpis = (isEn && sol.opis_en && sol.opis_en.trim()) ? sol.opis_en : sol.opis;
+        const langBadge = isEn ? (sol.tytul_en ? '<span class="badge-lang-tag badge-lang-en">EN</span>' : '<span class="badge-lang-tag badge-lang-pl">PL</span>') : '';
+
         const card = document.createElement('div');
         card.className = 'solution-item-card';
         card.innerHTML = `
           <div class="sol-header">
-            <span class="sol-title">Wariant ${sol.numer}: ${escapeHtml(sol.tytul)}</span>
+            <span class="sol-title">${variantWord} ${sol.numer}: ${langBadge}${escapeHtml(solTytul)}</span>
           </div>
-          <div style="font-size:13px; line-height:1.45; white-space:pre-wrap; margin-bottom:10px;">${escapeHtml(sol.opis || '(brak opisu)')}</div>
+          <div style="font-size:13px; line-height:1.45; white-space:pre-wrap; margin-bottom:10px;">${escapeHtml(solOpis || noDescMsg)}</div>
           <div id="sol-photos-${t.prefix}-${sol.id}" class="photo-gallery-grid" style="grid-template-columns: repeat(auto-fill, minmax(100px, 120px)); gap: 8px; margin-bottom: 8px;"></div>
           <div id="sol-docs-${t.prefix}-${sol.id}" style="display:flex; flex-direction:column; gap:4px;"></div>
         `;
@@ -3018,8 +3051,8 @@ async function loadRecordSolutions(recId) {
           fullPhotos.forEach((full, pIdx) => {
             const div = document.createElement('div');
             div.className = 'photo-thumb-card';
-            div.innerHTML = `<img src="data:image/jpeg;base64,${full.data}" alt="Foto wariantu" title="Kliknij, aby powiększyć">`;
-            div.onclick = () => openLightboxGallery(solPhotoUrls, pIdx, `Zdjęcia wariantu: ${sol.tytul || sol.numer}`);
+            div.innerHTML = `<img src="data:image/jpeg;base64,${full.data}" alt="Foto wariantu" title="${isEn ? 'Click to enlarge' : 'Kliknij, aby powiększyć'}">`;
+            div.onclick = () => openLightboxGallery(solPhotoUrls, pIdx, `${variantWord} ${sol.numer}: ${solTytul}`);
             phBox.appendChild(div);
           });
         });
@@ -3041,12 +3074,12 @@ async function loadRecordSolutions(recId) {
                 <div style="flex:1; min-width:0; cursor:pointer;" onclick="openPdfPreview('${rawUrl}', '${escapeHtml(d.filename)}', '${openUrl}', '${d.id}')">
                   <div style="font-size:12.5px; font-weight:600; color:var(--primary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="${escapeHtml(d.filename)}">${escapeHtml(d.filename)}</div>
                   <div style="font-size:11px; color:var(--text-muted); display:flex; align-items:center; gap:6px; margin-top:2px;">
-                    <span style="background:var(--primary-light); color:var(--primary); font-size:9.5px; font-weight:700; padding:1px 5px; border-radius:3px;">${isPdf ? 'PDF' : 'DOKUMENT'}</span>
+                    <span style="background:var(--primary-light); color:var(--primary); font-size:9.5px; font-weight:700; padding:1px 5px; border-radius:3px;">${isPdf ? 'PDF' : docBadgeLabel}</span>
                     <span>${formatBytes(d.filesize)}</span>
                   </div>
                 </div>
                 <div style="display:flex; gap:4px; flex-shrink:0;">
-                  <button class="btn-secondary-action" style="padding:3px 8px; font-size:11px;" title="Podgląd / Otwórz" onclick="openPdfPreview('${rawUrl}', '${escapeHtml(d.filename)}', '${openUrl}', '${d.id}')">👁 Otwórz</button>
+                  <button class="btn-secondary-action" style="padding:3px 8px; font-size:11px;" title="${openBtnLabel}" onclick="openPdfPreview('${rawUrl}', '${escapeHtml(d.filename)}', '${openUrl}', '${d.id}')">👁 ${openBtnLabel}</button>
                 </div>
               </div>
             `;
@@ -3056,7 +3089,7 @@ async function loadRecordSolutions(recId) {
     });
   } catch(e) {
     targets.forEach(t => {
-      t.box.innerHTML = `<div style="font-size:12px; color:var(--red);">Błąd ładowania wariantów.</div>`;
+      t.box.innerHTML = `<div style="font-size:12px; color:var(--red);">${isEn ? 'Error loading solutions.' : 'Błąd ładowania wariantów.'}</div>`;
     });
   }
 }
@@ -3068,11 +3101,16 @@ async function loadRecordDocs(recId) {
   ].filter(Boolean);
   if (boxes.length === 0) return;
 
+  const isEn = (typeof CURRENT_LANG !== 'undefined' && CURRENT_LANG === 'en');
+  const emptyDocsMsg = (typeof t === 'function') ? t('detail.emptyDocs') : (isEn ? 'No PDF documents attached.' : 'Brak załączonych plików PDF/CSV.');
+  const openBtnLabel = isEn ? 'Open' : 'Otwórz';
+  const docBadgeLabel = isEn ? 'DOCUMENT' : 'DOKUMENT';
+
   try {
     const docs = await apiCall(`/api/records/${recId}/documents`);
     if (!docs || docs.length === 0) {
       boxes.forEach(b => {
-        b.innerHTML = `<div style="font-size:12px; color:var(--text-dim);">Brak załączonych plików PDF/CSV.</div>`;
+        b.innerHTML = `<div style="font-size:12px; color:var(--text-dim); padding:6px 0;">${emptyDocsMsg}</div>`;
       });
       return;
     }
@@ -3090,12 +3128,12 @@ async function loadRecordDocs(recId) {
             <div style="flex:1; min-width:0; cursor:pointer;" onclick="openPdfPreview('${rawUrl}', '${escapeHtml(d.filename)}', '${openUrl}', '${d.id}')">
               <div style="font-size:12.5px; font-weight:600; color:var(--primary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="${escapeHtml(d.filename)}">${escapeHtml(d.filename)}</div>
               <div style="font-size:11px; color:var(--text-muted); display:flex; align-items:center; gap:6px; margin-top:2px;">
-                <span style="background:var(--primary-light); color:var(--primary); font-size:9.5px; font-weight:700; padding:1px 5px; border-radius:3px;">${isPdf ? 'PDF' : 'DOKUMENT'}</span>
+                <span style="background:var(--primary-light); color:var(--primary); font-size:9.5px; font-weight:700; padding:1px 5px; border-radius:3px;">${isPdf ? 'PDF' : docBadgeLabel}</span>
                 <span>${formatBytes(d.filesize)}</span>
               </div>
             </div>
             <div style="display:flex; gap:4px; flex-shrink:0;">
-              <button class="btn-secondary-action" style="padding:3px 8px; font-size:11px;" title="Podgląd / Otwórz" onclick="openPdfPreview('${rawUrl}', '${escapeHtml(d.filename)}', '${openUrl}', '${d.id}')">👁 Otwórz</button>
+              <button class="btn-secondary-action" style="padding:3px 8px; font-size:11px;" title="${openBtnLabel}" onclick="openPdfPreview('${rawUrl}', '${escapeHtml(d.filename)}', '${openUrl}', '${d.id}')">👁 ${openBtnLabel}</button>
             </div>
           </div>
         `;
@@ -3209,25 +3247,40 @@ function renderFormDropdowns() {
     }
   }
 
-  projSel.innerHTML = `<option value="">— Wybierz projekt PS —</option>` + psList.map(p => `<option value="${escapeHtml(p)}">${escapeHtml(p)}</option>`).join('');
+  const isEn = (typeof CURRENT_LANG !== 'undefined' && CURRENT_LANG === 'en');
+  const choosePs = isEn ? '— Select PS project —' : '— Wybierz projekt PS —';
+  const chooseClient = isEn ? '— Select client —' : '— Wybierz klienta —';
+  const chooseModel = isEn ? '— Select model —' : '— Wybierz model —';
+  const chooseType = isEn ? '— Select defect category —' : '— Wybierz typ usterki —';
+  const allClientsLabel = isEn ? 'All Clients' : 'Wszyscy klienci';
+  const allTypesLabel = isEn ? 'All Categories' : 'Wszystkie typy';
+  const noneFix = isEn ? '— none —' : '— brak —';
 
-  klientSel.innerHTML = `<option value="">— Wybierz klienta —</option>` + (STATE.lists.klienci || []).map(k => `<option value="${escapeHtml(k)}">${escapeHtml(k)}</option>`).join('');
-  modelSel.innerHTML = `<option value="">— Wybierz model —</option>` + (STATE.lists.modele || []).map(m => `<option value="${escapeHtml(m)}">${escapeHtml(m)}</option>`).join('');
-  typSel.innerHTML = `<option value="">— Wybierz typ usterki —</option>` + (STATE.lists.typy || []).map(t => `<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join('');
+  projSel.innerHTML = `<option value="">${choosePs}</option>` + psList.map(p => `<option value="${escapeHtml(p)}">${escapeHtml(p)}</option>`).join('');
+
+  klientSel.innerHTML = `<option value="">${chooseClient}</option>` + (STATE.lists.klienci || []).map(k => `<option value="${escapeHtml(k)}">${escapeHtml(k)}</option>`).join('');
+  modelSel.innerHTML = `<option value="">${chooseModel}</option>` + (STATE.lists.modele || []).map(m => `<option value="${escapeHtml(m)}">${escapeHtml(m)}</option>`).join('');
+  typSel.innerHTML = `<option value="">${chooseType}</option>` + (STATE.lists.typy || []).map(t => {
+    const displayT = (typeof translateCategory === 'function') ? translateCategory(t, CURRENT_LANG) : t;
+    return `<option value="${escapeHtml(t)}">${escapeHtml(displayT)}</option>`;
+  }).join('');
 
   // Filtry w dashboardzie
   const fk = document.getElementById('filter-klient');
   const ft = document.getElementById('filter-typ');
   const curFk = fk.value;
   const curFt = ft.value;
-  fk.innerHTML = `<option value="">Wszyscy klienci</option>` + (STATE.lists.klienci || []).map(k => `<option value="${escapeHtml(k)}">${escapeHtml(k)}</option>`).join('');
-  ft.innerHTML = `<option value="">Wszystkie typy</option>` + (STATE.lists.typy || []).map(t => `<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join('');
+  fk.innerHTML = `<option value="">${allClientsLabel}</option>` + (STATE.lists.klienci || []).map(k => `<option value="${escapeHtml(k)}">${escapeHtml(k)}</option>`).join('');
+  ft.innerHTML = `<option value="">${allTypesLabel}</option>` + (STATE.lists.typy || []).map(t => {
+    const displayT = (typeof translateCategory === 'function') ? translateCategory(t, CURRENT_LANG) : t;
+    return `<option value="${escapeHtml(t)}">${escapeHtml(displayT)}</option>`;
+  }).join('');
   fk.value = curFk;
   ft.value = curFt;
 
   // Lista 'Naprawione przez'
   const fixSel = document.getElementById('f-fixed-by');
-  fixSel.innerHTML = `<option value="">— brak —</option>` + STATE.users.map(u => `<option value="${escapeHtml(u.full_name || u.username)}">${escapeHtml(u.full_name || u.username)}</option>`).join('');
+  fixSel.innerHTML = `<option value="">${noneFix}</option>` + STATE.users.map(u => `<option value="${escapeHtml(u.full_name || u.username)}">${escapeHtml(u.full_name || u.username)}</option>`).join('');
 
   // Przywróć wartości formularza; jeśli wartość nie istnieje w opcjach, dodaj ją
   // (ważne przy edycji starych rekordów, gdy słowniki mogły ulec zmianie).
@@ -4632,20 +4685,28 @@ function switchActiveTechnician(username, fullname, role) {
 
 /* ── EKSPORT CSV ── */
 document.getElementById('btn-export-csv').addEventListener('click', () => {
-  const rows = [
-    ["Data","Klient","Model","Projekt","VIN","Typ","Element","Opis problemu","Status","Zgłosił","Naprawił","Data naprawy"]
-  ];
+  const isEn = (typeof CURRENT_LANG !== 'undefined' && CURRENT_LANG === 'en');
+  const headers = isEn
+    ? ["Date", "Client", "Model", "Project", "VIN", "Category", "Element", "Problem Description", "Status", "Reported By", "Resolved By", "Resolution Date"]
+    : ["Data", "Klient", "Model", "Projekt", "VIN", "Typ", "Element", "Opis problemu", "Status", "Zgłosił", "Naprawił", "Data naprawy"];
+
+  const rows = [headers];
   STATE.records.forEach(r => {
+    const isFixed = r.status === 'fixed';
+    const statusLabel = isEn ? (isFixed ? 'Resolved' : 'Open') : (isFixed ? 'Naprawiona' : 'Otwarta');
+    const catLabel = (typeof translateCategory === 'function') ? translateCategory(r.typ, CURRENT_LANG) : r.typ;
+    const problemText = isEn ? (r.opisProblem_en || r.opisProblem || '') : (r.opisProblem || '');
+
     rows.push([
       r.created || '',
       r.klient || '',
       r.model || '',
       r.projekt || '',
       r.vin || '',
-      r.typ || '',
+      catLabel || '',
       r.element || '',
-      r.opisProblem || '',
-      r.status === 'fixed' ? 'Naprawiona' : 'Otwarta',
+      problemText,
+      statusLabel,
       r.created_by || '',
       r.fixed_by || '',
       r.fixed_at || ''
@@ -4655,9 +4716,10 @@ document.getElementById('btn-export-csv').addEventListener('click', () => {
   const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = `rejestr_usterek_${new Date().toISOString().slice(0,10)}.csv`;
+  const filePrefix = isEn ? 'defect_registry' : 'rejestr_usterek';
+  a.download = `${filePrefix}_${new Date().toISOString().slice(0,10)}.csv`;
   a.click();
-  showToast('Plik CSV wygenerowany!', 'success');
+  showToast(isEn ? 'CSV file exported successfully!' : 'Plik CSV wygenerowany!', 'success');
 });
 
 /* ── KOPIE ZAPASOWE I NARZĘDZIA ── */
@@ -4836,11 +4898,19 @@ function toggleDetailPane() {
 function updateDetailToggleBtn(isHidden) {
   const txt = document.getElementById('text-toggle-detail');
   const btn = document.getElementById('btn-toggle-detail-pane');
-  if (txt) txt.textContent = isHidden ? 'Pokaż panel' : 'Ukryj panel';
+  const isEn = (typeof CURRENT_LANG !== 'undefined' && CURRENT_LANG === 'en');
+  if (txt) {
+    txt.textContent = isHidden
+      ? (isEn ? 'Show panel' : 'Pokaż panel')
+      : (isEn ? 'Hide panel' : 'Ukryj panel');
+  }
   if (btn) {
     btn.style.background = isHidden ? 'var(--primary-light)' : '';
     btn.style.borderColor = isHidden ? 'var(--primary)' : '';
     btn.style.color = isHidden ? 'var(--primary)' : '';
+    btn.title = isEn
+      ? (isHidden ? 'Show side details panel' : 'Hide side details panel')
+      : (isHidden ? 'Pokaż panel boczny' : 'Ukryj panel boczny');
   }
 }
 

@@ -289,9 +289,24 @@ def main():
             except Exception:
                 pass
 
+        lang = cfg.get("language", "pl")
+        current_title = "Defect Registry v2.0 - Diagnostic & Service Panel" if lang == "en" else APP_TITLE
+
+        class WebviewApi:
+            def __init__(self, win=None):
+                self._win = win
+            def set_title(self, title):
+                try:
+                    if self._win:
+                        self._win.set_title(str(title))
+                except Exception:
+                    pass
+
+        api = WebviewApi(None)
+
         logging.info(f"Tworzenie okna webview: {window_w}x{window_h}")
         window = webview.create_window(
-            title=APP_TITLE,
+            title=current_title,
             url=target_url,
             width=window_w,
             height=window_h,
@@ -299,8 +314,10 @@ def main():
             background_color="#0F172A",
             easy_drag=False,
             text_select=True,
-            zoomable=True
+            zoomable=True,
+            js_api=api
         )
+        api._win = window
 
         def on_resized(width, height):
             cfg["window_size"] = [width, height]

@@ -6,14 +6,18 @@ const TRANSLATIONS = {
     nav: {
       appName: "Rejestr Usterek",
       appSubtitle: "Panel Diagnostyki i Serwisu",
-      defects: "Usterki",
-      newDefect: "Nowa usterka",
-      projects: "Baza projektów",
+      sectionMain: "Główne Menu",
+      sectionConfig: "Konfiguracja",
+      defects: "Rejestr usterek",
+      newDefect: "Nowe zgłoszenie",
+      projects: "Baza projektów (PS)",
       dictionaries: "Słowniki",
       users: "Użytkownicy",
-      backup: "Kopia bazy",
+      backup: "Kopie & Eksport",
+      langLabel: "Język / Lang:",
       themeDark: "Tryb ciemny",
       themeLight: "Tryb jasny",
+      changePassword: "Zmień hasło",
       logout: "Wyloguj",
       roleAdmin: "Administrator",
       roleTech: "Technik"
@@ -57,6 +61,11 @@ const TRANSLATIONS = {
     },
     detail: {
       title: "Szczegóły usterki",
+      noSelection: "Brak wybranej usterki",
+      noSelectionSub: "Kliknij dowolny wiersz na liście po lewej stronie, aby wyświetlić szczegóły, zdjęcia i warianty rozwiązań.",
+      togglePanelHide: "Ukryj panel",
+      togglePanelShow: "Pokaż panel",
+      exportCsv: "Eksport CSV",
       headerVehicle: "Dane pojazdu i zlecenia",
       client: "Klient",
       model: "Model",
@@ -83,6 +92,9 @@ const TRANSLATIONS = {
       emptySolutions: "Brak wprowadzonych wariantów naprawy. Możesz dodać wariant klikając 'Edytuj usterkę'.",
       viewFullPhoto: "Kliknij, aby powiększyć",
       openPdf: "Otwórz dokument PDF",
+      openInWindows: "Otwórz w aplikacji Windows",
+      download: "Pobierz",
+      closeModal: "✕ Zamknij (ESC)",
       badgeOriginalPl: "Oryginał PL",
       badgeTranslatedEn: "Przetłumaczono na EN"
     },
@@ -212,14 +224,18 @@ const TRANSLATIONS = {
     nav: {
       appName: "Defect Registry",
       appSubtitle: "Diagnostic & Service Panel",
+      sectionMain: "Main Menu",
+      sectionConfig: "Configuration",
       defects: "Defects",
       newDefect: "New Defect",
       projects: "Projects Database",
       dictionaries: "Dictionaries",
       users: "Users",
       backup: "Database Backup",
+      langLabel: "Language:",
       themeDark: "Dark Mode",
       themeLight: "Light Mode",
+      changePassword: "Change Password",
       logout: "Log out",
       roleAdmin: "Administrator",
       roleTech: "Technician"
@@ -263,6 +279,11 @@ const TRANSLATIONS = {
     },
     detail: {
       title: "Defect Details",
+      noSelection: "No Defect Selected",
+      noSelectionSub: "Click any row on the left to display details, photos, and repair solutions.",
+      togglePanelHide: "Hide panel",
+      togglePanelShow: "Show panel",
+      exportCsv: "Export CSV",
       headerVehicle: "Vehicle & Project Information",
       client: "Client",
       model: "Model",
@@ -289,6 +310,9 @@ const TRANSLATIONS = {
       emptySolutions: "No repair solution variants entered yet. Click 'Edit Defect' to add one.",
       viewFullPhoto: "Click to enlarge",
       openPdf: "Open PDF Document",
+      openInWindows: "Open in Windows App",
+      download: "Download",
+      closeModal: "✕ Close (ESC)",
       badgeOriginalPl: "Original [PL]",
       badgeTranslatedEn: "Translated to [EN]"
     },
@@ -591,9 +615,38 @@ function applyLanguage(lang = CURRENT_LANG) {
   });
 
   // 6. Odświeżenie dynamicznych komponentów
+  const pageTitle = `${t('nav.appName')} v2.0 - ${t('nav.appSubtitle')}`;
+  document.title = pageTitle;
+  if (window.pywebview && window.pywebview.api && window.pywebview.api.set_title) {
+    try { window.pywebview.api.set_title(pageTitle); } catch(e) {}
+  }
+
+  if (typeof updateConnectionStatus === 'function') {
+    const lamp = document.getElementById('conn-lamp');
+    updateConnectionStatus(lamp ? !lamp.classList.contains('offline') : true);
+  }
+  if (typeof updateDetailToggleBtn === 'function') {
+    const dp = document.getElementById('detail-pane');
+    updateDetailToggleBtn(dp ? dp.classList.contains('hidden') : false);
+  }
+  if (typeof updateUserBadge === 'function') {
+    updateUserBadge();
+  }
+  if (typeof applyTheme === 'function') {
+    const curTheme = (window.STATE && window.STATE.theme) || localStorage.getItem('ru_theme') || 'light';
+    applyTheme(curTheme);
+  }
+  if (typeof populateDropdowns === 'function') {
+    populateDropdowns();
+  }
+
   if (typeof renderKPIs === 'function') renderKPIs();
   if (typeof renderDefectsTable === 'function') renderDefectsTable();
-  if (typeof renderDefectDetail === 'function' && window.STATE && window.STATE.selectedRecordId) {
-    renderDefectDetail(window.STATE.selectedRecordId);
+  if (window.STATE && window.STATE.selectedRecordId) {
+    if (typeof selectRecord === 'function') selectRecord(window.STATE.selectedRecordId);
+    const modalPreview = document.getElementById('modal-defect-preview');
+    if (modalPreview && (modalPreview.style.display === 'flex' || modalPreview.classList.contains('active')) && typeof openDefectPreview === 'function') {
+      openDefectPreview(window.STATE.selectedRecordId);
+    }
   }
 }

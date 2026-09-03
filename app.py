@@ -523,6 +523,36 @@ def api_translate():
     translated = translate_pl_to_en(text)
     return jsonify({"translated": translated})
 
+@app.route("/api/user-settings", methods=["GET", "POST"])
+def api_user_settings():
+    desktop_cfg_path = os.path.join(BASE_DIR, "desktop_config.json")
+    if request.method == "POST":
+        data = request.get_json() or {}
+        cfg = {}
+        if os.path.exists(desktop_cfg_path):
+            try:
+                with open(desktop_cfg_path, "r", encoding="utf-8") as f:
+                    cfg = json.load(f)
+            except Exception:
+                cfg = {}
+        if "language" in data:
+            cfg["language"] = data["language"]
+        try:
+            with open(desktop_cfg_path, "w", encoding="utf-8") as f:
+                json.dump(cfg, f, indent=2, ensure_ascii=False)
+        except Exception as e:
+            logging.warning(f"Nie udało się zapisać desktop_config.json: {e}")
+        return jsonify({"ok": True, "settings": cfg})
+    else:
+        cfg = {}
+        if os.path.exists(desktop_cfg_path):
+            try:
+                with open(desktop_cfg_path, "r", encoding="utf-8") as f:
+                    cfg = json.load(f)
+            except Exception:
+                cfg = {}
+        return jsonify(cfg)
+
 @app.route("/api/auth/login", methods=["POST"])
 def auth_login():
     data = request.get_json() or {}
