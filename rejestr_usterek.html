@@ -1267,31 +1267,44 @@
   /* Powiadomienia Toast */
   .toast-container {
     position: fixed;
-    bottom: 20px;
-    right: 20px;
-    z-index: 5000;
+    bottom: 24px;
+    right: 24px;
+    z-index: 1000000;
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 10px;
+    pointer-events: none;
+    max-width: 440px;
   }
   .toast-msg {
+    pointer-events: auto;
     background: #0F172A;
     color: #FFFFFF;
     padding: 12px 18px;
     border-radius: var(--radius-md);
-    box-shadow: var(--shadow-lg);
+    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.6), 0 8px 10px -6px rgba(0, 0, 0, 0.5);
     font-size: 13px;
+    font-weight: 500;
+    line-height: 1.4;
     display: flex;
     align-items: center;
     gap: 10px;
-    border-left: 4px solid var(--primary);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-left: 5px solid var(--primary);
     animation: toastSlide 0.25s ease;
+    backdrop-filter: none;
   }
   .toast-msg.error {
     border-left-color: var(--red);
   }
   .toast-msg.success {
     border-left-color: var(--green);
+  }
+  .toast-msg.warning {
+    border-left-color: var(--amber);
+  }
+  .toast-msg.info {
+    border-left-color: #38BDF8;
   }
   @keyframes toastSlide {
     from { opacity: 0; transform: translateY(15px); }
@@ -1386,6 +1399,12 @@
         <span data-i18n="nav.newDefect">Nowe zgłoszenie</span>
       </div>
 
+      <div class="nav-item" id="nav-zuken-menu" onclick="openAiDiagnosisModal({projekt: STATE.lastSelectedPS || ''})" title="Asystent Zuken E3 - Wyszukiwarka schematów, złączy i obwodów">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+        <span data-i18n="zuken.navItem">Asystent Zuken E3</span>
+        <span class="nav-badge" style="background:linear-gradient(135deg, #0284c7, #2563eb); color:#fff; font-weight:700; font-size:9.5px; padding:1px 5px; border-radius:4px;">E3</span>
+      </div>
+
       <div class="nav-section-title" data-i18n="nav.sectionConfig">Konfiguracja</div>
 
       <div class="nav-item" data-view="projects" id="nav-projects" title="Baza projektów (PS)">
@@ -1416,6 +1435,7 @@
         <div class="lang-switcher">
           <button type="button" class="lang-btn active" data-lang="pl" onclick="setLanguage('pl')" title="Polski">🇵🇱 PL</button>
           <button type="button" class="lang-btn" data-lang="en" onclick="setLanguage('en')" title="English">🇬🇧 EN</button>
+          <button type="button" class="lang-btn" data-lang="de" onclick="setLanguage('de')" title="Deutsch">🇩🇪 DE</button>
         </div>
       </div>
 
@@ -1458,25 +1478,30 @@
             <div class="kpi-val" id="kpi-total">0</div>
             <div class="kpi-lbl" data-i18n="status.all">Wszystkie</div>
           </div>
-          <div class="kpi-card" data-filter-status="open" style="border-left: 3px solid var(--red);">
-            <div class="kpi-val" id="kpi-open" style="color:var(--red)">0</div>
-            <div class="kpi-lbl" data-i18n="status.open">Otwarte</div>
+          <div class="kpi-card" data-filter-status="open" style="border-left: 3px solid var(--amber);">
+            <div class="kpi-val" id="kpi-open" style="color:var(--amber)">0</div>
+            <div class="kpi-lbl" data-i18n="kpi.open">Bez wariantów</div>
           </div>
           <div class="kpi-card" data-filter-status="fixed" style="border-left: 3px solid var(--green);">
             <div class="kpi-val" id="kpi-fixed" style="color:var(--green)">0</div>
-            <div class="kpi-lbl" data-i18n="status.fixed">Naprawione</div>
+            <div class="kpi-lbl" data-i18n="kpi.fixed">Z wariantami</div>
           </div>
         </div>
 
         <div style="display:flex; gap:8px; align-items:center;">
-          <div class="lang-switcher" style="margin-right:2px;" title="Wybierz język / Choose language">
+          <div class="lang-switcher" style="margin-right:2px;" title="Wybierz język / Choose language / Sprache wählen">
             <button type="button" class="lang-btn active" data-lang="pl" onclick="setLanguage('pl')" title="Polski">🇵🇱 PL</button>
             <button type="button" class="lang-btn" data-lang="en" onclick="setLanguage('en')" title="English">🇬🇧 EN</button>
+            <button type="button" class="lang-btn" data-lang="de" onclick="setLanguage('de')" title="Deutsch">🇩🇪 DE</button>
           </div>
 
           <button class="btn-secondary-action" id="btn-toggle-detail-pane" title="Przełącz panel boczny szczegółów / pełna szerokość tabeli">
             <svg id="icon-toggle-detail" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="15" y1="3" x2="15" y2="21"/></svg>
             <span id="text-toggle-detail" data-i18n="detail.togglePanelHide">Ukryj panel</span>
+          </button>
+          <button class="btn-secondary-action" onclick="openAiDiagnosisModal({projekt: STATE.lastSelectedPS || ''})" style="border-color:var(--primary); color:var(--primary); font-weight:600; display:inline-flex; align-items:center; gap:6px;" title="Przeszukaj schematy Zuken E3, złącza, bezpieczniki i przewody">
+            <span style="font-size:13px;">✨</span>
+            <span data-i18n="zuken.btnDiagnose">Asystent Zuken</span>
           </button>
           <button class="btn-secondary-action" id="btn-export-csv">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
@@ -1505,9 +1530,9 @@
         </select>
 
         <select class="select-filter" id="filter-status">
-          <option value="" data-i18n="status.all">Wszystkie statusy</option>
-          <option value="open" data-i18n="status.open">Tylko Otwarte</option>
-          <option value="fixed" data-i18n="status.fixed">Tylko Naprawione</option>
+          <option value="" data-i18n="status.all">Wszystkie usterki</option>
+          <option value="fixed" data-i18n="status.withSolutions">Z wariantami napraw</option>
+          <option value="open" data-i18n="status.withoutSolutions">Bez wariantów</option>
         </select>
       </div>
 
@@ -1613,29 +1638,18 @@
                 </div>
 
                 <div class="form-group">
-                  <label for="f-opis-problem">Opis problemu *</label>
+                  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:5px;">
+                    <label for="f-opis-problem" style="margin-bottom:0;">Opis problemu *</label>
+                    <button type="button" class="btn-secondary-action" style="padding:3px 10px; font-size:11.5px; border-color:var(--primary); color:var(--primary); font-weight:600; display:inline-flex; align-items:center; gap:5px;" onclick="runAiDiagnosisFromForm()" title="Sprawdź punkty pomiarowe, złącza i kolory kabli w schemacie Zuken">
+                      ✨ Asystent Zuken
+                    </button>
+                  </div>
                   <textarea id="f-opis-problem" placeholder="Dokładny opis zaobserwowanej nieprawidłowości..." required style="min-height:90px;"></textarea>
                 </div>
               </div>
 
               <!-- Prawa kolumna formularza: Załączniki i Zdjęcia -->
               <div>
-                <div class="form-row">
-                  <div class="form-group">
-                    <label for="f-status">Status początkowy</label>
-                    <select id="f-status">
-                      <option value="open">Otwarta</option>
-                      <option value="fixed">Naprawiona</option>
-                    </select>
-                  </div>
-                  <div class="form-group">
-                    <label for="f-fixed-by">Naprawione przez</label>
-                    <select id="f-fixed-by">
-                      <option value="">— brak —</option>
-                    </select>
-                  </div>
-                </div>
-
                 <!-- Zdjęcia usterki -->
                 <div class="form-group">
                   <label>Zdjęcia problemu (max 6) <span>— wklejaj ze schowka Ctrl+V</span></label>
@@ -1805,10 +1819,27 @@
         <h2 style="font-size:18px; font-weight:700; margin-bottom:16px;">Kopie Zapasowe i Narzędzia Bazy</h2>
 
         <div style="display:flex; flex-direction:column; gap:16px;">
+          <div class="detail-section-card" style="border-left: 4px solid var(--primary); background: rgba(37, 99, 235, 0.04);">
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap;">
+              <div style="max-width:620px;">
+                <h3 style="font-size:14px; font-weight:800; color:var(--primary); margin-bottom:4px;">💾 Przygotuj bazę do skopiowania na pendrive (Scal plik rejestr_usterek.db)</h3>
+                <p style="font-size:12.5px; color:var(--text-main); margin-bottom:4px; line-height:1.4;">
+                  Wymusza natychmiastowe zrzucenie wszystkich bieżących transakcji i wpisów (bufora WAL) bezpośrednio do głównego pliku <code>rejestr_usterek.db</code>.
+                </p>
+                <div style="font-size:11.5px; color:var(--text-muted);">
+                  Dzięki temu plik <code>rejestr_usterek.db</code> jest w 100% kompletny i możesz go bezpiecznie skopiować do domu.
+                </div>
+              </div>
+              <button type="button" class="btn-primary-action" id="btn-flush-wal-db" style="padding:9px 18px; font-weight:700; white-space:nowrap; display:inline-flex; align-items:center; gap:6px;">
+                <span>⚡</span> <span>Scal plik bazy teraz</span>
+              </button>
+            </div>
+          </div>
+
           <div class="detail-section-card">
             <h3 style="font-size:14px; font-weight:700; margin-bottom:4px;">Pobierz kopię zapasową (Backup JSON)</h3>
-            <p style="font-size:12px; color:var(--text-muted); margin-bottom:12px;">Eksportuje całą bazę usterek, słowników i powiązań do bezpiecznego pliku JSON.</p>
-            <button class="btn-primary-action" id="btn-export-backup-json">⬇ Pobierz kopię JSON</button>
+            <p style="font-size:12px; color:var(--text-muted); margin-bottom:12px;">Eksportuje całą bazę usterek, słowników i powiązań do pliku JSON.</p>
+            <button class="btn-secondary-action" id="btn-export-backup-json">⬇ Pobierz kopię JSON</button>
           </div>
 
           <div class="detail-section-card">
@@ -2209,6 +2240,192 @@
   </div>
 </div>
 
+<!-- ════════════ MODAL: ASYSTENT DIAGNOSTYCZNY ZUKEN E3 ════════════ -->
+<div class="modal-backdrop" id="modal-zuken-diagnose" style="display:none; background:rgba(15,23,42,0.85); z-index:9999; backdrop-filter:blur(5px);">
+  <div class="modal-box" style="max-width:1050px; width:95vw; height:90vh; max-height:92vh; display:flex; flex-direction:column; box-shadow:var(--shadow-xl); border:1px solid var(--border-subtle); overflow:hidden; border-radius:var(--radius-lg);">
+    
+    <!-- Nagłówek modalu -->
+    <div class="modal-header" style="padding:14px 22px; background:linear-gradient(135deg, #0f172a 0%, #1e293b 100%); border-bottom:1px solid rgba(255,255,255,0.1); flex-shrink:0;">
+      <div style="display:flex; align-items:center; gap:12px;">
+        <div style="width:36px; height:36px; border-radius:10px; background:linear-gradient(135deg, #0284c7, #2563eb); display:flex; align-items:center; justify-content:center; font-size:19px; box-shadow:0 2px 10px rgba(37,99,235,0.4);">
+          ✨
+        </div>
+        <div>
+          <h3 style="font-size:16px; font-weight:700; margin:0; color:#fff;" data-i18n="zuken.modalTitle">Asystent Diagnostyczny Zuken E3 (Offline)</h3>
+          <div style="font-size:11.5px; color:#94a3b8;" data-i18n="zuken.modalSubtitle">Lokalna analiza wiązek elektrycznych, punktów pomiarowych i historii napraw</div>
+        </div>
+      </div>
+      <button class="btn-close-modal" onclick="closeModal('modal-zuken-diagnose')">✕</button>
+    </div>
+
+    <!-- Pasek narzędziowy / Wyszukiwarka -->
+    <div style="padding:12px 20px; background:var(--bg-card); border-bottom:1px solid var(--border); display:flex; gap:10px; align-items:center; flex-wrap:wrap; flex-shrink:0;">
+      <div style="flex:1; min-width:260px; position:relative;">
+        <input type="text" id="zuken-search-input" style="width:100%; padding:9px 12px; border-radius:var(--radius-md); border:1px solid var(--border); background:var(--bg-card-subtle); font-size:13.5px;" placeholder="Wpisz numer przewodu (np. 185D, 30B), złącze (X132), bezpiecznik (F18), odbiornik..." onkeydown="if(event.key==='Enter') runAiDiagnosisSearch();">
+      </div>
+      <button type="button" class="btn-primary-action" style="padding:9px 18px; font-size:13px; background:linear-gradient(135deg, #0284c7 0%, #2563eb 100%); border:none; display:inline-flex; align-items:center; gap:6px;" onclick="runAiDiagnosisSearch()">
+        🔍 <span data-i18n="zuken.btnSearch">Analizuj obwód</span>
+      </button>
+      <button type="button" class="btn-secondary-action" style="padding:9px 12px; font-size:12.5px; display:inline-flex; align-items:center; gap:5px;" onclick="syncZukenKnowledgeBase()" title="Przeskanuj katalog Baza wiedzy w poszukiwaniu nowych plików XLSX i schematów PDF">
+        🔄 <span data-i18n="zuken.btnSync">Skanuj bazę</span>
+      </button>
+    </div>
+
+    <!-- Pasek kontekstu projektu i szybkich tagów -->
+    <div id="zuken-project-badge-bar" style="padding:8px 20px; background:var(--bg-card-subtle); border-bottom:1px solid var(--border); font-size:12px; color:var(--text-muted); display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; flex-shrink:0;">
+      <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+        <span style="font-size:11.5px; font-weight:700; color:var(--text-muted);">Projekt / Schemat:</span>
+        <select id="zuken-context-project-select" style="padding:4px 10px; border-radius:var(--radius-sm); border:1px solid var(--border); background:var(--bg-card); font-size:12px; font-weight:600; color:var(--text-main); cursor:pointer;" onchange="onZukenProjectSelectChange(this.value)">
+          <option value="">Wszystkie schematy (Uniwersalny)</option>
+        </select>
+        <span id="zuken-active-context-label" style="font-size:11.5px; color:var(--text-muted);"></span>
+      </div>
+      <div style="display:flex; gap:6px; flex-wrap:wrap; align-items:center;" id="zuken-quick-tags">
+        <span style="font-size:11px; font-weight:600; color:var(--text-muted);">Szybkie filtry:</span>
+        <button type="button" class="tag-project" style="cursor:pointer; border:none;" onclick="applyZukenQuickTag('185D')">185D</button>
+        <button type="button" class="tag-project" style="cursor:pointer; border:none;" onclick="applyZukenQuickTag('30B')">30B</button>
+        <button type="button" class="tag-project" style="cursor:pointer; border:none;" onclick="applyZukenQuickTag('X132')">X132</button>
+        <button type="button" class="tag-project" style="cursor:pointer; border:none;" onclick="applyZukenQuickTag('F18')">F18</button>
+        <button type="button" class="tag-project" style="cursor:pointer; border:none;" onclick="applyZukenQuickTag('DRZWI')">DRZWI</button>
+        <button type="button" class="tag-project" style="cursor:pointer; border:none;" onclick="applyZukenQuickTag('Światła antykolizyjne')">ŚWIATŁA ANTYKOLIZYJNE</button>
+        <button type="button" class="tag-project" style="cursor:pointer; border:none;" onclick="applyZukenQuickTag('12V SOCKET')">12V SOCKET</button>
+        <button type="button" class="tag-project" style="cursor:pointer; border:none;" onclick="applyZukenQuickTag('RUN LOCK')">RUN LOCK</button>
+        <button type="button" class="tag-project" style="cursor:pointer; border:none;" onclick="applyZukenQuickTag('HVAC FAN')">HVAC / FAN</button>
+        <button type="button" class="tag-project" style="cursor:pointer; border:none;" onclick="applyZukenQuickTag('FRONT BLUES')">FRONT BLUES</button>
+      </div>
+    </div>
+
+    <!-- Pasek zakładek Asystenta -->
+    <div style="display:flex; background:var(--bg-card); border-bottom:1px solid var(--border); padding:0 20px; gap:4px; flex-shrink:0;">
+      <button type="button" id="tab-btn-zuken-diag" class="btn-tab-zuken" onclick="switchZukenTab('diag')" style="padding:9px 16px; font-size:12.5px; font-weight:700; border:none; background:none; cursor:pointer; color:var(--primary); border-bottom:2px solid var(--primary); display:inline-flex; align-items:center; gap:6px;">
+        ⚡ <span data-i18n="zuken.tabCircuits">Analiza obwodu</span>
+      </button>
+      <button type="button" id="tab-btn-zuken-bom" class="btn-tab-zuken" onclick="switchZukenTab('bom')" style="padding:9px 16px; font-size:12.5px; font-weight:700; border:none; background:none; cursor:pointer; color:var(--text-muted); border-bottom:2px solid transparent; display:inline-flex; align-items:center; gap:6px;">
+        📦 <span data-i18n="zuken.tabBom">Złączki i Komponenty (BOM)</span>
+        <span id="zuken-bom-badge" style="background:rgba(37,99,235,0.12); color:var(--primary); padding:1px 6px; border-radius:10px; font-size:11px; font-weight:700;">214</span>
+      </button>
+      <button type="button" id="tab-btn-zuken-glossary" class="btn-tab-zuken" onclick="switchZukenTab('glossary')" style="padding:9px 16px; font-size:12.5px; font-weight:700; border:none; background:none; cursor:pointer; color:var(--text-muted); border-bottom:2px solid transparent; display:inline-flex; align-items:center; gap:6px;">
+        📖 <span data-i18n="zuken.tabGlossary">Słownik skrótów</span>
+      </button>
+    </div>
+
+    <!-- Pasek filtrów dla Katalogu BOM (widoczny tylko w zakładce BOM) -->
+    <div id="zuken-bom-filters-bar" style="display:none; padding:10px 20px; background:var(--bg-card-subtle); border-bottom:1px solid var(--border); gap:10px; align-items:center; flex-wrap:wrap; flex-shrink:0;">
+      <div style="flex:1; min-width:200px;">
+        <input type="text" id="zuken-bom-filter-search" style="width:100%; padding:7px 10px; border-radius:var(--radius-sm); border:1px solid var(--border); background:var(--bg-card); font-size:12px;" placeholder="Szukaj w BOM: kod artykułu, dostawca, aparat (-X434)..." oninput="debounceBomCatalogSearch()">
+      </div>
+      <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+        <select id="zuken-bom-filter-supplier" style="padding:7px 10px; border-radius:var(--radius-sm); border:1px solid var(--border); background:var(--bg-card); font-size:12px; font-weight:600; color:var(--text-main); cursor:pointer;" onchange="loadBomCatalog()">
+          <option value="">Wszyscy dostawcy</option>
+        </select>
+        <select id="zuken-bom-filter-category" style="padding:7px 10px; border-radius:var(--radius-sm); border:1px solid var(--border); background:var(--bg-card); font-size:12px; font-weight:600; color:var(--text-main); cursor:pointer;" onchange="loadBomCatalog()">
+          <option value="">Wszystkie kategorie</option>
+        </select>
+        <button type="button" class="btn-secondary-action" style="padding:7px 12px; font-size:12px;" onclick="resetBomFilters()">
+          Wyczyść
+        </button>
+      </div>
+    </div>
+
+    <!-- Zakładka 1: Analiza obwodu (przewijana) -->
+    <div class="modal-body" id="zuken-results-body" style="flex:1; overflow-y:auto; padding:20px; background:var(--bg-body); display:flex; flex-direction:column; gap:16px;">
+      <div style="text-align:center; padding:40px 20px; color:var(--text-muted);">
+        Wpisz nazwę odbiornika, sygnału lub problemu i kliknij <strong>Analizuj obwód</strong>.
+      </div>
+    </div>
+
+    <!-- Zakładka 2: Katalog Komponentów i Złączek BOM -->
+    <div class="modal-body" id="zuken-bom-body" style="flex:1; overflow-y:auto; padding:20px; background:var(--bg-body); display:none; flex-direction:column; gap:14px;">
+      <div id="zuken-bom-list-container" style="display:grid; grid-template-columns:repeat(auto-fill, minmax(360px, 1fr)); gap:12px;"></div>
+      <div id="zuken-bom-empty" style="display:none; text-align:center; padding:40px 20px; color:var(--text-muted); font-size:13px;">
+        Brak komponentów BOM spełniających wybrane kryteria.
+      </div>
+    </div>
+
+    <!-- Zakładka 3: Słownik oznaczeń Zuken -->
+    <div class="modal-body" id="zuken-glossary-body" style="flex:1; overflow-y:auto; padding:20px; background:var(--bg-body); display:none; flex-direction:column; gap:14px;">
+      <div id="zuken-glossary-list-container" style="display:grid; grid-template-columns:repeat(auto-fill, minmax(280px, 1fr)); gap:10px;"></div>
+    </div>
+
+    <!-- Stopka modalu -->
+    <div style="padding:12px 20px; background:var(--bg-card); border-top:1px solid var(--border); display:flex; justify-content:space-between; align-items:center; flex-shrink:0;">
+      <div style="font-size:11.5px; color:var(--text-muted); display:flex; align-items:center; gap:6px;">
+        <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#10b981;"></span>
+        Lokalny silnik Zuken E3 & Raport BOM (100% Offline)
+      </div>
+      <button type="button" class="btn-secondary-action" onclick="closeModal('modal-zuken-diagnose')">Zamknij</button>
+    </div>
+
+  </div>
+</div>
+
+<!-- ════════════ MODAL: LIGHTBOX / POWIĘKSZENIE ZDJĘCIA KOMPONENTU ════════════ -->
+<div class="modal-backdrop" id="modal-zuken-image-view" style="display:none; background:rgba(15,23,42,0.88); z-index:10001; backdrop-filter:blur(6px);" onclick="if(event.target===this) closeModal('modal-zuken-image-view')">
+  <div class="modal-box" style="max-width:650px; width:92vw; background:var(--bg-card); border-radius:var(--radius-lg); overflow:hidden; box-shadow:var(--shadow-xl); border:1px solid var(--border);">
+    <div class="modal-header" style="padding:12px 18px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center;">
+      <div style="display:flex; align-items:center; gap:8px;">
+        <span style="font-size:18px;">🔌</span>
+        <h3 style="margin:0; font-size:15px; font-weight:700; color:var(--text-main);" id="zuken-view-modal-title">Zdjęcie komponentu</h3>
+      </div>
+      <button class="btn-close-modal" onclick="closeModal('modal-zuken-image-view')">✕</button>
+    </div>
+    <div style="padding:20px; text-align:center; background:#ffffff; display:flex; align-items:center; justify-content:center; min-height:300px; max-height:65vh;">
+      <img id="zuken-view-modal-img" src="" alt="" style="max-width:100%; max-height:60vh; object-fit:contain; border-radius:4px;">
+    </div>
+    <div style="padding:14px 18px; background:var(--bg-card-subtle); border-top:1px solid var(--border); display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+      <div id="zuken-view-modal-desc" style="font-size:12px; color:var(--text-main); max-width:420px; line-height:1.4;"></div>
+      <button type="button" class="btn-secondary-action" id="zuken-view-modal-btn-change" style="display:inline-flex; align-items:center; gap:6px;">
+        📷 <span>Zmień zdjęcie</span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════ MODAL: WGRYWANIE / WKLEJANIE ZDJĘCIA ZE SCHOWKA (CTRL+V) ════════════ -->
+<div class="modal-backdrop" id="modal-zuken-image-upload" style="display:none; background:rgba(15,23,42,0.88); z-index:10002; backdrop-filter:blur(6px);" onclick="if(event.target===this) closeModal('modal-zuken-image-upload')">
+  <div class="modal-box" style="max-width:520px; width:92vw; background:var(--bg-card); border-radius:var(--radius-lg); overflow:hidden; box-shadow:var(--shadow-xl); border:1px solid var(--border);">
+    <div class="modal-header" style="padding:12px 18px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center;">
+      <div style="display:flex; align-items:center; gap:8px;">
+        <span style="font-size:18px;">📷</span>
+        <h3 style="margin:0; font-size:15px; font-weight:700; color:var(--text-main);">Zapisz zdjęcie w Bazie wiedzy</h3>
+      </div>
+      <button class="btn-close-modal" onclick="closeModal('modal-zuken-image-upload')">✕</button>
+    </div>
+    <div style="padding:16px 20px; display:flex; flex-direction:column; gap:14px;">
+      <div style="background:var(--bg-card-subtle); padding:10px 12px; border-radius:var(--radius-md); border:1px solid var(--border);">
+        <div style="font-size:11px; font-weight:700; color:var(--text-muted); text-transform:uppercase;">Artykuł katalogowy:</div>
+        <div style="font-size:16px; font-weight:800; font-family:var(--font-mono); color:var(--primary); margin:2px 0;" id="zuken-upload-art-code"></div>
+        <div style="font-size:12px; color:var(--text-main); line-height:1.3;" id="zuken-upload-art-desc"></div>
+      </div>
+
+      <!-- Obszar Drop / Paste -->
+      <div id="zuken-paste-dropzone" tabindex="0" style="border:2px dashed var(--primary); border-radius:var(--radius-md); padding:24px 16px; text-align:center; background:rgba(37,99,235,0.04); cursor:pointer; outline:none; transition:background 0.2s;" onclick="document.getElementById('zuken-file-input').click()">
+        <div style="font-size:36px; margin-bottom:6px;">📋</div>
+        <div style="font-weight:700; font-size:13.5px; color:var(--text-main);">
+          Wciśnij <kbd style="background:var(--bg-card); border:1px solid var(--border); padding:2px 6px; border-radius:4px; font-family:var(--font-mono); box-shadow:0 1px 2px rgba(0,0,0,0.1);">Ctrl + V</kbd>, aby wkleić zdjęcie ze schowka
+        </div>
+        <div style="font-size:11.5px; color:var(--text-muted); margin-top:6px;">
+          lub kliknij tutaj, aby wybrać plik (JPG, PNG, WebP) z dysku
+        </div>
+        <input type="file" id="zuken-file-input" accept="image/*" style="display:none;" onchange="handleZukenImageFileSelected(this)">
+      </div>
+
+      <!-- Podgląd wybranego/wklejonego zdjęcia -->
+      <div id="zuken-upload-preview-container" style="display:none; text-align:center; padding:12px; background:#ffffff; border-radius:6px; border:1px solid var(--border);">
+        <img id="zuken-upload-preview-img" src="" alt="Podgląd" style="max-height:160px; max-width:100%; object-fit:contain;">
+        <div style="font-size:11px; color:#64748b; margin-top:6px;" id="zuken-upload-preview-info"></div>
+      </div>
+    </div>
+    <div style="padding:12px 20px; background:var(--bg-card-subtle); border-top:1px solid var(--border); display:flex; justify-content:space-between; align-items:center;">
+      <button type="button" class="btn-secondary-action" onclick="closeModal('modal-zuken-image-upload')">Anuluj</button>
+      <button type="button" class="btn-primary-action" id="zuken-btn-save-photo" style="background:linear-gradient(135deg, #0284c7 0%, #2563eb 100%); border:none; padding:8px 18px; font-size:13px; display:inline-flex; align-items:center; gap:6px;" onclick="saveZukenComponentImage()" disabled>
+        💾 <span>Zapisz w Bazie wiedzy</span>
+      </button>
+    </div>
+  </div>
+</div>
+
+
 <!-- Kontener Toastów -->
 <div class="toast-container" id="toast-container"></div>
 
@@ -2522,13 +2739,13 @@ function switchToNewDefect() {
 /* ── STATYSTYKI KPI ── */
 function renderKPIs() {
   const total = STATE.records.length;
-  const open = STATE.records.filter(r => r.status === 'open').length;
-  const fixed = STATE.records.filter(r => r.status === 'fixed').length;
+  const withSolutions = STATE.records.filter(r => (r.solutions_count || 0) > 0).length;
+  const withoutSolutions = total - withSolutions;
 
   document.getElementById('kpi-total').textContent = total;
-  document.getElementById('kpi-open').textContent = open;
-  document.getElementById('kpi-fixed').textContent = fixed;
-  document.getElementById('nav-badge-open').textContent = open;
+  document.getElementById('kpi-open').textContent = withoutSolutions;
+  document.getElementById('kpi-fixed').textContent = withSolutions;
+  document.getElementById('nav-badge-open').textContent = withoutSolutions;
 }
 
 /* ── POMOCNICZE: SKRÓT NAZWY KLIENTA ── */
@@ -2553,19 +2770,20 @@ function renderDefectsTable() {
   const qTyp = document.getElementById('filter-typ').value;
   const qStatus = document.getElementById('filter-status').value;
 
-  const expandedTerms = (qSearch && typeof expandSearchQuery === 'function') ? expandSearchQuery(qSearch) : [];
-
   const filtered = STATE.records.filter(r => {
     if (qKlient && r.klient !== qKlient) return false;
     if (qTyp && r.typ !== qTyp) return false;
-    if (qStatus && r.status !== qStatus) return false;
+    if (qStatus === 'fixed' && (r.solutions_count || 0) === 0) return false;
+    if (qStatus === 'open' && (r.solutions_count || 0) > 0) return false;
     if (qSearch) {
       const catEn = (typeof translateCategory === 'function') ? translateCategory(r.typ, 'en') : '';
-      const hay = `${r.projekt} ${r.klient} ${r.model} ${r.vin} ${r.typ} ${catEn} ${r.element || ''} ${r.opisProblem || ''} ${r.opisProblem_en || ''} ${r.opisNaprawa || ''} ${r.opisNaprawa_en || ''} ${r.created_by || ''} ${r.fixed_by || ''}`.toLowerCase();
+      const hay = `${r.projekt} ${r.klient} ${r.model} ${r.vin} ${r.typ} ${catEn} ${r.element || ''} ${r.opisProblem || ''} ${r.opisProblem_en || ''} ${r.opisNaprawa || ''} ${r.opisNaprawa_en || ''} ${r.created_by || ''}`.toLowerCase();
       
-      const directMatch = hay.includes(qSearch);
-      const synonymMatch = expandedTerms.length > 0 && expandedTerms.some(term => hay.includes(term));
-      if (!directMatch && !synonymMatch) return false;
+      if (typeof matchSearchQuery === 'function') {
+        if (!matchSearchQuery(hay, qSearch)) return false;
+      } else {
+        if (!hay.includes(qSearch)) return false;
+      }
     }
     return true;
   });
@@ -2578,9 +2796,12 @@ function renderDefectsTable() {
 
   tbody.innerHTML = filtered.map(r => {
     const isSelected = r.id === STATE.selectedRecordId;
-    const isFixed = r.status === 'fixed';
+    const solCount = r.solutions_count || 0;
+    const hasSolutions = solCount > 0;
     const clientShort = getClientShortName(r.klient);
-    const statusLabel = typeof t === 'function' ? t('status.' + r.status) : (isFixed ? 'Naprawiona' : 'Otwarta');
+    const solLabel = hasSolutions
+      ? `💡 ${solCount} ${solCount === 1 ? (CURRENT_LANG === 'en' ? 'variant' : 'wariant') : (CURRENT_LANG === 'en' ? 'variants' : 'warianty')}`
+      : (typeof t === 'function' ? t('solutions.noSolutions') : (CURRENT_LANG === 'en' ? 'No solutions' : 'Brak wariantów'));
     
     // Wybór wersji opisu: w trybie EN wyświetl opisProblem_en jeśli dostępny
     const hasEnProb = !!(r.opisProblem_en && r.opisProblem_en.trim());
@@ -2600,9 +2821,9 @@ function renderDefectsTable() {
     return `
       <tr class="${isSelected ? 'selected' : ''}" onclick="selectRecord('${r.id}')" ondblclick="openDefectPreview('${r.id}')" title="Kliknij, aby podglądnąć w panelu bocznym. Podwójne kliknięcie otwiera pełne okno podglądu usterki.">
         <td>
-          <span class="status-badge ${isFixed ? 'fixed' : 'open'}">
-            <span class="dot"></span>
-            ${statusLabel}
+          <span class="status-badge ${hasSolutions ? 'fixed' : 'open'}" style="${hasSolutions ? 'background:rgba(16, 185, 129, 0.12); color:var(--green); border:1px solid rgba(16, 185, 129, 0.3);' : 'background:var(--bg-card-subtle); color:var(--text-dim); border:1px solid var(--border);'} font-weight:600; font-size:11.5px; padding:3px 8px; border-radius:12px; display:inline-flex; align-items:center; gap:5px; white-space:nowrap;">
+            <span class="dot" style="background:${hasSolutions ? 'var(--green)' : 'var(--text-dim)'};"></span>
+            ${solLabel}
           </span>
         </td>
         <td>
@@ -2673,13 +2894,19 @@ async function selectRecord(recId) {
     ? (hasEnProb ? '<span class="badge-lang-tag badge-lang-en">EN</span>' : '<span class="badge-lang-tag badge-lang-pl">PL</span>')
     : '';
 
+  const solCount = r.solutions_count || 0;
+  const hasSolutions = solCount > 0;
+  const solLabel = hasSolutions
+    ? `💡 ${solCount} ${solCount === 1 ? (CURRENT_LANG === 'en' ? 'variant' : 'wariant') : (CURRENT_LANG === 'en' ? 'variants' : 'warianty')}`
+    : (typeof t === 'function' ? t('solutions.noSolutions') : (CURRENT_LANG === 'en' ? 'No solutions' : 'Brak wariantów'));
+
   content.innerHTML = `
     <div class="detail-header-card">
       <div class="detail-top-row">
         <div>
-          <span class="status-badge ${isFixed ? 'fixed' : 'open'}" style="margin-bottom:6px;">
-            <span class="dot"></span>
-            ${statusLabel}
+          <span class="status-badge ${hasSolutions ? 'fixed' : 'open'}" style="${hasSolutions ? 'background:rgba(16, 185, 129, 0.12); color:var(--green); border:1px solid rgba(16, 185, 129, 0.3);' : 'background:var(--bg-card-subtle); color:var(--text-dim); border:1px solid var(--border);'} font-weight:600; font-size:11.5px; padding:3px 8px; border-radius:12px; display:inline-flex; align-items:center; gap:5px; margin-bottom:6px;">
+            <span class="dot" style="background:${hasSolutions ? 'var(--green)' : 'var(--text-dim)'};"></span>
+            ${solLabel}
           </span>
           <div class="detail-title">${escapeHtml(r.klient)} — ${escapeHtml(r.model)}</div>
         </div>
@@ -2702,31 +2929,29 @@ async function selectRecord(recId) {
           <label>${t('detail.createdDate')}</label>
           <div class="val">${formatDateTime(r.created)}</div>
         </div>
+        ${r.vin ? `
         <div class="meta-field">
-          <label>${t('detail.fixedBy')}</label>
-          <div class="val" style="${isFixed ? 'color:var(--green); font-weight:600;' : ''}">${isFixed ? escapeHtml(r.fixed_by || 'Technik') : '—'}</div>
+          <label>VIN</label>
+          <div class="val" style="font-family:var(--font-mono); font-size:12px;">${escapeHtml(r.vin)}</div>
         </div>
+        ` : ''}
+        ${r.element ? `
         <div class="meta-field">
-          <label>${t('detail.fixedDate')}</label>
-          <div class="val" style="${isFixed && r.fixed_at ? 'color:var(--green); font-weight:600;' : ''}">${isFixed && r.fixed_at ? formatDateTime(r.fixed_at) : '—'}</div>
+          <label>${t('detail.element')}</label>
+          <div class="val">${escapeHtml(r.element)}</div>
         </div>
+        ` : ''}
       </div>
 
       <div class="detail-actions-row">
         <button class="btn-secondary-action" onclick="openDefectPreview('${r.id}')" title="${t('detail.title')}">
           🔍 ${t('table.btnDetails')}
         </button>
-        ${!isFixed ? `
-          <button class="btn-primary-action" onclick="markAsFixed('${r.id}')">
-            ✓ ${t('detail.btnMarkFixed')}
-          </button>
-        ` : `
-          <button class="btn-secondary-action" onclick="reopenDefect('${r.id}')">
-            ↺ ${t('detail.btnMarkOpen')}
-          </button>
-        `}
         <button class="btn-secondary-action" onclick="startEditRecord('${r.id}')">
           ✏ ${t('table.btnEdit')}
+        </button>
+        <button class="btn-primary-action" style="padding:5px 12px; font-size:12px; background:linear-gradient(135deg, #0284c7 0%, #2563eb 100%); border:none; box-shadow:0 2px 8px rgba(37,99,235,0.3);" onclick="openAiDiagnosisForRecord('${r.id}')" title="Podpowiedź diagnostyczna ze schematu Zuken">
+          ✨ ${typeof t === 'function' ? t('zuken.btnDiagnose') : 'Asystent Zuken'}
         </button>
         <button class="btn-secondary-action" style="color:var(--red);" onclick="deleteRecordConfirm('${r.id}')">
           🗑 ${t('table.btnDelete')}
@@ -2790,8 +3015,11 @@ async function openDefectPreview(recId) {
   // Uaktualnij również boczny panel w tle
   selectRecord(recId);
 
-  const isFixed = r.status === 'fixed';
-  const statusLabel = typeof t === 'function' ? t('status.' + r.status) : (isFixed ? 'Naprawiona' : 'Otwarta');
+  const solCount = r.solutions_count || 0;
+  const hasSolutions = solCount > 0;
+  const solLabel = hasSolutions
+    ? `💡 ${solCount} ${solCount === 1 ? (CURRENT_LANG === 'en' ? 'variant' : 'wariant') : (CURRENT_LANG === 'en' ? 'variants' : 'warianty')}`
+    : (typeof t === 'function' ? t('solutions.noSolutions') : (CURRENT_LANG === 'en' ? 'No solutions' : 'Brak wariantów'));
   const catDisplay = (typeof translateCategory === 'function') ? translateCategory(r.typ, CURRENT_LANG) : r.typ;
 
   const hasEnProb = !!(r.opisProblem_en && r.opisProblem_en.trim());
@@ -2827,22 +3055,13 @@ async function openDefectPreview(recId) {
     <div class="detail-header-card" style="margin-bottom:0;">
       <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:14px; padding-bottom:12px; border-bottom:1px solid var(--border);">
         <div style="display:flex; align-items:center; gap:10px;">
-          <span class="status-badge ${isFixed ? 'fixed' : 'open'}" style="font-size:13px; padding:4px 12px;">
-            <span class="dot"></span>
-            ${statusLabel}
+          <span class="status-badge ${hasSolutions ? 'fixed' : 'open'}" style="${hasSolutions ? 'background:rgba(16, 185, 129, 0.12); color:var(--green); border:1px solid rgba(16, 185, 129, 0.3);' : 'background:var(--bg-card-subtle); color:var(--text-dim); border:1px solid var(--border);'} font-size:13px; font-weight:600; padding:4px 12px; border-radius:12px; display:inline-flex; align-items:center; gap:6px;">
+            <span class="dot" style="background:${hasSolutions ? 'var(--green)' : 'var(--text-dim)'};"></span>
+            ${solLabel}
           </span>
           <span style="font-size:12.5px; color:var(--text-muted);">ID: <code style="font-family:var(--font-mono); font-size:11.5px; color:var(--text-dim);">${r.id.slice(0,8)}</code></span>
         </div>
         <div class="detail-actions-row" style="margin-top:0;">
-          ${!isFixed ? `
-            <button class="btn-primary-action" onclick="markAsFixed('${r.id}')">
-              ✓ ${t('detail.btnMarkFixed')}
-            </button>
-          ` : `
-            <button class="btn-secondary-action" onclick="reopenDefect('${r.id}')">
-              ↺ ${t('detail.btnMarkOpen')}
-            </button>
-          `}
           <button class="btn-secondary-action" onclick="closeModal('modal-defect-preview'); startEditRecord('${r.id}')">
             ✏ ${t('detail.btnEdit')}
           </button>
@@ -2886,12 +3105,6 @@ async function openDefectPreview(recId) {
           <label>${t('print.createdDate')}</label>
           <div class="val">${formatDateTime(r.created)}</div>
         </div>
-        ${isFixed ? `
-        <div class="meta-field" style="grid-column: 1 / -1;">
-          <label>${t('print.fixedBy')} / ${t('print.fixedDate')}</label>
-          <div class="val" style="color:var(--green); font-weight:600;">✓ ${escapeHtml(r.fixed_by || 'Technik')} (${formatDateTime(r.fixed_at)})</div>
-        </div>
-        ` : ''}
       </div>
     </div>
 
@@ -3027,11 +3240,24 @@ async function loadRecordSolutions(recId) {
         const solOpis = (isEn && sol.opis_en && sol.opis_en.trim()) ? sol.opis_en : sol.opis;
         const langBadge = isEn ? (sol.tytul_en ? '<span class="badge-lang-tag badge-lang-en">EN</span>' : '<span class="badge-lang-tag badge-lang-pl">PL</span>') : '';
 
+        const addedByLabel = (typeof t === 'function') ? t('solutions.addedBy') : (isEn ? 'added by:' : 'dodał:');
+        const authorStr = escapeHtml(sol.created_by || 'Adam Łukasik');
+        const dateStr = sol.created ? formatDateTime(sol.created) : '';
+
         const card = document.createElement('div');
         card.className = 'solution-item-card';
         card.innerHTML = `
-          <div class="sol-header">
-            <span class="sol-title">${variantWord} ${sol.numer}: ${langBadge}${escapeHtml(solTytul)}</span>
+          <div class="sol-header" style="flex-direction:column; align-items:flex-start; gap:4px; margin-bottom:8px;">
+            <div style="display:flex; align-items:center; justify-content:space-between; width:100%; flex-wrap:wrap; gap:6px;">
+              <span class="sol-title" style="font-size:13.5px; font-weight:700;">${variantWord} ${sol.numer}: ${langBadge}${escapeHtml(solTytul)}</span>
+              <button type="button" class="btn-secondary-action" style="padding:3px 9px; font-size:11.5px; font-weight:600; display:inline-flex; align-items:center; gap:5px; border-color:var(--primary); color:var(--primary); background:rgba(2, 132, 199, 0.08); border-radius:var(--radius-sm);" onclick="openAiDiagnosisForSolution('${escapeHtml(recId)}', '${escapeHtml(sol.id)}')" title="${(typeof t === 'function' ? t('zuken.btnSolutionSchematic') : '') || 'Schemat Zuken'}">
+                <span>📐</span> <span>${(typeof t === 'function' ? t('zuken.btnSolutionSchematic') : '') || 'Schemat Zuken'}</span>
+              </button>
+            </div>
+            <div style="font-size:11.5px; color:var(--text-dim); display:flex; align-items:center; gap:6px;">
+              <span>👤 ${addedByLabel} <b style="color:var(--text-main); font-weight:600;">${authorStr}</b></span>
+              ${dateStr ? `<span style="opacity:0.4;">•</span><span>🕒 ${dateStr}</span>` : ''}
+            </div>
           </div>
           <div style="font-size:13px; line-height:1.45; white-space:pre-wrap; margin-bottom:10px;">${escapeHtml(solOpis || noDescMsg)}</div>
           <div id="sol-photos-${t.prefix}-${sol.id}" class="photo-gallery-grid" style="grid-template-columns: repeat(auto-fill, minmax(100px, 120px)); gap: 8px; margin-bottom: 8px;"></div>
@@ -3231,11 +3457,10 @@ function renderFormDropdowns() {
 
   // Zachowaj aktualne wartości formularza, aby tło odświeżenie (np. polling co 4 s)
   // nie wyczyścił danych podczas dodawania lub edycji usterki.
-  const curProjekt = projSel.value;
-  const curKlient = klientSel.value;
-  const curModel = modelSel.value;
-  const curTyp = typSel.value;
-  const curFix = document.getElementById('f-fixed-by').value;
+  const curProjekt = projSel ? projSel.value : '';
+  const curKlient = klientSel ? klientSel.value : '';
+  const curModel = modelSel ? modelSel.value : '';
+  const curTyp = typSel ? typSel.value : '';
 
   // Projekty PS
   const projektyDict = STATE.lists.projekty || {};
@@ -3254,13 +3479,12 @@ function renderFormDropdowns() {
   const chooseType = isEn ? '— Select defect category —' : '— Wybierz typ usterki —';
   const allClientsLabel = isEn ? 'All Clients' : 'Wszyscy klienci';
   const allTypesLabel = isEn ? 'All Categories' : 'Wszystkie typy';
-  const noneFix = isEn ? '— none —' : '— brak —';
 
-  projSel.innerHTML = `<option value="">${choosePs}</option>` + psList.map(p => `<option value="${escapeHtml(p)}">${escapeHtml(p)}</option>`).join('');
+  if (projSel) projSel.innerHTML = `<option value="">${choosePs}</option>` + psList.map(p => `<option value="${escapeHtml(p)}">${escapeHtml(p)}</option>`).join('');
 
-  klientSel.innerHTML = `<option value="">${chooseClient}</option>` + (STATE.lists.klienci || []).map(k => `<option value="${escapeHtml(k)}">${escapeHtml(k)}</option>`).join('');
-  modelSel.innerHTML = `<option value="">${chooseModel}</option>` + (STATE.lists.modele || []).map(m => `<option value="${escapeHtml(m)}">${escapeHtml(m)}</option>`).join('');
-  typSel.innerHTML = `<option value="">${chooseType}</option>` + (STATE.lists.typy || []).map(t => {
+  if (klientSel) klientSel.innerHTML = `<option value="">${chooseClient}</option>` + (STATE.lists.klienci || []).map(k => `<option value="${escapeHtml(k)}">${escapeHtml(k)}</option>`).join('');
+  if (modelSel) modelSel.innerHTML = `<option value="">${chooseModel}</option>` + (STATE.lists.modele || []).map(m => `<option value="${escapeHtml(m)}">${escapeHtml(m)}</option>`).join('');
+  if (typSel) typSel.innerHTML = `<option value="">${chooseType}</option>` + (STATE.lists.typy || []).map(t => {
     const displayT = (typeof translateCategory === 'function') ? translateCategory(t, CURRENT_LANG) : t;
     return `<option value="${escapeHtml(t)}">${escapeHtml(displayT)}</option>`;
   }).join('');
@@ -3268,27 +3492,21 @@ function renderFormDropdowns() {
   // Filtry w dashboardzie
   const fk = document.getElementById('filter-klient');
   const ft = document.getElementById('filter-typ');
-  const curFk = fk.value;
-  const curFt = ft.value;
-  fk.innerHTML = `<option value="">${allClientsLabel}</option>` + (STATE.lists.klienci || []).map(k => `<option value="${escapeHtml(k)}">${escapeHtml(k)}</option>`).join('');
-  ft.innerHTML = `<option value="">${allTypesLabel}</option>` + (STATE.lists.typy || []).map(t => {
+  const curFk = fk ? fk.value : '';
+  const curFt = ft ? ft.value : '';
+  if (fk) fk.innerHTML = `<option value="">${allClientsLabel}</option>` + (STATE.lists.klienci || []).map(k => `<option value="${escapeHtml(k)}">${escapeHtml(k)}</option>`).join('');
+  if (ft) ft.innerHTML = `<option value="">${allTypesLabel}</option>` + (STATE.lists.typy || []).map(t => {
     const displayT = (typeof translateCategory === 'function') ? translateCategory(t, CURRENT_LANG) : t;
     return `<option value="${escapeHtml(t)}">${escapeHtml(displayT)}</option>`;
   }).join('');
-  fk.value = curFk;
-  ft.value = curFt;
-
-  // Lista 'Naprawione przez'
-  const fixSel = document.getElementById('f-fixed-by');
-  fixSel.innerHTML = `<option value="">${noneFix}</option>` + STATE.users.map(u => `<option value="${escapeHtml(u.full_name || u.username)}">${escapeHtml(u.full_name || u.username)}</option>`).join('');
+  if (fk) fk.value = curFk;
+  if (ft) ft.value = curFt;
 
   // Przywróć wartości formularza; jeśli wartość nie istnieje w opcjach, dodaj ją
-  // (ważne przy edycji starych rekordów, gdy słowniki mogły ulec zmianie).
-  ensureOptionAndSet(projSel, curProjekt);
-  ensureOptionAndSet(klientSel, curKlient);
-  ensureOptionAndSet(modelSel, curModel);
-  ensureOptionAndSet(typSel, curTyp);
-  ensureOptionAndSet(fixSel, curFix);
+  if (projSel) ensureOptionAndSet(projSel, curProjekt);
+  if (klientSel) ensureOptionAndSet(klientSel, curKlient);
+  if (modelSel) ensureOptionAndSet(modelSel, curModel);
+  if (typSel) ensureOptionAndSet(typSel, curTyp);
 }
 
 function ensureOptionAndSet(selectEl, value) {
@@ -3405,8 +3623,6 @@ document.getElementById('form-defect-submit').addEventListener('submit', async (
   const vin = document.getElementById('f-vin').value.trim();
   const element = document.getElementById('f-element').value.trim();
   const opisProblem = document.getElementById('f-opis-problem').value.trim();
-  const status = document.getElementById('f-status').value;
-  const fixedBy = document.getElementById('f-fixed-by').value;
 
   if (!klient || !model || !typ || !opisProblem) {
     showToast('Wypełnij wszystkie wymagane pola (*)', 'error');
@@ -3419,6 +3635,7 @@ document.getElementById('form-defect-submit').addEventListener('submit', async (
   if (btnAddSol) btnAddSol.disabled = true;
 
   const recId = STATE.editingRecordId || generateUUID();
+  const existingRecord = STATE.editingRecordId ? STATE.records.find(r => r.id === recId) : null;
   const payload = {
     id: recId,
     projekt: projekt || '—',
@@ -3428,10 +3645,8 @@ document.getElementById('form-defect-submit').addEventListener('submit', async (
     vin,
     element,
     opisProblem,
-    status,
-    created_by: STATE.activeUser.full_name || STATE.activeUser.username || 'Technik',
-    fixed_by: status === 'fixed' ? (fixedBy || STATE.activeUser.full_name || 'Technik') : '',
-    fixed_at: status === 'fixed' ? new Date().toISOString() : null
+    status: existingRecord ? (existingRecord.status || 'open') : 'open',
+    created_by: existingRecord ? (existingRecord.created_by || STATE.activeUser.full_name || 'Adam Łukasik') : (STATE.activeUser.full_name || STATE.activeUser.username || 'Adam Łukasik')
   };
 
   try {
@@ -3502,8 +3717,6 @@ async function startEditRecord(recId) {
   document.getElementById('f-vin').value = r.vin || '';
   document.getElementById('f-element').value = r.element || '';
   document.getElementById('f-opis-problem').value = r.opisProblem || '';
-  document.getElementById('f-status').value = r.status || 'open';
-  document.getElementById('f-fixed-by').value = r.fixed_by || '';
 
   // Wczytaj istniejące zdjęcia i dokumenty, aby były widoczne w formularzu
   // i można je było usunąć podczas edycji.
@@ -3631,11 +3844,13 @@ async function saveAllFormSolutions() {
     if (solId) {
       const tInput = document.getElementById(`sol-title-input-${solId}`);
       const oArea = document.getElementById(`sol-opis-input-${solId}`);
-      if (tInput || oArea) {
+      const aSelect = document.getElementById(`sol-author-select-${solId}`);
+      if (tInput || oArea || aSelect) {
         const t = tInput ? (tInput.value || '').trim() : '';
         const o = oArea ? (oArea.value || '').trim() : '';
+        const a = aSelect ? aSelect.value : undefined;
         if (t) {
-          promises.push(apiCall(`/api/solutions/${solId}`, 'PUT', { tytul: t, opis: o }).catch(console.error));
+          promises.push(apiCall(`/api/solutions/${solId}`, 'PUT', { tytul: t, opis: o, created_by: a }).catch(console.error));
         }
       }
     }
@@ -3716,8 +3931,10 @@ async function loadFormSolutions(recId) {
   const box = document.getElementById('form-solutions-list');
   if (!box) return;
 
+  const isEn = (typeof CURRENT_LANG !== 'undefined' && CURRENT_LANG === 'en');
+
   if (!recId) {
-    box.innerHTML = '<div style="font-size:12px; color:var(--text-dim); padding:8px 0;">Zapisz zgłoszenie, aby dodać warianty naprawy.</div>';
+    box.innerHTML = `<div style="font-size:12px; color:var(--text-dim); padding:8px 0;">${isEn ? 'Save defect report to add repair variants.' : 'Zapisz zgłoszenie, aby dodać warianty naprawy.'}</div>`;
     return;
   }
 
@@ -3727,15 +3944,15 @@ async function loadFormSolutions(recId) {
     await saveAllFormSolutions();
   }
 
-  box.innerHTML = '<div style="font-size:12px; color:var(--text-dim); padding:8px 0;">Ładowanie wariantów...</div>';
+  box.innerHTML = `<div style="font-size:12px; color:var(--text-dim); padding:8px 0;">${isEn ? 'Loading variants...' : 'Ładowanie wariantów...'}</div>`;
 
   try {
     const solutions = await apiCall(`/api/records/${recId}/solutions`);
     if (!solutions || solutions.length === 0) {
       box.innerHTML = `
         <div style="font-size:12.5px; color:var(--text-muted); background:var(--bg-card-subtle); padding:16px; border-radius:var(--radius-md); border:1px dashed var(--border); text-align:center;">
-          Brak wariantów napraw dla tej usterki.<br>
-          <button type="button" class="btn-primary-action" style="margin-top:10px; font-size:12px;" onclick="formPromptAddSolution('${recId}')">+ Dodaj pierwszy wariant naprawy</button>
+          ${isEn ? 'No repair variants for this defect.' : 'Brak wariantów napraw dla tej usterki.'}<br>
+          <button type="button" class="btn-primary-action" style="margin-top:10px; font-size:12px;" onclick="formPromptAddSolution('${recId}')">${isEn ? '+ Add first repair variant' : '+ Dodaj pierwszy wariant naprawy'}</button>
         </div>
       `;
       return;
@@ -3778,6 +3995,20 @@ async function loadFormSolutions(recId) {
         highlightActiveSolutionCard(sol.id);
       };
 
+      const addedByLabel = (typeof t === 'function') ? t('solutions.addedBy') : (isEn ? 'added by:' : 'dodał:');
+      const currentAuthor = (sol.created_by || '').trim() || (STATE.activeUser ? (STATE.activeUser.full_name || STATE.activeUser.username) : '') || 'Adam Łukasik';
+      const dateStr = sol.created ? formatDateTime(sol.created) : '';
+
+      // Przygotowanie listy techników do wyboru autora
+      const allUsersList = Array.isArray(STATE.users) ? STATE.users : [];
+      const userNames = allUsersList.map(u => (u.full_name || u.username || '').trim()).filter(Boolean);
+      if (!userNames.includes('Adam Łukasik')) userNames.push('Adam Łukasik');
+      if (currentAuthor && !userNames.includes(currentAuthor)) userNames.unshift(currentAuthor);
+
+      const authorOptionsHtml = userNames.map(name =>
+        `<option value="${escapeHtml(name)}" ${name === currentAuthor ? 'selected' : ''}>${escapeHtml(name)}</option>`
+      ).join('');
+
       card.innerHTML = `
         <div class="sol-header" style="flex-wrap:wrap; gap:8px; align-items:center;">
           <div style="display:flex; align-items:center; gap:8px; flex:1; min-width:240px;">
@@ -3792,6 +4023,15 @@ async function loadFormSolutions(recId) {
             <button type="button" class="btn-secondary-action" style="padding:4px 9px; font-size:11.5px; color:var(--red);" onclick="event.stopPropagation(); deleteSolution('${sol.id}', '${recId}', true)" title="Usuń ten wariant">🗑 Usuń wariant</button>
           </div>
         </div>
+        <div style="font-size:12px; color:var(--text-dim); margin:-4px 0 10px 4px; display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+          <span style="font-weight:600; color:var(--text-main); display:inline-flex; align-items:center; gap:4px;">
+            👤 ${addedByLabel}
+          </span>
+          <select id="sol-author-select-${sol.id}" class="sol-author-select" style="font-size:12px; font-weight:600; padding:2px 8px; height:28px; background:var(--bg-input); border:1px solid var(--border); border-radius:var(--radius-sm); color:var(--text-main); cursor:pointer;" title="${isEn ? 'Choose or change author of this variant' : 'Wybierz lub zmień autora tego wariantu'}">
+            ${authorOptionsHtml}
+          </select>
+          ${dateStr ? `<span style="opacity:0.4;">•</span><span>🕒 ${dateStr}</span>` : ''}
+        </div>
         <div class="form-group" style="margin-bottom:10px;">
           <textarea id="sol-opis-input-${sol.id}" class="sol-opis-textarea" placeholder="Dokładny opis rozwiązania, diagnozy lub kroków naprawczych wariantu..." style="min-height:85px; width:100%; font-size:13.5px; line-height:1.45;">${escapeHtml(sol.opis || '')}</textarea>
         </div>
@@ -3802,6 +4042,7 @@ async function loadFormSolutions(recId) {
 
       const titleInp = card.querySelector(`#sol-title-input-${sol.id}`);
       const opisArea = card.querySelector(`#sol-opis-input-${sol.id}`);
+      const authorSelect = card.querySelector(`#sol-author-select-${sol.id}`);
 
       let saveTimer = null;
       const doAutoSave = () => {
@@ -3809,8 +4050,10 @@ async function loadFormSolutions(recId) {
         saveTimer = setTimeout(async () => {
           const t = (titleInp.value || '').trim() || `Wariant ${sol.numer}`;
           const o = (opisArea.value || '').trim();
+          const a = authorSelect ? authorSelect.value : (sol.created_by || 'Adam Łukasik');
           try {
-            await apiCall(`/api/solutions/${sol.id}`, 'PUT', { tytul: t, opis: o });
+            await apiCall(`/api/solutions/${sol.id}`, 'PUT', { tytul: t, opis: o, created_by: a });
+            sol.created_by = a;
           } catch (e) {
             console.error('Błąd auto-zapisu wariantu:', e);
           }
@@ -3822,15 +4065,32 @@ async function loadFormSolutions(recId) {
         clearTimeout(saveTimer);
         const t = (titleInp.value || '').trim() || `Wariant ${sol.numer}`;
         const o = (opisArea.value || '').trim();
-        apiCall(`/api/solutions/${sol.id}`, 'PUT', { tytul: t, opis: o }).catch(console.error);
+        const a = authorSelect ? authorSelect.value : (sol.created_by || 'Adam Łukasik');
+        apiCall(`/api/solutions/${sol.id}`, 'PUT', { tytul: t, opis: o, created_by: a }).catch(console.error);
       });
       opisArea.addEventListener('input', doAutoSave);
       opisArea.addEventListener('change', () => {
         clearTimeout(saveTimer);
         const t = (titleInp.value || '').trim() || `Wariant ${sol.numer}`;
         const o = (opisArea.value || '').trim();
-        apiCall(`/api/solutions/${sol.id}`, 'PUT', { tytul: t, opis: o }).catch(console.error);
+        const a = authorSelect ? authorSelect.value : (sol.created_by || 'Adam Łukasik');
+        apiCall(`/api/solutions/${sol.id}`, 'PUT', { tytul: t, opis: o, created_by: a }).catch(console.error);
       });
+      if (authorSelect) {
+        authorSelect.addEventListener('change', () => {
+          clearTimeout(saveTimer);
+          const t = (titleInp.value || '').trim() || `Wariant ${sol.numer}`;
+          const o = (opisArea.value || '').trim();
+          const a = authorSelect.value;
+          apiCall(`/api/solutions/${sol.id}`, 'PUT', { tytul: t, opis: o, created_by: a })
+            .then(() => {
+              sol.created_by = a;
+              showToast(isEn ? `Updated author: ${a}` : `Zaktualizowano autora: ${a}`, 'success');
+              loadRecordSolutions(recId);
+            })
+            .catch(console.error);
+        });
+      }
 
       renderFormSolutionPhotos(sol.id, recId);
       renderFormSolutionDocs(sol.id, recId);
@@ -3840,7 +4100,7 @@ async function loadFormSolutions(recId) {
       highlightActiveSolutionCard(STATE.activeSolutionId);
     }
   } catch(e) {
-    box.innerHTML = `<div style="font-size:12px; color:var(--red);">Błąd ładowania wariantów: ${e.message}</div>`;
+    box.innerHTML = `<div style="font-size:12px; color:var(--red);">${isEn ? 'Error loading variants: ' : 'Błąd ładowania wariantów: '}${escapeHtml(e.message || String(e))}</div>`;
   }
 }
 
@@ -4723,6 +4983,17 @@ document.getElementById('btn-export-csv').addEventListener('click', () => {
 });
 
 /* ── KOPIE ZAPASOWE I NARZĘDZIA ── */
+document.getElementById('btn-flush-wal-db')?.addEventListener('click', async () => {
+  try {
+    showToast('Scalanie bufora bazy danych...', 'info');
+    const res = await apiCall('/api/admin/flush-db', 'POST');
+    alert(res.message || 'Baza została pomyślnie scalona do pliku rejestr_usterek.db! Możesz bezpiecznie skopiować ten plik na pendrive.');
+    showToast('Baza danych gotowa do bezpiecznego skopiowania!', 'success');
+  } catch(err) {
+    showToast(`Błąd scalania: ${err.message}`, 'error');
+  }
+});
+
 document.getElementById('btn-export-backup-json').addEventListener('click', () => {
   const data = { records: STATE.records, lists: STATE.lists, export_date: new Date().toISOString() };
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
@@ -5460,12 +5731,1286 @@ function generateUUID() {
 }
 
 function showToast(msg, type = 'info') {
-  const cont = document.getElementById('toast-container');
+  let cont = document.getElementById('toast-container');
+  if (!cont) {
+    cont = document.createElement('div');
+    cont.id = 'toast-container';
+    cont.className = 'toast-container';
+    document.body.appendChild(cont);
+  }
   const t = document.createElement('div');
   t.className = `toast-msg ${type}`;
-  t.innerHTML = `<span>${escapeHtml(msg)}</span>`;
+  let icon = 'ℹ️';
+  if (type === 'success') icon = '✅';
+  else if (type === 'error') icon = '⚠️';
+  else if (type === 'warning') icon = '🔔';
+  t.innerHTML = `<span style="font-size:14px; flex-shrink:0;">${icon}</span><span style="flex:1;">${escapeHtml(msg)}</span>`;
   cont.appendChild(t);
-  setTimeout(() => t.remove(), 3200);
+  setTimeout(() => {
+    t.style.opacity = '0';
+    t.style.transform = 'translateY(12px)';
+    t.style.transition = 'opacity 0.25s ease, transform 0.25s ease';
+    setTimeout(() => t.remove(), 260);
+  }, 3600);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   ASYSTENT DIAGNOSTYCZNY ZUKEN E3 (100% OFFLINE)
+   ═══════════════════════════════════════════════════════════════════ */
+let ZUKEN_STATE = {
+  currentContext: {
+    record_id: '',
+    solution_id: '',
+    solution_title: '',
+    element: '',
+    typ: '',
+    opisProblem: '',
+    projekt: '',
+    klient: '',
+    vin: ''
+  },
+  lastResults: null
+};
+
+function openAiDiagnosisModal(ctx = {}) {
+  ZUKEN_STATE.currentContext = Object.assign({
+    record_id: '',
+    solution_id: '',
+    solution_title: '',
+    element: '',
+    typ: '',
+    opisProblem: '',
+    projekt: '',
+    klient: '',
+    vin: ''
+  }, ctx);
+
+  const modal = document.getElementById('modal-zuken-diagnose');
+  const input = document.getElementById('zuken-search-input');
+  const projSelect = document.getElementById('zuken-context-project-select');
+
+  // Wypełnij listę dostępnych projektów PS
+  if (projSelect) {
+    const activeVal = ctx.projekt || STATE.lastSelectedPS || '';
+    let options = '<option value="">Wszystkie schematy (Uniwersalny)</option>';
+    
+    const psList = new Set();
+    (STATE.projects || []).forEach(p => {
+      if (p.numer) psList.add(p.numer);
+      if (p.kod) psList.add(p.kod);
+    });
+    psList.add('PS011871');
+
+    Array.from(psList).filter(Boolean).sort().forEach(ps => {
+      const isSel = (ps.toUpperCase() === (activeVal || '').toUpperCase()) ? 'selected' : '';
+      options += `<option value="${escapeHtml(ps)}" ${isSel}>${escapeHtml(ps)}</option>`;
+    });
+    projSelect.innerHTML = options;
+  }
+
+  updateZukenContextBadge();
+
+  const defQuery = (ctx.default_query || ctx.element || ctx.opisProblem || '').trim();
+  if (input) input.value = defQuery;
+
+  modal.style.display = 'flex';
+  if (defQuery) {
+    runAiDiagnosisSearch();
+  } else {
+    document.getElementById('zuken-results-body').innerHTML = `
+      <div style="text-align:center; padding:50px 20px; color:var(--text-muted);">
+        <div style="font-size:38px; margin-bottom:12px;">✨</div>
+        <div style="font-size:16px; font-weight:700; color:var(--text-main); margin-bottom:6px;">Wyszukiwarka schematów i wiązek Zuken E3</div>
+        <div style="font-size:13px; max-width:550px; margin:0 auto; line-height:1.6;">
+          Wpisz <strong>numer przewodu</strong> (np. <code>185D</code>, <code>30B</code>), <strong>symbol złącza</strong> (np. <code>X132</code>, <code>X121</code>), <strong>bezpiecznik</strong> (<code>F18</code>) lub nazwę obwodu, aby sprawdzić <strong>numer arkusza w schemacie PDF</strong> oraz punkty pomiarowe.
+        </div>
+      </div>
+    `;
+    if (input) input.focus();
+  }
+}
+
+function updateZukenContextBadge() {
+  const ctxLabel = document.getElementById('zuken-active-context-label');
+  if (!ctxLabel) return;
+  const ctx = ZUKEN_STATE.currentContext || {};
+  let parts = [];
+  if (ctx.klient) {
+    parts.push(`<span>| Klient: <strong>${escapeHtml(ctx.klient)}</strong></span>`);
+  }
+  if (ctx.solution_id && ctx.solution_title) {
+    parts.push(`
+      <span style="background:rgba(2, 132, 199, 0.12); color:#0284c7; border:1px solid rgba(2, 132, 199, 0.3); padding:2px 8px; border-radius:12px; display:inline-flex; align-items:center; gap:6px; font-weight:600;">
+        <span>💡 ${escapeHtml(ctx.solution_title)}</span>
+        <button type="button" style="background:none; border:none; color:#0284c7; cursor:pointer; padding:0 2px; font-size:13px; font-weight:700; line-height:1;" onclick="clearZukenSolutionFilter()" title="Pokaż całą usterkę">✕</button>
+      </span>
+    `);
+  }
+  ctxLabel.innerHTML = parts.join(' ');
+}
+
+function clearZukenSolutionFilter() {
+  if (ZUKEN_STATE.currentContext) {
+    ZUKEN_STATE.currentContext.solution_id = '';
+    ZUKEN_STATE.currentContext.solution_title = '';
+    const input = document.getElementById('zuken-search-input');
+    if (input) {
+      input.value = (ZUKEN_STATE.currentContext.element || ZUKEN_STATE.currentContext.opisProblem || '').trim();
+    }
+  }
+  updateZukenContextBadge();
+  runAiDiagnosisSearch();
+}
+
+function onZukenProjectSelectChange(val) {
+  if (!ZUKEN_STATE.currentContext) ZUKEN_STATE.currentContext = {};
+  ZUKEN_STATE.currentContext.projekt = val;
+  const input = document.getElementById('zuken-search-input');
+  if (input && input.value.trim()) {
+    runAiDiagnosisSearch();
+  }
+}
+
+function runAiDiagnosisFromForm() {
+  const element = (document.getElementById('f-element') ? document.getElementById('f-element').value : '').trim();
+  const typ = (document.getElementById('f-typ') ? document.getElementById('f-typ').value : '').trim();
+  const opis = (document.getElementById('f-opis-problem') ? document.getElementById('f-opis-problem').value : '').trim();
+  const klient = (document.getElementById('f-klient') ? document.getElementById('f-klient').value : '').trim();
+  const vin = (document.getElementById('f-vin') ? document.getElementById('f-vin').value : '').trim();
+  const proj = STATE.lastSelectedPS || '';
+
+  openAiDiagnosisModal({
+    element: element,
+    typ: typ,
+    opisProblem: opis,
+    klient: klient,
+    projekt: proj,
+    vin: vin
+  });
+}
+
+function openAiDiagnosisForRecord(recId) {
+  const r = (STATE.records || []).find(x => x.id === recId);
+  if (!r) return;
+
+  openAiDiagnosisModal({
+    record_id: r.id || recId,
+    element: r.element || '',
+    typ: r.typ || '',
+    opisProblem: r.opisProblem || '',
+    projekt: r.projekt || '',
+    klient: r.klient || '',
+    vin: r.vin || ''
+  });
+}
+
+async function openAiDiagnosisForSolution(recId, solId) {
+  const r = (STATE.records || []).find(x => x.id === recId);
+  let sols = [];
+  try {
+    sols = await apiCall(`/api/records/${recId}/solutions`);
+  } catch(e) {
+    sols = (r && r.solutions) ? r.solutions : [];
+  }
+  const sol = (sols || []).find(s => s.id === solId);
+
+  let solTitle = sol ? (sol.tytul || '') : '';
+  let solDesc = sol ? (sol.opis || '') : '';
+  const solText = `${solTitle} ${solDesc}`.trim();
+  const mSyms = solText.match(/\b(?:[XFKM]-?[0-9]{1,4}[A-Z]?|X[0-9]{2,4}|RT[0-9]+)\b/gi) || [];
+  const cleanSyms = Array.from(new Set(mSyms.map(s => s.toUpperCase()))).join(' ');
+  const defaultQuery = cleanSyms || solTitle || (r ? r.element : '');
+
+  openAiDiagnosisModal({
+    record_id: recId,
+    solution_id: solId,
+    solution_title: sol ? `Wariant ${sol.numer}: ${solTitle}` : 'Wariant naprawy',
+    default_query: defaultQuery,
+    element: r ? (r.element || '') : '',
+    typ: r ? (r.typ || '') : '',
+    opisProblem: r ? (r.opisProblem || '') : '',
+    projekt: r ? (r.projekt || '') : (STATE.lastSelectedPS || ''),
+    klient: r ? (r.klient || '') : '',
+    vin: r ? (r.vin || '') : ''
+  });
+}
+
+function applyZukenQuickTag(tag) {
+  const inp = document.getElementById('zuken-search-input');
+  if (inp) inp.value = tag;
+  runAiDiagnosisSearch();
+}
+
+async function runAiDiagnosisSearch() {
+  const query = (document.getElementById('zuken-search-input').value || '').trim();
+  const resBody = document.getElementById('zuken-results-body');
+
+  resBody.innerHTML = `
+    <div style="text-align:center; padding:60px 20px; color:var(--text-muted);">
+      <div class="spinner" style="width:32px; height:32px; border:3px solid var(--border); border-top-color:var(--primary); border-radius:50%; animation:spin 0.8s linear infinite; margin:0 auto 14px auto;"></div>
+      <div style="font-size:14px; font-weight:600; color:var(--text-main);">Analizowanie połączeń Zuken E3 i bazy napraw...</div>
+      <div style="font-size:12px; margin-top:4px;">Przeszukiwanie topologii wiązki dla: "<strong>${escapeHtml(query || 'Wszystkie')}</strong>"</div>
+    </div>
+  `;
+
+  try {
+    const payload = {
+      element: query,
+      opisProblem: ZUKEN_STATE.currentContext.opisProblem || query,
+      typ: ZUKEN_STATE.currentContext.typ || '',
+      projekt: ZUKEN_STATE.currentContext.projekt || STATE.lastSelectedPS || '',
+      klient: ZUKEN_STATE.currentContext.klient || '',
+      vin: ZUKEN_STATE.currentContext.vin || '',
+      record_id: ZUKEN_STATE.currentContext.record_id || '',
+      solution_id: ZUKEN_STATE.currentContext.solution_id || ''
+    };
+
+    const res = await apiCall('/api/ai/diagnose', 'POST', payload);
+    ZUKEN_STATE.lastResults = res;
+    renderDiagnosisResults(res);
+  } catch (err) {
+    resBody.innerHTML = `
+      <div style="padding:20px; background:var(--red-bg); color:var(--red-text); border-radius:var(--radius-md); font-size:13px;">
+        ⚠️ <strong>Błąd diagnostyki:</strong> ${escapeHtml(err.message || String(err))}
+      </div>
+    `;
+  }
+}
+
+function renderDiagnosisResults(data) {
+  const resBody = document.getElementById('zuken-results-body');
+  if (!data || data.status !== 'success') {
+    resBody.innerHTML = `<div style="padding:20px; color:var(--text-muted); text-align:center;">Brak danych diagnostycznych.</div>`;
+    return;
+  }
+
+  let html = '';
+
+  // 0. Baner zogniskowanego wariantu (jeśli wybrano konkretny wariant)
+  if (data.focused_solution) {
+    const fs = data.focused_solution;
+    html += `
+      <div style="padding:12px 16px; background:linear-gradient(135deg, rgba(2, 132, 199, 0.12), rgba(37, 99, 235, 0.08)); border:1px solid rgba(2, 132, 199, 0.35); border-radius:var(--radius-md); display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+        <div style="display:flex; align-items:center; gap:10px;">
+          <span style="font-size:22px;">💡</span>
+          <div>
+            <div style="font-size:11.5px; font-weight:700; color:#0284c7; text-transform:uppercase; letter-spacing:0.5px;">Ukierunkowano na Wariant #${fs.numer}</div>
+            <div style="font-size:13.5px; font-weight:700; color:var(--text-main);">${escapeHtml(fs.tytul)}</div>
+            ${fs.opis ? `<div style="font-size:12px; color:var(--text-muted); margin-top:2px; max-width:680px; line-height:1.4;">${escapeHtml(fs.opis)}</div>` : ''}
+          </div>
+        </div>
+        <button type="button" class="btn-secondary-action" style="font-size:11.5px; padding:4px 10px;" onclick="clearZukenSolutionFilter()">
+          🔄 Pokaż całą usterkę
+        </button>
+      </div>
+    `;
+  } else if (data.current_solutions && data.current_solutions.length > 0) {
+    html += `
+      <div style="padding:8px 12px; background:var(--bg-card-subtle); border:1px solid var(--border); border-radius:var(--radius-md); display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+        <span style="font-size:11.5px; font-weight:700; color:var(--text-muted);">Dostępne warianty naprawy:</span>
+        ${data.current_solutions.map(s => `
+          <button type="button" class="btn-secondary-action" style="font-size:11px; padding:2px 8px; border-radius:12px; display:inline-flex; align-items:center; gap:4px;" onclick="openAiDiagnosisForSolution('${escapeHtml(s.record_id)}', '${escapeHtml(s.id)}')">
+            💡 Wariant ${s.numer}: ${escapeHtml(s.tytul)}
+          </button>
+        `).join('')}
+      </div>
+    `;
+  }
+
+  // 1. Ostrzeżenia o rewizjach wiązek (np. zmiana drzwi)
+  if (data.revision_notes && data.revision_notes.length > 0) {
+    data.revision_notes.forEach(rev => {
+      const isWarn = rev.type === 'warning';
+      const bg = isWarn ? 'rgba(234, 179, 8, 0.12)' : 'rgba(2, 132, 199, 0.1)';
+      const border = isWarn ? 'rgba(234, 179, 8, 0.4)' : 'rgba(2, 132, 199, 0.3)';
+      const textCol = isWarn ? '#ca8a04' : '#0284c7';
+      const icon = isWarn ? '⚠️' : 'ℹ️';
+
+      html += `
+        <div style="padding:12px 16px; background:${bg}; border:1px solid ${border}; border-radius:var(--radius-md); display:flex; gap:12px; align-items:flex-start;">
+          <div style="font-size:20px; line-height:1;">${icon}</div>
+          <div>
+            <div style="font-size:13px; font-weight:700; color:${textCol}; margin-bottom:3px;">${escapeHtml(rev.title)}</div>
+            <div style="font-size:12.5px; color:var(--text-main); line-height:1.4;">${escapeHtml(rev.text)}</div>
+          </div>
+        </div>
+      `;
+    });
+  }
+
+  // 2. Zalecenia kontrolne
+  if (data.recommendations && data.recommendations.length > 0) {
+    html += `
+      <div class="detail-section-card" style="padding:14px 16px; margin:0;">
+        <div class="section-card-title" style="margin-bottom:8px;">
+          <span>📋 Sugerowane kroki diagnostyczne</span>
+        </div>
+        <ul style="margin:0; padding-left:20px; font-size:13px; color:var(--text-main); line-height:1.6;">
+          ${data.recommendations.map(rec => `<li>${escapeHtml(rec)}</li>`).join('')}
+        </ul>
+      </div>
+    `;
+  }
+
+  // 2a. Dedykowana karta kontrolera logicznego Carnation Genesis EVPSS
+  if (data.carnation_logic && (
+    (data.carnation_logic.relevant_outputs && data.carnation_logic.relevant_outputs.length > 0) ||
+    (data.carnation_logic.relevant_inputs && data.carnation_logic.relevant_inputs.length > 0) ||
+    (data.carnation_logic.battery_thresholds && data.carnation_logic.battery_thresholds.length > 0) ||
+    (data.carnation_logic.audio_messages && data.carnation_logic.audio_messages.length > 0)
+  )) {
+    const cl = data.carnation_logic;
+    html += `
+      <div style="padding:14px 16px; background:linear-gradient(135deg, rgba(99, 102, 241, 0.08) 0%, rgba(139, 92, 246, 0.05) 100%); border:1.5px solid rgba(99, 102, 241, 0.35); border-radius:var(--radius-md); display:flex; flex-direction:column; gap:10px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span style="font-size:22px;">🧠</span>
+            <div>
+              <div style="font-size:12.5px; font-weight:800; color:#4f46e5; text-transform:uppercase; letter-spacing:0.5px;">Logika kontrolera Carnation Genesis (EVPSS v${escapeHtml(cl.version || '1.81a')})</div>
+              <div style="font-size:11.5px; color:var(--text-muted);">Plik konfiguracji: <strong>${escapeHtml(cl.filename || 'v1.81a - 21 Mar 2025.html')}</strong> (${escapeHtml(cl.vehicle || 'WAS PL EoE Box')}) • 3 moduły wyjściowe (48 wyjść) + 24 wejścia cyfrowe</div>
+            </div>
+          </div>
+          <span style="font-size:11px; font-weight:700; padding:2px 8px; border-radius:4px; background:rgba(99, 102, 241, 0.15); color:#4f46e5; border:1px solid rgba(99, 102, 241, 0.3);">
+            100% Offline Baza Wiedzy
+          </span>
+        </div>
+
+        ${cl.relevant_outputs && cl.relevant_outputs.length > 0 ? `
+          <div style="display:flex; flex-direction:column; gap:5px; font-size:12.5px;">
+            <div style="font-weight:700; color:var(--text-main);">⚡ Powiązane wyjścia zasilania (Moduły wyjściowe O1 / O2 / O3):</div>
+            <div style="display:flex; gap:8px; flex-wrap:wrap;">
+              ${cl.relevant_outputs.map(out => `
+                <div style="padding:4px 10px; background:var(--bg-card); border:1px solid var(--border); border-radius:6px; font-family:var(--font-mono, monospace); font-size:12px;">
+                  <strong style="color:#4f46e5;">${escapeHtml(out.full_name)}</strong> (Maks. prąd / bezpiecznik: <strong style="color:#16a34a;">${escapeHtml(out.max_current)}</strong>)
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        ` : ''}
+
+        ${cl.relevant_inputs && cl.relevant_inputs.length > 0 ? `
+          <div style="display:flex; flex-direction:column; gap:5px; font-size:12.5px;">
+            <div style="font-weight:700; color:var(--text-main);">🚗 Powiązane sygnały wejściowe z pojazdu bazowego (Digital Inputs I1.1 - I1.24):</div>
+            <div style="display:flex; gap:8px; flex-wrap:wrap;">
+              ${cl.relevant_inputs.map(inp => `
+                <div style="padding:4px 10px; background:var(--bg-card); border:1px solid var(--border); border-radius:6px; font-family:var(--font-mono, monospace); font-size:12px;">
+                  <strong style="color:#0284c7;">${escapeHtml(inp.full_name || inp.code)}</strong> <span style="color:var(--text-muted); font-size:11px;">(Pin/Linia: ${escapeHtml(inp.num)})</span>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        ` : ''}
+
+        ${cl.battery_thresholds && cl.battery_thresholds.length > 0 ? `
+          <div style="display:flex; flex-direction:column; gap:5px; font-size:12.5px;">
+            <div style="font-weight:700; color:var(--text-main);">🔋 Zarządzanie akumulatorami i progi odłączenia (Load Shedding 1 / 2 / 3):</div>
+            <div style="display:flex; gap:8px; flex-wrap:wrap;">
+              ${cl.battery_thresholds.map(bat => `
+                <div style="padding:4px 10px; background:rgba(239, 68, 68, 0.08); border:1px solid rgba(239, 68, 68, 0.25); border-radius:6px; font-size:11.5px;">
+                  <strong style="color:#dc2626;">${escapeHtml(bat.name)}:</strong> <span>${escapeHtml(bat.cutoff)}</span>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        ` : ''}
+
+        ${cl.controlling_rules && cl.controlling_rules.length > 0 ? `
+          <div style="font-size:12px; color:var(--text-main); background:rgba(255,255,255,0.5); padding:8px 10px; border-radius:6px; border:1px solid rgba(99,102,241,0.2);">
+            <strong>Warunki i reguły automatyki EVPSS:</strong> 
+            <ul style="margin:4px 0 0 16px; padding:0;">
+              ${cl.controlling_rules.map(r => `
+                <li><strong>${escapeHtml(r.rule)}</strong> — Działania: <code>${escapeHtml((r.actions || []).join('; ') || 'Wysterowanie wyjścia')}</code></li>
+              `).join('')}
+            </ul>
+          </div>
+        ` : ''}
+
+        ${cl.audio_messages && cl.audio_messages.length > 0 ? `
+          <div style="font-size:12px; color:var(--text-main);">
+            <div style="font-weight:700; margin-bottom:4px; color:var(--text-muted);">📢 Komunikaty głosowe powiązane z tym układem:</div>
+            <div style="display:flex; gap:6px; flex-wrap:wrap;">
+              ${cl.audio_messages.map(msg => `
+                <span style="padding:2px 8px; background:rgba(234, 179, 8, 0.15); border:1px solid rgba(234, 179, 8, 0.4); border-radius:4px; font-size:11.5px; font-weight:600; color:#b45309;">
+                  ${escapeHtml(msg)}
+                </span>
+              `).join('')}
+            </div>
+          </div>
+        ` : ''}
+      </div>
+    `;
+  }
+
+  // 2b. Lokalizacja na arkuszach schematu PDF
+  const pdfMatches = data.pdf_sheet_matches || [];
+  if (pdfMatches.length > 0) {
+    // Wyróżniamy czołowe schematy funkcjonalne (np. obwód główny usterki oraz obwód powiązanego złącza z wariantu)
+    const strongMatches = pdfMatches.filter(m => m.is_active === 1 && m.relevance_score >= 7000);
+    const highlightedMatches = strongMatches.length > 0 ? strongMatches.slice(0, 2) : [pdfMatches[0]];
+    const otherActive = pdfMatches.filter(m => !highlightedMatches.includes(m) && m.is_active === 1);
+    const archiveSheets = pdfMatches.filter(m => !highlightedMatches.includes(m) && m.is_active !== 1);
+    const totalOthers = otherActive.length + archiveSheets.length;
+
+    html += `
+      <div style="margin-top:8px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; flex-wrap:wrap; gap:8px;">
+          <div style="font-size:13px; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; color:var(--text-muted); display:flex; align-items:center; gap:6px;">
+            <span>📍</span> <span>Rekomendowane schematy ideowe obwodów (${highlightedMatches.length})</span>
+          </div>
+          ${totalOthers > 0 ? `
+            <button type="button" class="btn-secondary-action" style="font-size:11.5px; padding:3px 10px; cursor:pointer;" onclick="toggleExtraPdfSheets()">
+              <span id="extra-sheets-btn-text">📂 Pokaż pozostałe powiązane arkusze (${totalOthers})</span>
+            </button>
+          ` : ''}
+        </div>
+
+        <!-- CZOŁOWE REKOMENDOWANE ARKUSZE SCHEMATU (np. HVAC i MARKER LIGHT) -->
+        <div style="display:flex; flex-direction:column; gap:10px; margin-bottom:10px;">
+          ${highlightedMatches.map((matchItem, mIdx) => {
+            const isPrimary = (mIdx === 0);
+            const badgeLabel = isPrimary ? '⭐ Główny układ usterki' : '💡 Powiązany obwód złącza';
+            const badgeGrad = isPrimary ? 'linear-gradient(135deg, #0284c7 0%, #2563eb 100%)' : 'linear-gradient(135deg, #0d9488 0%, #059669 100%)';
+            const borderColor = isPrimary ? 'var(--primary)' : '#0d9488';
+            const sheetTypeBadge = matchItem.sheet_type === 'overview' ? 
+              '<span style="font-size:11px; font-weight:600; padding:2px 6px; border-radius:4px; background:var(--bg-card-subtle); color:var(--text-muted); border:1px solid var(--border);">🔌 Topologia wiązki</span>' :
+              '<span style="font-size:11px; font-weight:700; padding:2px 6px; border-radius:4px; background:rgba(34, 197, 94, 0.12); color:#16a34a; border:1px solid rgba(34, 197, 94, 0.3);">⚡ Schemat ideowy obwodu</span>';
+
+            return `
+              <div class="detail-section-card" style="margin:0; border:2px solid ${borderColor}; background:rgba(37,99,235,0.03); border-radius:var(--radius-md); padding:13px 16px; display:flex; flex-direction:column; gap:10px; box-shadow:0 3px 12px rgba(0,0,0,0.05);">
+                <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:10px;">
+                  <div>
+                    <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px; flex-wrap:wrap;">
+                      <span style="background:${badgeGrad}; color:#fff; font-size:11px; font-weight:800; padding:2px 8px; border-radius:4px; text-transform:uppercase; letter-spacing:0.5px;">
+                        ${badgeLabel}
+                      </span>
+                      ${sheetTypeBadge}
+                      <span style="font-size:11px; font-weight:700; padding:2px 6px; border-radius:4px; background:rgba(16, 185, 129, 0.15); border:1px solid rgba(16, 185, 129, 0.4); color:#059669;">
+                        🟢 Aktualna wiązka
+                      </span>
+                    </div>
+                    <div style="font-size:15.5px; font-weight:800; color:var(--text-main);">
+                      Arkusz ${escapeHtml(matchItem.sheet_number || String(matchItem.page_number))}: <span style="color:var(--primary); font-weight:800;">${escapeHtml(matchItem.sheet_title || 'Schemat')}</span>
+                    </div>
+                    <div style="font-size:12px; color:var(--text-muted); margin-top:2px;">
+                      Schemat: <strong>${escapeHtml(matchItem.revision_name || matchItem.filename)}</strong> (strona ${matchItem.page_number} w dokumencie PDF)
+                    </div>
+                  </div>
+
+                  <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                    <button type="button" class="btn-primary-action" style="padding:7px 15px; font-size:12px; font-weight:700; display:inline-flex; align-items:center; gap:6px; background:${badgeGrad}; border:none; box-shadow:0 2px 6px rgba(0,0,0,0.15);" onclick="openPdfSheet(${matchItem.schematic_id}, ${matchItem.page_number}, null, 'pdf')" title="Wyświetla ten konkretny arkusz natychmiast i automatycznie w SumatraPDF">
+                      📑 <span>Otwórz arkusz ${escapeHtml(matchItem.sheet_number || String(matchItem.page_number))} (SumatraPDF)</span>
+                    </button>
+                    <button type="button" class="btn-secondary-action" style="padding:7px 12px; font-size:12px; font-weight:700; display:inline-flex; align-items:center; gap:6px; border-color:rgba(37,99,235,0.4); color:var(--primary); background:rgba(37,99,235,0.06);" onclick="openPdfSheet(${matchItem.schematic_id}, ${matchItem.page_number}, null, 'zuken')" title="Otwiera kompletny schemat CAD w programie Zuken E3">
+                      🔌 <span>Zuken E3</span>
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Powody dopasowania i powiązane aparaty -->
+                <div style="display:flex; flex-wrap:wrap; gap:10px; align-items:center; border-top:1px dashed var(--border); padding-top:8px;">
+                  ${(matchItem.match_reasons && matchItem.match_reasons.length > 0) ? `
+                    <div style="display:flex; gap:6px; flex-wrap:wrap; align-items:center;">
+                      <span style="font-size:11px; font-weight:700; color:var(--text-muted);">Dlaczego ten arkusz:</span>
+                      ${matchItem.match_reasons.map(r => `
+                        <span style="font-size:11px; font-weight:600; background:rgba(2,132,199,0.1); color:#0284c7; border:1px solid rgba(2,132,199,0.25); padding:2px 8px; border-radius:4px;">
+                          ✔ ${escapeHtml(r)}
+                        </span>
+                      `).join('')}
+                    </div>
+                  ` : ''}
+
+                  ${(matchItem.matched_symbols && matchItem.matched_symbols.length > 0) ? `
+                    <div style="display:flex; gap:5px; flex-wrap:wrap; align-items:center; margin-left:auto;">
+                      <span style="font-size:11px; font-weight:600; color:var(--text-muted);">Elementy na arkuszu:</span>
+                      ${matchItem.matched_symbols.map(s => `
+                        <span style="font-size:11.5px; font-family:var(--font-mono); font-weight:700; background:var(--bg-card); padding:1px 6px; border-radius:4px; border:1px solid var(--border); color:var(--primary);">
+                          ${escapeHtml(s)}
+                        </span>
+                      `).join('')}
+                    </div>
+                  ` : ''}
+                </div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+
+        <!-- 2. POZOSTAŁE ARKUSZE (ZWIJANE, ABY NIE ZASYPYWAĆ INFORMACJAMI) -->
+        ${totalOthers > 0 ? `
+          <div id="zuken-extra-sheets-container" style="display:none; margin-bottom:10px;">
+            <div style="font-size:12px; font-weight:700; color:var(--text-muted); margin:10px 0 6px 0;">Pozostałe powiązane arkusze (${totalOthers}):</div>
+            <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(320px, 1fr)); gap:10px;">
+              ${[...otherActive, ...archiveSheets].map(m => {
+                const isActive = m.is_active === 1;
+                const badgeBg = isActive ? 'rgba(16, 185, 129, 0.15)' : 'rgba(148, 163, 184, 0.15)';
+                const badgeBorder = isActive ? 'rgba(16, 185, 129, 0.4)' : 'rgba(148, 163, 184, 0.3)';
+                const badgeText = isActive ? '#059669' : '#64748b';
+                const revLabel = isActive ? '🟢 Aktualna wiązka' : '⚪ Wersja archiwalna';
+
+                return `
+                  <div class="detail-section-card" style="margin:0; border-left:4px solid ${isActive ? 'var(--primary)' : '#94a3b8'}; padding:10px 12px; display:flex; flex-direction:column; justify-content:space-between; gap:8px;">
+                    <div>
+                      <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px; margin-bottom:4px;">
+                        <div style="font-size:13px; font-weight:800; color:var(--text-main);">
+                          Arkusz ${escapeHtml(m.sheet_number || String(m.page_number))}: <span style="color:var(--primary); font-weight:700;">${escapeHtml(m.sheet_title || 'Schemat')}</span>
+                        </div>
+                        <span style="font-size:10px; font-weight:700; padding:1px 5px; border-radius:4px; background:${badgeBg}; border:1px solid ${badgeBorder}; color:${badgeText}; white-space:nowrap;">
+                          ${revLabel}
+                        </span>
+                      </div>
+
+                      <div style="font-size:11px; color:var(--text-muted); margin-bottom:4px;">
+                        Schemat: <strong>${escapeHtml(m.revision_name || m.filename)}</strong> (strona ${m.page_number})
+                      </div>
+
+                      ${m.match_reasons && m.match_reasons.length > 0 ? `
+                        <div style="font-size:11px; color:#0284c7; margin-bottom:4px;">
+                          ${m.match_reasons.map(r => `• ${escapeHtml(r)}`).join(' ')}
+                        </div>
+                      ` : ''}
+
+                      ${m.matched_symbols && m.matched_symbols.length > 0 ? `
+                        <div style="display:flex; gap:4px; flex-wrap:wrap; align-items:center; margin-top:4px;">
+                          ${m.matched_symbols.map(s => `
+                            <span style="font-size:11px; font-family:var(--font-mono); font-weight:700; background:var(--bg-card-subtle); padding:1px 5px; border-radius:3px; border:1px solid var(--border); color:var(--text-main);">
+                              ${escapeHtml(s)}
+                            </span>
+                          `).join('')}
+                        </div>
+                      ` : ''}
+                    </div>
+
+                    <div style="padding-top:6px; border-top:1px dashed var(--border); display:flex; justify-content:flex-end; gap:6px; align-items:center;">
+                      <button type="button" class="btn-secondary-action" style="padding:4px 10px; font-size:11.5px; display:inline-flex; align-items:center; gap:4px;" onclick="openPdfSheet(${m.schematic_id}, ${m.page_number}, null, 'pdf')" title="Otwórz bezpośrednio arkusz w SumatraPDF">
+                        📑 <span>Arkusz ${escapeHtml(m.sheet_number || String(m.page_number))} (PDF)</span>
+                      </button>
+                      <button type="button" class="btn-secondary-action" style="padding:4px 8px; font-size:11.5px; display:inline-flex; align-items:center; gap:4px;" onclick="openPdfSheet(${m.schematic_id}, ${m.page_number}, null, 'zuken')" title="Otwórz schemat CAD w Zuken E3">
+                        🔌 <span>Zuken</span>
+                      </button>
+                    </div>
+                  </div>
+                `;
+              }).join('')}
+            </div>
+          </div>
+        ` : ''}
+      </div>
+    `;
+  }
+
+  // 3. Odnalezione obwody i trasa połączeń
+  const circuits = data.circuits || {};
+  const circuitKeys = Object.keys(circuits);
+
+  if (circuitKeys.length > 0) {
+    html += `
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-top:4px;">
+        <div style="font-size:13px; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; color:var(--text-muted);">
+          ⚡ Odnalezione obwody i trasy sygnałów (${circuitKeys.length})
+        </div>
+      </div>
+    `;
+
+    circuitKeys.forEach((sigName, cIdx) => {
+      const links = circuits[sigName];
+      const isTopCircuit = (cIdx === 0);
+      html += `
+        <div class="detail-section-card" style="margin:0; border-left:3px solid ${isTopCircuit ? 'var(--primary)' : 'var(--border)'};">
+          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:12px; border-bottom:1px solid var(--border); padding-bottom:8px;">
+            <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+              <span class="tag-project" style="font-size:12px; font-weight:700; background:rgba(37,99,235,0.12); color:var(--primary); border:1px solid rgba(37,99,235,0.3);">
+                ${escapeHtml(sigName)}
+              </span>
+              ${isTopCircuit ? `
+                <span style="font-size:10.5px; font-weight:800; background:rgba(16,185,129,0.15); color:#059669; border:1px solid rgba(16,185,129,0.3); padding:2px 7px; border-radius:4px;">
+                  ⭐ Główny dopasowany obwód
+                </span>
+              ` : ''}
+              <span style="font-size:12px; color:var(--text-muted);">${links.length} ${links.length === 1 ? 'odcinek' : 'odcinków'} połączeń</span>
+            </div>
+            <button type="button" class="btn-secondary-action" style="padding:3px 8px; font-size:11.5px;" onclick="copyCircuitToClipboard('${escapeHtml(sigName)}')">
+              📋 Kopiuj obwód
+            </button>
+          </div>
+
+          <div style="display:flex; flex-direction:column; gap:10px;">
+            ${links.map((lnk, idx) => `
+              <div style="background:var(--bg-card-subtle); border:1px solid var(--border); border-radius:var(--radius-md); padding:10px 12px; font-size:12.5px;">
+                <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px; margin-bottom:6px;">
+                  
+                  <!-- Skąd (From) -->
+                  <div style="flex:1; min-width:180px;">
+                    <span style="font-size:10px; font-weight:700; color:var(--text-muted); text-transform:uppercase;">Punkt początkowy:</span>
+                    <div style="font-family:var(--font-mono); font-weight:700; color:var(--primary); font-size:13px;">
+                      ${escapeHtml(lnk.from || '—')} ${lnk.from_pin ? `<span style="color:var(--text-main); font-weight:800;">[pin ${escapeHtml(lnk.from_pin)}]</span>` : ''}
+                    </div>
+                    <div style="font-size:11px; color:var(--text-muted); margin-top:1px;">${escapeHtml(lnk.from_desc || '')}</div>
+                  </div>
+
+                  <!-- Strzałka -->
+                  <div style="color:var(--text-muted); font-size:18px; font-weight:700; padding:0 4px;">➔</div>
+
+                  <!-- Dokąd (To) -->
+                  <div style="flex:1; min-width:180px;">
+                    <span style="font-size:10px; font-weight:700; color:var(--text-muted); text-transform:uppercase;">Punkt docelowy:</span>
+                    <div style="font-family:var(--font-mono); font-weight:700; color:var(--primary); font-size:13px;">
+                      ${escapeHtml(lnk.to || '—')} ${lnk.to_pin ? `<span style="color:var(--text-main); font-weight:800;">[pin ${escapeHtml(lnk.to_pin)}]</span>` : ''}
+                    </div>
+                    <div style="font-size:11px; color:var(--text-muted); margin-top:1px;">${escapeHtml(lnk.to_desc || '')}</div>
+                  </div>
+
+                </div>
+
+                <!-- Parametry przewodu -->
+                ${(lnk.wire_color || lnk.wire_type || lnk.cross_section || lnk.wire_number || lnk.length_formatted) ? `
+                  <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap; background:var(--bg-card); padding:6px 10px; border-radius:4px; border:1px dashed var(--border); font-size:11.5px; color:var(--text-main); margin-top:6px;">
+                    ${lnk.wire_color ? `<span>🎨 Kolor: <strong>${escapeHtml(lnk.wire_color)}</strong></span>` : ''}
+                    ${lnk.wire_type ? `<span>Typ: <code>${escapeHtml(lnk.wire_type)}</code></span>` : ''}
+                    ${lnk.cross_section ? `<span>Przekrój: <strong>${escapeHtml(lnk.cross_section)}</strong></span>` : ''}
+                    ${lnk.wire_number ? `<span>Nr żyły: <code>${escapeHtml(lnk.wire_number)}</code></span>` : ''}
+                    ${lnk.length_formatted ? `<span style="background:rgba(2,132,199,0.12); color:#0284c7; padding:2px 8px; border-radius:4px; font-weight:700; border:1px solid rgba(2,132,199,0.25);">📏 Długość: ${escapeHtml(lnk.length_formatted)}</span>` : ''}
+                    ${lnk.project_rev ? `<span style="color:var(--text-muted); margin-left:auto; font-size:10.5px;">(${escapeHtml(lnk.project_rev)})</span>` : ''}
+                  </div>
+                ` : ''}
+
+                <!-- Arkusze w PDF powiązane z tym połączeniem -->
+                ${(lnk.sheets && lnk.sheets.length > 0) ? `
+                  <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin-top:8px;">
+                    <span style="font-size:11px; color:var(--text-muted); font-weight:600;">📍 Arkusze w PDF:</span>
+                    ${lnk.sheets.map(sh => `
+                      <button type="button" class="btn-secondary-action" style="padding:2px 8px; font-size:11px; display:inline-flex; align-items:center; gap:4px; font-weight:600; border-color:rgba(2,132,199,0.4); color:var(--primary);" onclick="openPdfSheet(${sh.schematic_id || 'null'}, ${sh.page}, '${escapeHtml(sh.url)}')">
+                        📄 Ark. ${escapeHtml(sh.sheet || String(sh.page))}: ${escapeHtml(sh.title)}
+                      </button>
+                    `).join('')}
+                  </div>
+                ` : ''}
+
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      `;
+    });
+  } else {
+    html += `
+      <div style="padding:24px; text-align:center; background:var(--bg-card); border-radius:var(--radius-md); border:1px solid var(--border); color:var(--text-muted); font-size:13px;">
+        Nie znaleziono bezpośredniego obwodu w plikach połączeń dla zapytania. Spróbuj wyszukać np. symbol złącza (np. <code>X292</code>, <code>FH14</code>) lub nazwę funkcji w języku angielskim (np. <code>BLUES</code>, <code>SOCKET</code>).
+      </div>
+    `;
+  }
+
+  // 3b. Zidentyfikowane komponenty i złączki z BOM
+  const bomItems = data.bom_components || [];
+  if (bomItems.length > 0) {
+    html += `
+      <div style="margin-top:12px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+          <div style="font-size:13px; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; color:var(--text-muted); display:flex; align-items:center; gap:6px;">
+            <span>📦</span> <span>Zidentyfikowane komponenty i złączki z BOM</span> (${bomItems.length})
+          </div>
+        </div>
+        <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(360px, 1fr)); gap:12px;">
+          ${bomItems.map(item => renderBomComponentCard(item)).join('')}
+        </div>
+      </div>
+    `;
+  }
+
+  // 4. Historia napraw i sprawdzone warianty rozwiązań
+  const history = data.history_solutions || [];
+  if (history.length > 0) {
+    html += `
+      <div style="margin-top:10px;">
+        <div style="font-size:13px; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; color:var(--text-muted); margin-bottom:8px;">
+          💡 Sprawdzone rozwiązania z bazy napraw (${history.length})
+        </div>
+        <div style="display:flex; flex-direction:column; gap:10px;">
+          ${history.map(h => `
+            <div class="detail-section-card" style="margin:0; border-left:3px solid #10b981; padding:12px 14px;">
+              <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px;">
+                <div>
+                  <div style="font-size:13px; font-weight:700; color:var(--text-main);">${escapeHtml(h.tytul || 'Wariant naprawy')}</div>
+                  <div style="font-size:11.5px; color:var(--text-muted); margin-top:2px;">Usterka: <strong>${escapeHtml(h.element || '')}</strong> (${escapeHtml(h.projekt || '')}) — Dodał wariant: ${escapeHtml(h.created_by || 'Adam Łukasik')}</div>
+                </div>
+                <button type="button" class="btn-secondary-action" style="padding:3px 8px; font-size:11px;" onclick="insertTextToSolutionForm('${escapeHtml(h.opis || h.tytul)}')">
+                  Wstaw opis
+                </button>
+              </div>
+              ${h.opis ? `<div style="font-size:12.5px; color:var(--text-main); margin-top:8px; line-height:1.4; background:var(--bg-card-subtle); padding:8px 10px; border-radius:4px;">${escapeHtml(h.opis)}</div>` : ''}
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    `;
+  }
+
+  // 5. Powiązane schematy PDF z bazy (dołączone do rozwiązań)
+  const pdfDocs = data.schema_pdf_references || [];
+  if (pdfDocs.length > 0) {
+    html += `
+      <div style="margin-top:12px;">
+        <div style="font-size:13px; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; color:var(--text-muted); margin-bottom:8px; display:flex; align-items:center; gap:6px;">
+          <span>📄</span> <span>Schematy i dokumenty powiązane z tą usterką</span> (${pdfDocs.length})
+        </div>
+        <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(360px, 1fr)); gap:10px;">
+          ${pdfDocs.map(doc => {
+            const rawUrl = `/api/solution-documents/${doc.id}/raw`;
+            const openUrl = `/api/solution-documents/${doc.id}/open`;
+            const hasMaster = doc.master_schematic_id && doc.master_page_number;
+            const sheetBadge = doc.sheet_number ? `<span style="background:rgba(37,99,235,0.12); color:var(--primary); font-size:10.5px; font-weight:700; padding:2px 6px; border-radius:4px; border:1px solid rgba(37,99,235,0.25);">Arkusz ${escapeHtml(doc.sheet_number)}</span>` : '';
+            return `
+              <div class="detail-section-card" style="margin:0; padding:12px 14px; display:flex; flex-direction:column; justify-content:space-between; gap:10px; border-left:4px solid #2563eb; background:var(--bg-card);">
+                <div>
+                  <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px;">
+                    <div style="display:flex; align-items:flex-start; gap:8px; min-width:0;">
+                      <span style="font-size:22px; line-height:1; cursor:pointer;" onclick="openPdfPreview('${rawUrl}', '${escapeHtml(doc.filename)}', '${openUrl}', '${doc.id}')">📑</span>
+                      <div style="min-width:0;">
+                        <a href="javascript:void(0)" onclick="openPdfPreview('${rawUrl}', '${escapeHtml(doc.filename)}', '${openUrl}', '${doc.id}')" style="font-size:13px; font-weight:700; color:var(--primary); text-decoration:none; display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="Kliknij, aby otworzyć podgląd">
+                          ${escapeHtml(doc.filename)}
+                        </a>
+                        <div style="font-size:11.5px; color:var(--text-muted); margin-top:2px;">
+                          ${doc.element ? `Usterka: <strong>${escapeHtml(doc.element)}</strong>` : ''} ${doc.tytul ? `• ${escapeHtml(doc.tytul)}` : ''}
+                        </div>
+                      </div>
+                    </div>
+                    ${sheetBadge}
+                  </div>
+                  ${hasMaster ? `
+                    <div style="margin-top:8px; font-size:11px; color:var(--text-muted); background:var(--bg-card-subtle); padding:6px 8px; border-radius:4px; border:1px solid var(--border);">
+                      🔗 Odpowiada stronie <strong>${doc.master_page_number}</strong> w kompletnym schemacie pojazdu (${escapeHtml(doc.master_filename || 'schemat Zuken')}).
+                    </div>
+                  ` : ''}
+                </div>
+
+                <div style="display:flex; gap:6px; flex-wrap:wrap; align-items:center; padding-top:6px; border-top:1px solid var(--border);">
+                  <button type="button" class="btn-secondary-action" style="padding:4px 10px; font-size:11.5px; display:inline-flex; align-items:center; gap:4px; font-weight:600;" onclick="openPdfPreview('${rawUrl}', '${escapeHtml(doc.filename)}', '${openUrl}', '${doc.id}')" title="Podgląd wbudowany z powiększaniem">
+                    <span>👁</span> <span>Podgląd</span>
+                  </button>
+                  <button type="button" class="btn-secondary-action" style="padding:4px 10px; font-size:11.5px; display:inline-flex; align-items:center; gap:4px; font-weight:600;" onclick="openSystemDocument('${openUrl}')" title="Otwórz ten dokument w Adobe Acrobat / przeglądarce Windows">
+                    <span>🚀</span> <span>Otwórz w Acrobat</span>
+                  </button>
+                  ${hasMaster ? `
+                    <button type="button" class="btn-secondary-action" style="padding:4px 10px; font-size:11.5px; display:inline-flex; align-items:center; gap:4px; font-weight:600; color:var(--primary); background:rgba(37,99,235,0.08); border-color:rgba(37,99,235,0.3);" onclick="openPdfSheet(${doc.master_schematic_id}, ${doc.master_page_number})" title="Otwórz kompletny wielostronicowy schemat wiązki na tym arkuszu">
+                      <span>📖</span> <span>Otwórz w schemacie serii (str. ${doc.master_page_number})</span>
+                    </button>
+                  ` : ''}
+                </div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      </div>
+    `;
+  }
+
+  // 6. Wyjaśnione kody ze słownika
+  const glossary = data.device_glossary || [];
+  if (glossary.length > 0) {
+    html += `
+      <div style="margin-top:10px;">
+        <div style="font-size:13px; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; color:var(--text-muted); margin-bottom:8px;">
+          📖 Rozszyfrowane oznaczenia Zuken (Słownik aparatów i miejsc)
+        </div>
+        <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); gap:8px;">
+          ${glossary.map(g => `
+            <div style="background:var(--bg-card-subtle); padding:8px 10px; border-radius:var(--radius-md); border:1px solid var(--border); font-size:11.5px;">
+              <span style="font-family:var(--font-mono); font-weight:700; color:var(--primary); font-size:12px;">${escapeHtml(g.code)}</span>
+              <div style="color:var(--text-main); margin-top:2px;">${escapeHtml(g.description)}</div>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    `;
+  }
+
+  resBody.innerHTML = html;
+}
+
+function renderBomComponentCard(item) {
+  const hasImg = !!item.image_url;
+  const imgTag = hasImg 
+    ? `<img src="${escapeHtml(item.image_url)}" alt="${escapeHtml(item.article_number)}" style="width:84px; height:84px; object-fit:contain; border-radius:6px; background:#ffffff; padding:4px; border:1px solid var(--border); cursor:pointer; box-shadow:0 1px 3px rgba(0,0,0,0.08);" onclick="openZukenImageLightbox('${escapeHtml(item.image_url)}', '${escapeHtml(item.article_number)}', '${escapeHtml(item.supplier)}', '${escapeHtml(item.description)}')" title="Kliknij, aby powiększyć zdjęcie">`
+    : `<div style="width:84px; height:84px; border-radius:6px; background:var(--bg-card-subtle); border:1px dashed var(--border); display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:4px; font-size:10.5px; color:var(--text-muted); cursor:pointer;" onclick="openZukenUploadPhotoModal('${escapeHtml(item.article_number)}', '${escapeHtml(item.supplier)}', '${escapeHtml(item.description)}')" title="Kliknij, aby wgrać lub wkleić zdjęcie">
+         <span style="font-size:24px; margin-bottom:2px;">🔌</span>
+         <span>Brak zdjęcia</span>
+       </div>`;
+
+  const supBadge = item.supplier ? `<span style="font-size:11px; font-weight:700; background:rgba(37,99,235,0.1); color:var(--primary); padding:2px 6px; border-radius:4px; border:1px solid rgba(37,99,235,0.25);">🏭 ${escapeHtml(item.supplier)}</span>` : '';
+  const catBadge = item.category ? `<span style="font-size:11px; font-weight:600; background:var(--bg-card-subtle); color:var(--text-muted); padding:2px 6px; border-radius:4px; border:1px solid var(--border);">🏷️ ${escapeHtml(item.category)}</span>` : '';
+  const qtyBadge = item.amount ? `<span style="font-size:11px; font-weight:600; color:var(--text-muted);">Ilość: <strong>${item.amount} szt.</strong></span>` : '';
+
+  const matchedDevs = (item.matched_devices || item.devices || []).map(d => `<code style="font-weight:700; color:var(--primary);">${escapeHtml(d.device_code)}</code>`).join(', ');
+
+  const linksHtml = (item.supplier_links || []).map(l => `
+    <a href="${l.url}" target="_blank" rel="noopener noreferrer" class="btn-secondary-action" style="padding:3px 8px; font-size:11px; text-decoration:none; display:inline-flex; align-items:center; gap:4px; font-weight:600;" title="${escapeHtml(l.tooltip || '')}">
+      <span>${l.icon}</span> <span>${escapeHtml(l.name)}</span>
+    </a>
+  `).join('');
+
+  let terminalsHtml = '';
+  if (item.related_terminals && item.related_terminals.length > 0) {
+    terminalsHtml = `
+      <div style="margin-top:6px; padding:6px 8px; background:var(--bg-card); border-radius:4px; border:1px dashed rgba(37,99,235,0.3); font-size:11px;">
+        <span style="font-weight:700; color:var(--primary);">⚡ Pasujące terminale / piny z BOM:</span>
+        <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:3px;">
+          ${item.related_terminals.map(t => `
+            <span style="background:var(--bg-card-subtle); padding:1px 6px; border-radius:3px; border:1px solid var(--border); font-family:var(--font-mono); font-size:10.5px;">
+              ${escapeHtml(t.article_number)} (${escapeHtml(t.supplier)})
+            </span>
+          `).join('')}
+        </div>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="detail-section-card" style="margin:0; padding:12px; display:flex; gap:12px; align-items:flex-start; border-left:3px solid var(--primary);">
+      <div style="display:flex; flex-direction:column; align-items:center; gap:6px; flex-shrink:0;">
+        ${imgTag}
+        <button type="button" class="btn-secondary-action" style="padding:2px 6px; font-size:10px; width:100%;" onclick="openZukenUploadPhotoModal('${escapeHtml(item.article_number)}', '${escapeHtml(item.supplier)}', '${escapeHtml(item.description)}')" title="Wgraj lub wklej nowe zdjęcie dla tego artykułu">
+          📷 ${hasImg ? 'Zmień' : 'Dodaj'}
+        </button>
+      </div>
+
+      <div style="flex:1; min-width:0; display:flex; flex-direction:column; gap:4px;">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px; flex-wrap:wrap;">
+          <div style="font-size:14px; font-weight:800; font-family:var(--font-mono); color:var(--primary);">
+            ${escapeHtml(item.article_number)}
+          </div>
+          <div style="display:flex; gap:4px; align-items:center; flex-wrap:wrap;">
+            ${supBadge}
+            ${catBadge}
+            ${qtyBadge}
+          </div>
+        </div>
+
+        <div style="font-size:12.5px; color:var(--text-main); font-weight:600; line-height:1.35; margin-top:2px;">
+          ${escapeHtml(item.description || 'Brak opisu')}
+        </div>
+
+        ${matchedDevs ? `
+          <div style="font-size:11.5px; color:var(--text-muted); margin-top:2px;">
+            Aparaty w wiązce: ${matchedDevs}
+          </div>
+        ` : ''}
+
+        ${terminalsHtml}
+
+        <div style="display:flex; gap:4px; flex-wrap:wrap; align-items:center; margin-top:6px; padding-top:6px; border-top:1px dashed var(--border);">
+          <span style="font-size:10.5px; color:var(--text-muted); font-weight:600;">Dostawcy i specyfikacja:</span>
+          ${linksHtml}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function switchZukenTab(tabName) {
+  const tabDiag = document.getElementById('tab-btn-zuken-diag');
+  const tabBom = document.getElementById('tab-btn-zuken-bom');
+  const tabGlossary = document.getElementById('tab-btn-zuken-glossary');
+  
+  const bodyDiag = document.getElementById('zuken-results-body');
+  const bodyBom = document.getElementById('zuken-bom-body');
+  const bodyGlossary = document.getElementById('zuken-glossary-body');
+  const bomFilters = document.getElementById('zuken-bom-filters-bar');
+
+  [tabDiag, tabBom, tabGlossary].forEach(btn => {
+    if (!btn) return;
+    btn.style.color = 'var(--text-muted)';
+    btn.style.borderBottomColor = 'transparent';
+  });
+
+  if (bodyDiag) bodyDiag.style.display = 'none';
+  if (bodyBom) bodyBom.style.display = 'none';
+  if (bodyGlossary) bodyGlossary.style.display = 'none';
+  if (bomFilters) bomFilters.style.display = 'none';
+
+  if (tabName === 'bom') {
+    if (tabBom) {
+      tabBom.style.color = 'var(--primary)';
+      tabBom.style.borderBottomColor = 'var(--primary)';
+    }
+    if (bodyBom) bodyBom.style.display = 'flex';
+    if (bomFilters) bomFilters.style.display = 'flex';
+    loadBomFilterOptions();
+    loadBomCatalog();
+  } else if (tabName === 'glossary') {
+    if (tabGlossary) {
+      tabGlossary.style.color = 'var(--primary)';
+      tabGlossary.style.borderBottomColor = 'var(--primary)';
+    }
+    if (bodyGlossary) bodyGlossary.style.display = 'flex';
+    loadZukenGlossary();
+  } else {
+    if (tabDiag) {
+      tabDiag.style.color = 'var(--primary)';
+      tabDiag.style.borderBottomColor = 'var(--primary)';
+    }
+    if (bodyDiag) bodyDiag.style.display = 'flex';
+  }
+}
+
+let _bomCatalogTimeout = null;
+function debounceBomCatalogSearch() {
+  clearTimeout(_bomCatalogTimeout);
+  _bomCatalogTimeout = setTimeout(() => {
+    loadBomCatalog();
+  }, 250);
+}
+
+function resetBomFilters() {
+  const searchInp = document.getElementById('zuken-bom-filter-search');
+  const supSel = document.getElementById('zuken-bom-filter-supplier');
+  const catSel = document.getElementById('zuken-bom-filter-category');
+  if (searchInp) searchInp.value = '';
+  if (supSel) supSel.value = '';
+  if (catSel) catSel.value = '';
+  loadBomCatalog();
+}
+
+async function loadBomFilterOptions() {
+  const supSel = document.getElementById('zuken-bom-filter-supplier');
+  const catSel = document.getElementById('zuken-bom-filter-category');
+  if (supSel && supSel.options.length <= 1) {
+    try {
+      const res = await apiCall('/api/zuken/bom/suppliers');
+      if (res && res.suppliers) {
+        let opts = '<option value="">Wszyscy dostawcy</option>';
+        res.suppliers.forEach(s => {
+          opts += `<option value="${escapeHtml(s.supplier)}">${escapeHtml(s.supplier)} (${s.count})</option>`;
+        });
+        supSel.innerHTML = opts;
+      }
+    } catch(e) { console.error('Błąd pobierania dostawców BOM:', e); }
+  }
+
+  if (catSel && catSel.options.length <= 1) {
+    try {
+      const res = await apiCall('/api/zuken/bom/categories');
+      if (res && res.categories) {
+        let opts = '<option value="">Wszystkie kategorie</option>';
+        res.categories.forEach(c => {
+          opts += `<option value="${escapeHtml(c.category)}">${escapeHtml(c.category)} (${c.count})</option>`;
+        });
+        catSel.innerHTML = opts;
+      }
+    } catch(e) { console.error('Błąd pobierania kategorii BOM:', e); }
+  }
+}
+
+async function loadBomCatalog() {
+  const cont = document.getElementById('zuken-bom-list-container');
+  const emptyEl = document.getElementById('zuken-bom-empty');
+  const badgeEl = document.getElementById('zuken-bom-badge');
+  if (!cont) return;
+
+  const searchVal = (document.getElementById('zuken-bom-filter-search')?.value || '').trim();
+  const supVal = document.getElementById('zuken-bom-filter-supplier')?.value || '';
+  const catVal = document.getElementById('zuken-bom-filter-category')?.value || '';
+
+  cont.innerHTML = `
+    <div style="grid-column: 1/-1; text-align:center; padding:40px 20px; color:var(--text-muted);">
+      <div class="spinner" style="width:28px; height:28px; border:3px solid var(--border); border-top-color:var(--primary); border-radius:50%; animation:spin 0.8s linear infinite; margin:0 auto 10px auto;"></div>
+      <div>Ładowanie katalogu komponentów Zuken...</div>
+    </div>
+  `;
+  if (emptyEl) emptyEl.style.display = 'none';
+
+  try {
+    const params = new URLSearchParams();
+    if (searchVal) params.append('q', searchVal);
+    if (supVal) params.append('supplier', supVal);
+    if (catVal) params.append('category', catVal);
+    params.append('limit', '150');
+
+    const res = await apiCall(`/api/zuken/bom/catalog?${params.toString()}`);
+    if (res && res.items) {
+      if (badgeEl) badgeEl.innerText = res.total || res.items.length;
+
+      if (res.items.length === 0) {
+        cont.innerHTML = '';
+        if (emptyEl) emptyEl.style.display = 'block';
+      } else {
+        cont.innerHTML = res.items.map(it => renderBomComponentCard(it)).join('');
+      }
+    }
+  } catch(err) {
+    cont.innerHTML = `
+      <div style="grid-column: 1/-1; padding:16px; background:var(--red-bg); color:var(--red-text); border-radius:var(--radius-md);">
+        Błąd ładowania katalogu BOM: ${escapeHtml(err.message || String(err))}
+      </div>
+    `;
+  }
+}
+
+async function loadZukenGlossary() {
+  const cont = document.getElementById('zuken-glossary-list-container');
+  if (!cont) return;
+  cont.innerHTML = `
+    <div style="grid-column: 1/-1; text-align:center; padding:30px; color:var(--text-muted);">
+      <div class="spinner" style="width:24px; height:24px; border:2px solid var(--border); border-top-color:var(--primary); border-radius:50%; animation:spin 0.8s linear infinite; margin:0 auto 8px auto;"></div>
+      <div>Wczytywanie słownika oznaczeń...</div>
+    </div>
+  `;
+
+  try {
+    const res = await apiCall('/api/zuken/glossary');
+    if (res && res.glossary) {
+      cont.innerHTML = res.glossary.map(g => `
+        <div style="background:var(--bg-card); padding:10px 12px; border-radius:var(--radius-md); border:1px solid var(--border);">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+            <span style="font-family:var(--font-mono); font-weight:800; color:var(--primary); font-size:13px;">${escapeHtml(g.prefix)}</span>
+            <span style="font-size:10.5px; background:var(--bg-card-subtle); padding:1px 6px; border-radius:4px; border:1px solid var(--border); color:var(--text-muted);">${escapeHtml(g.category)}</span>
+          </div>
+          <div style="font-size:12px; color:var(--text-main); font-weight:600;">${escapeHtml(g.desc_pl)}</div>
+          ${g.desc_en ? `<div style="font-size:11px; color:var(--text-muted); margin-top:2px;">${escapeHtml(g.desc_en)}</div>` : ''}
+        </div>
+      `).join('');
+    }
+  } catch(e) {
+    cont.innerHTML = `<div style="color:var(--red-text); padding:16px;">Błąd pobierania słownika: ${escapeHtml(e.message)}</div>`;
+  }
+}
+
+function openZukenImageLightbox(imgUrl, artCode, supplier, desc) {
+  const modal = document.getElementById('modal-zuken-image-view');
+  const img = document.getElementById('zuken-view-modal-img');
+  const title = document.getElementById('zuken-view-modal-title');
+  const descEl = document.getElementById('zuken-view-modal-desc');
+  const btnChange = document.getElementById('zuken-view-modal-btn-change');
+
+  if (img) img.src = imgUrl;
+  if (title) title.innerText = `${artCode} (${supplier || 'Komponent'})`;
+  if (descEl) descEl.innerHTML = `<strong>${escapeHtml(supplier)}</strong>: ${escapeHtml(desc)}`;
+  if (btnChange) {
+    btnChange.onclick = () => {
+      closeModal('modal-zuken-image-view');
+      openZukenUploadPhotoModal(artCode, supplier, desc);
+    };
+  }
+  openModal('modal-zuken-image-view');
+}
+
+let _zukenPendingUpload = { article: '', dataUrl: null };
+
+function openZukenUploadPhotoModal(artCode, supplier, desc) {
+  _zukenPendingUpload = { article: artCode, dataUrl: null };
+  const codeEl = document.getElementById('zuken-upload-art-code');
+  const descEl = document.getElementById('zuken-upload-art-desc');
+  const previewCont = document.getElementById('zuken-upload-preview-container');
+  const saveBtn = document.getElementById('zuken-btn-save-photo');
+  const fileInput = document.getElementById('zuken-file-input');
+
+  if (codeEl) codeEl.innerText = artCode;
+  if (descEl) descEl.innerText = `${supplier || ''} — ${desc || ''}`;
+  if (previewCont) previewCont.style.display = 'none';
+  if (saveBtn) saveBtn.disabled = true;
+  if (fileInput) fileInput.value = '';
+
+  openModal('modal-zuken-image-upload');
+  setTimeout(() => {
+    document.getElementById('zuken-paste-dropzone')?.focus();
+  }, 100);
+}
+
+function handleZukenImageFileSelected(input) {
+  if (!input.files || !input.files[0]) return;
+  const file = input.files[0];
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    setZukenUploadPreview(e.target.result, `${file.name} (${formatBytes(file.size)})`);
+  };
+  reader.readAsDataURL(file);
+}
+
+function setZukenUploadPreview(dataUrl, infoText) {
+  _zukenPendingUpload.dataUrl = dataUrl;
+  const previewCont = document.getElementById('zuken-upload-preview-container');
+  const previewImg = document.getElementById('zuken-upload-preview-img');
+  const previewInfo = document.getElementById('zuken-upload-preview-info');
+  const saveBtn = document.getElementById('zuken-btn-save-photo');
+
+  if (previewImg) previewImg.src = dataUrl;
+  if (previewInfo) previewInfo.innerText = infoText || '';
+  if (previewCont) previewCont.style.display = 'block';
+  if (saveBtn) saveBtn.disabled = false;
+}
+
+// Globalny nasłuch wklejania ze schowka (Ctrl+V) gdy modal jest otwarty
+document.addEventListener('paste', (e) => {
+  const uploadModal = document.getElementById('modal-zuken-image-upload');
+  if (!uploadModal || uploadModal.style.display === 'none') return;
+
+  const items = (e.clipboardData || e.originalEvent.clipboardData)?.items;
+  if (!items) return;
+
+  for (let i = 0; i < items.length; i++) {
+    if (items[i].type.indexOf('image') !== -1) {
+      const blob = items[i].getAsFile();
+      const reader = new FileReader();
+      reader.onload = (evt) => {
+        setZukenUploadPreview(evt.target.result, `Obraz wklejony ze schowka (${formatBytes(blob.size)})`);
+        showToast('Wykryto obraz w schowku!', 'info');
+      };
+      reader.readAsDataURL(blob);
+      e.preventDefault();
+      break;
+    }
+  }
+});
+
+async function saveZukenComponentImage() {
+  if (!_zukenPendingUpload.article || !_zukenPendingUpload.dataUrl) {
+    showToast('Brak wybranego lub wklejonego zdjęcia.', 'error');
+    return;
+  }
+
+  const saveBtn = document.getElementById('zuken-btn-save-photo');
+  if (saveBtn) {
+    saveBtn.disabled = true;
+    saveBtn.innerText = 'Zapisywanie...';
+  }
+
+  try {
+    const payload = {
+      article_number: _zukenPendingUpload.article,
+      image_data: _zukenPendingUpload.dataUrl
+    };
+    const res = await apiCall('/api/zuken/bom/upload-image', 'POST', payload);
+    if (res && res.status === 'success') {
+      showToast('Zdjęcie zostało pomyślnie zapisane w Bazie wiedzy!', 'success');
+      closeModal('modal-zuken-image-upload');
+
+      // Odśwież bieżący widok
+      const activeTabBom = document.getElementById('zuken-bom-body')?.style.display !== 'none';
+      if (activeTabBom) {
+        loadBomCatalog();
+      } else {
+        runAiDiagnosisSearch();
+      }
+    } else {
+      throw new Error(res.error || 'Błąd zapisu zdjęcia');
+    }
+  } catch(err) {
+    showToast(`Błąd zapisu: ${err.message}`, 'error');
+  } finally {
+    if (saveBtn) {
+      saveBtn.disabled = false;
+      saveBtn.innerHTML = '💾 <span>Zapisz w Bazie wiedzy</span>';
+    }
+  }
+}
+
+
+async function syncZukenKnowledgeBase() {
+  showToast('Skanowanie katalogu Baza wiedzy w toku...', 'info');
+  try {
+    const res = await apiCall('/api/zuken/sync', 'POST');
+    if (res && res.status === 'success') {
+      const filesCount = (res.results || []).length;
+      showToast(`Zsynchronizowano Bazę wiedzy: ${filesCount} plików XLSX.`, 'success');
+      runAiDiagnosisSearch();
+    } else {
+      showToast(res.message || 'Błąd synchronizacji Bazy wiedzy.', 'error');
+    }
+  } catch (err) {
+    showToast(`Błąd: ${err.message || err}`, 'error');
+  }
+}
+
+function copyCircuitToClipboard(sigName) {
+  if (!ZUKEN_STATE.lastResults || !ZUKEN_STATE.lastResults.circuits) return;
+  const links = ZUKEN_STATE.lastResults.circuits[sigName] || [];
+  if (!links.length) return;
+
+  const lines = [`[OBWÓD ZUKEN: ${sigName}]`];
+  links.forEach(l => {
+    lines.push(`${l.from}:${l.from_pin || '?'} (${l.from_desc}) -> ${l.to}:${l.to_pin || '?'} (${l.to_desc}) | Przewód: ${l.wire_color || ''} ${l.wire_type || ''} ${l.cross_section || ''} ${l.length_formatted ? `| Długość: ${l.length_formatted}` : ''}`);
+  });
+
+  const text = lines.join('\n');
+  navigator.clipboard.writeText(text).then(() => {
+    showToast('Skopiowano obwód do schowka.', 'success');
+  }).catch(() => {
+    showToast('Nie udało się skopiować do schowka.', 'error');
+  });
+}
+
+function insertTextToSolutionForm(text) {
+  const solDesc = document.getElementById('solution-modal-opis') || document.getElementById('f-opis-naprawa');
+  if (solDesc) {
+    solDesc.value = (solDesc.value ? solDesc.value + '\n\n' : '') + text;
+    showToast('Wstawiono do opisu rozwiązania.', 'success');
+  } else {
+    navigator.clipboard.writeText(text).then(() => {
+      showToast('Skopiowano treść do schowka.', 'success');
+    });
+  }
+}
+
+async function openSystemDocument(openEndpoint) {
+  try {
+    showToast('Otwieranie w Adobe Acrobat / programie Windows...', 'info');
+    const res = await apiCall(openEndpoint, 'POST');
+    if (res && (res.status === 'ok' || res.status === 'success')) {
+      showToast(res.message || 'Otwarto dokument w aplikacji systemowej Windows.', 'success');
+    } else {
+      throw new Error(res ? res.error || res.message : 'Błąd otwierania');
+    }
+  } catch(err) {
+    showToast(`Błąd otwierania pliku: ${err.message}`, 'error');
+  }
+}
+
+async function openPdfSheet(schematicId, page, fallbackUrl, target) {
+  if (typeof schematicId === 'string' && !page && !fallbackUrl) {
+    fallbackUrl = schematicId;
+    schematicId = null;
+  }
+
+  if (schematicId) {
+    try {
+      const targetHint = target === 'pdf' ? 'w SumatraPDF' : (target === 'zuken' ? 'w Zuken E3' : '');
+      showToast(`Otwieranie arkusza ${page || 1} ${targetHint}...`, 'info');
+      const res = await apiCall('/api/zuken/pdf/open', 'POST', {
+        schematic_id: parseInt(schematicId, 10),
+        page: parseInt(page, 10) || 1,
+        target: target || null
+      });
+      if (res && res.status === 'success') {
+        showToast(res.message || `Otwarto arkusz ${page}`, 'success');
+        return;
+      } else {
+        throw new Error(res ? res.message : 'Błąd serwera');
+      }
+    } catch (err) {
+      console.warn('Otwieranie schematu nie powiodło się:', err);
+      showToast(`Nie udało się otworzyć schematu: ${err.message}`, 'error');
+      return;
+    }
+  }
+
+  // Zewnętrzny URL podglądu web (tylko w przypadku braku ID schematu)
+  if (fallbackUrl) {
+    window.open(fallbackUrl, '_blank');
+  }
+}
+
+function toggleExtraPdfSheets() {
+  const container = document.getElementById('zuken-extra-sheets-container');
+  const btnText = document.getElementById('extra-sheets-btn-text');
+  if (!container) return;
+  if (container.style.display === 'none' || !container.style.display) {
+    container.style.display = 'block';
+    if (btnText) btnText.innerHTML = '🔼 Zwiń pozostałe arkusze';
+  } else {
+    container.style.display = 'none';
+    if (btnText) {
+      const cnt = container.querySelectorAll('.detail-section-card').length;
+      btnText.innerHTML = `📂 Pokaż pozostałe powiązane arkusze (${cnt})`;
+    }
+  }
 }
 </script>
 </body>

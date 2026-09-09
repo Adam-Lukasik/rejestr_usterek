@@ -16,6 +16,7 @@ import uuid as _uuid
 from datetime import datetime as _dt, timedelta as _td
 from functools import wraps
 from flask import Flask, send_from_directory, request, jsonify, Response
+import zuken_service
 
 
 def translate_pl_to_en(text: str) -> str:
@@ -130,6 +131,27 @@ def get_db_connection():
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL;")
     return conn
+
+def checkpoint_wal(conn=None):
+    """Wymusza natychmiastowe przepisanie zmian z pliku WAL do pliku rejestr_usterek.db."""
+    close_after = False
+    if conn is None:
+        try:
+            conn = get_db_connection()
+            close_after = True
+        except Exception:
+            return
+    try:
+        conn.execute("PRAGMA wal_checkpoint(PASSIVE);")
+    except Exception as e:
+        pass
+    finally:
+        if close_after:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
 
 # ═══════════════════════════════════════════════════════════════════
 # BEZPIECZEŃSTWO I HASZOWANIE HASEŁ
@@ -470,6 +492,39 @@ def init_db():
     if migrated_docs_count > 0:
         print(f"[MIGRATION] Przeniesiono {migrated_docs_count} dokumentów z usterki do 'solution_documents' (Wariant 1).")
 
+    # Migracja: Uzupełnienie autorów wariantów (solutions.created_by) z pola records.fixed_by
+    # Osoby wpisane w usterce jako 'Naprawił' stają się autorami przypisanych do danej usterki wariantów (jeśli brak autora).
+    cursor.execute("""
+        UPDATE solutions
+        SET created_by = (
+            SELECT TRIM(r.fixed_by) FROM records r WHERE r.id = solutions.record_id
+        ),
+        created = COALESCE(
+            (SELECT NULLIF(TRIM(r.fixed_at), '') FROM records r WHERE r.id = solutions.record_id),
+            solutions.created
+        )
+        WHERE (created_by IS NULL OR TRIM(created_by) = '' OR TRIM(created_by) = 'Technik')
+          AND EXISTS (
+            SELECT 1 FROM records r
+            WHERE r.id = solutions.record_id
+              AND r.fixed_by IS NOT NULL
+              AND TRIM(r.fixed_by) != ''
+        )
+    """)
+
+    # Dla wariantów, których usterka nie miała wypełnionego fixed_by, uzupełnij z records.created_by jeśli brak
+    cursor.execute("""
+        UPDATE solutions
+        SET created_by = (
+            SELECT COALESCE(NULLIF(TRIM(r.created_by), ''), 'Adam Łukasik')
+            FROM records r WHERE r.id = solutions.record_id
+        )
+        WHERE (created_by IS NULL OR TRIM(created_by) = '' OR TRIM(created_by) = 'Technik')
+          AND EXISTS (
+            SELECT 1 FROM records r WHERE r.id = solutions.record_id
+          )
+    """)
+
     # Migracja kolumn w tabeli users
     cursor.execute("PRAGMA table_info(users)")
     u_cols = [c["name"] for c in cursor.fetchall()]
@@ -503,6 +558,12 @@ def init_db():
 
     conn.commit()
     conn.close()
+
+    # Inicjalizacja bazy i słownika Zuken E3
+    try:
+        zuken_service.init_zuken_tables()
+    except Exception as e:
+        print(f"[ZUKEN] Błąd inicjalizacji tabel Zuken: {e}")
 
 # ═══════════════════════════════════════════════════════════════════
 # ENDPOINTY AUTORYZACJI I PROFILU
@@ -968,6 +1029,7 @@ def save_lists():
         (json.dumps(data),)
     )
     conn.commit()
+    checkpoint_wal(conn)
     conn.close()
     return jsonify({"status": "ok"})
 
@@ -979,7 +1041,12 @@ def save_lists():
 def get_records():
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM records ORDER BY created DESC")
+    cursor.execute("""
+        SELECT r.*,
+               (SELECT COUNT(*) FROM solutions s WHERE s.record_id = r.id) AS solutions_count
+        FROM records r
+        ORDER BY r.created DESC
+    """)
     rows = cursor.fetchall()
     conn.close()
     return jsonify([dict(r) for r in rows])
@@ -1035,6 +1102,7 @@ def create_record():
         opis_nap_en
     ))
     conn.commit()
+    checkpoint_wal(conn)
     conn.close()
 
     data["opisProblem_en"] = opis_prob_en
@@ -1045,14 +1113,32 @@ def create_record():
 def update_record(rec_id):
     data = request.get_json() or {}
     status = data.get("status", "open")
-    fixed_at = data.get("fixed_at")
-    fixed_by = data.get("fixed_by", "")
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT fixed_by, fixed_at, created_by FROM records WHERE id=?", (rec_id,))
+    old_row = cursor.fetchone()
+    old_fixed_by = (old_row["fixed_by"] if old_row else "") or ""
+    old_fixed_at = old_row["fixed_at"] if old_row else None
+    old_created_by = (old_row["created_by"] if old_row else "") or ""
+
+    if "fixed_by" in data:
+        fixed_by = data.get("fixed_by", "")
+    else:
+        fixed_by = old_fixed_by
+
+    if "fixed_at" in data and data.get("fixed_at") is not None:
+        fixed_at = data.get("fixed_at")
+    else:
+        fixed_at = old_fixed_at
     
     if status == "fixed" and not fixed_at:
         fixed_at = _dt.now().isoformat(timespec="seconds")
     elif status == "open":
         fixed_at = None
         fixed_by = ""
+
+    created_by = data.get("created_by") if "created_by" in data else old_created_by
 
     opis_prob = data.get("opisProblem", "")
     opis_nap = data.get("opisNaprawa", "")
@@ -1064,8 +1150,6 @@ def update_record(rec_id):
     if not opis_nap_en and opis_nap:
         opis_nap_en = translate_pl_to_en(opis_nap)
 
-    conn = get_db_connection()
-    cursor = conn.cursor()
     cursor.execute("""
         UPDATE records 
         SET klient=?, model=?, projekt=?, vin=?, typ=?, element=?,
@@ -1084,7 +1168,7 @@ def update_record(rec_id):
         opis_prob,
         opis_nap,
         status,
-        data.get("created_by", ""),
+        created_by,
         fixed_by,
         fixed_at,
         opis_prob_en,
@@ -1092,6 +1176,7 @@ def update_record(rec_id):
         rec_id
     ))
     conn.commit()
+    checkpoint_wal(conn)
     conn.close()
     return jsonify({"status": "ok", "opisProblem_en": opis_prob_en, "opisNaprawa_en": opis_nap_en})
 
@@ -1116,6 +1201,7 @@ def update_status(rec_id):
         WHERE id=?
     """, (status, fixed_by, fixed_at, rec_id))
     conn.commit()
+    checkpoint_wal(conn)
     conn.close()
     return jsonify({"status": "ok"})
 
@@ -1137,6 +1223,7 @@ def delete_record(rec_id):
     cursor.execute("DELETE FROM photos WHERE record_id=?", (rec_id,))
     cursor.execute("DELETE FROM documents WHERE record_id=?", (rec_id,))
     conn.commit()
+    checkpoint_wal(conn)
     conn.close()
     return jsonify({"status": "ok"})
 
@@ -1214,6 +1301,7 @@ def import_data():
             )
 
         conn.commit()
+        checkpoint_wal(conn)
         return jsonify({"status": "ok", "imported": imported_count, "total": len(recs)})
     finally:
         conn.close()
@@ -1250,8 +1338,21 @@ def add_solution(rec_id):
 
     if not tytul_en and tytul:
         tytul_en = translate_pl_to_en(tytul)
-    if not opis_en and opis:
-        opis_en = translate_pl_to_en(opis)
+    created_by = (data.get("created_by") or "").strip()
+    if not created_by:
+        token = request.headers.get("Authorization", "").replace("Bearer ", "").strip()
+        if token:
+            u_row = conn.execute("""
+                SELECT u.full_name, u.username FROM users u
+                JOIN auth_tokens t ON t.user_id = u.id
+                WHERE t.token = ? AND t.expires_at > ?
+            """, (token, _dt.now().isoformat())).fetchone()
+            if u_row:
+                created_by = u_row["full_name"] or u_row["username"] or ""
+        if not created_by:
+            created_by = "Technik"
+
+    now_str = _dt.now().isoformat(timespec="seconds")
 
     conn.execute("""
         INSERT INTO solutions (id, record_id, numer, tytul, opis, created_by, created, tytul_en, opis_en)
@@ -1259,23 +1360,33 @@ def add_solution(rec_id):
     """, (
         sol_id, rec_id, max_num + 1, tytul,
         opis,
-        data.get("created_by", ""),
-        _dt.now().isoformat(timespec="seconds"),
+        created_by,
+        now_str,
         tytul_en,
         opis_en
     ))
     conn.commit()
+    checkpoint_wal(conn)
     conn.close()
-    return jsonify({"id": sol_id, "numer": max_num + 1, "tytul": tytul, "tytul_en": tytul_en, "opis_en": opis_en}), 201
+    return jsonify({
+        "id": sol_id,
+        "numer": max_num + 1,
+        "tytul": tytul,
+        "tytul_en": tytul_en,
+        "opis_en": opis_en,
+        "created_by": created_by,
+        "created": now_str
+    }), 201
 
 @app.route("/api/solutions/<sol_id>", methods=["PUT"])
 def update_solution(sol_id):
-    """Edytuje tytuł i opis wariantu rozwiązania."""
+    """Edytuje tytuł, opis i opcjonalnie autora wariantu rozwiązania."""
     data = request.get_json() or {}
     tytul = data.get("tytul", "").strip()
     opis = data.get("opis", "")
     tytul_en = (data.get("tytul_en") or "").strip()
     opis_en = (data.get("opis_en") or "").strip()
+    created_by = data.get("created_by")
 
     if not tytul_en and tytul:
         tytul_en = translate_pl_to_en(tytul)
@@ -1283,12 +1394,18 @@ def update_solution(sol_id):
         opis_en = translate_pl_to_en(opis)
 
     conn = get_db_connection()
-    conn.execute("""
-        UPDATE solutions SET tytul=?, opis=?, tytul_en=?, opis_en=? WHERE id=?
-    """, (tytul, opis, tytul_en, opis_en, sol_id))
+    if created_by is not None:
+        conn.execute("""
+            UPDATE solutions SET tytul=?, opis=?, tytul_en=?, opis_en=?, created_by=? WHERE id=?
+        """, (tytul, opis, tytul_en, opis_en, str(created_by).strip(), sol_id))
+    else:
+        conn.execute("""
+            UPDATE solutions SET tytul=?, opis=?, tytul_en=?, opis_en=? WHERE id=?
+        """, (tytul, opis, tytul_en, opis_en, sol_id))
     conn.commit()
+    checkpoint_wal(conn)
     conn.close()
-    return jsonify({"status": "ok", "tytul_en": tytul_en, "opis_en": opis_en})
+    return jsonify({"status": "ok", "tytul_en": tytul_en, "opis_en": opis_en, "created_by": created_by})
 
 @app.route("/api/solutions/<sol_id>", methods=["DELETE"])
 def delete_solution(sol_id):
@@ -1298,6 +1415,7 @@ def delete_solution(sol_id):
     conn.execute("DELETE FROM solution_documents WHERE solution_id=?", (sol_id,))
     conn.execute("DELETE FROM solutions WHERE id=?", (sol_id,))
     conn.commit()
+    checkpoint_wal(conn)
     conn.close()
     return jsonify({"status": "ok"})
 
@@ -1329,6 +1447,7 @@ def add_solution_photo(sol_id):
         (photo_id, sol_id, data.get("filename", "foto.jpg"),
          img_data, _dt.now().isoformat(timespec="seconds")))
     conn.commit()
+    checkpoint_wal(conn)
     conn.close()
     return jsonify({"id": photo_id}), 201
 
@@ -1350,6 +1469,7 @@ def delete_solution_photo(photo_id):
     conn = get_db_connection()
     conn.execute("DELETE FROM solution_photos WHERE id=?", (photo_id,))
     conn.commit()
+    checkpoint_wal(conn)
     conn.close()
     return jsonify({"status": "ok"})
 
@@ -1384,6 +1504,7 @@ def add_solution_document(sol_id):
         (doc_id, sol_id, data.get("filename", "dokument.pdf"), len(raw),
          raw, _dt.now().isoformat(timespec="seconds")))
     conn.commit()
+    checkpoint_wal(conn)
     conn.close()
     return jsonify({"id": doc_id}), 201
 
@@ -1447,6 +1568,10 @@ def open_solution_document(doc_id):
     temp_file = temp_dir / row["filename"]
     temp_file.write_bytes(row["data"])
     try:
+        if row["filename"].lower().endswith(".pdf"):
+            ok, msg = zuken_service.open_pdf_in_system(str(temp_file))
+            if ok:
+                return jsonify({"status": "ok", "path": str(temp_file), "message": msg})
         os.startfile(str(temp_file))
         return jsonify({"status": "ok", "path": str(temp_file)})
     except Exception as e:
@@ -1458,6 +1583,7 @@ def delete_solution_document(doc_id):
     conn = get_db_connection()
     conn.execute("DELETE FROM solution_documents WHERE id=?", (doc_id,))
     conn.commit()
+    checkpoint_wal(conn)
     conn.close()
     return jsonify({"status": "ok"})
 
@@ -1492,6 +1618,7 @@ def add_photo(rec_id):
         (photo_id, rec_id, data.get("filename","foto.jpg"),
          img_data, _dt.now().isoformat(timespec="seconds")))
     conn.commit()
+    checkpoint_wal(conn)
     conn.close()
     return jsonify({"id": photo_id}), 201
 
@@ -1510,8 +1637,23 @@ def delete_photo(photo_id):
     conn = get_db_connection()
     conn.execute("DELETE FROM photos WHERE id=?", (photo_id,))
     conn.commit()
+    checkpoint_wal(conn)
     conn.close()
     return jsonify({"status": "ok"})
+
+@app.route("/api/admin/flush-db", methods=["POST"])
+def api_admin_flush_db():
+    """Wymusza natychmiastowe scalenie dziennika WAL (TRUNCATE) do pliku rejestr_usterek.db."""
+    try:
+        conn = get_db_connection()
+        conn.execute("PRAGMA wal_checkpoint(TRUNCATE);")
+        conn.close()
+        return jsonify({
+            "status": "success",
+            "message": "Baza została w 100% scalona do pliku rejestr_usterek.db. Możesz bezpiecznie skopiować ten plik na pendrive!"
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 @app.route("/api/admin/optimize-photos", methods=["POST"])
 def admin_optimize_photos():
@@ -1643,6 +1785,10 @@ def open_document(doc_id):
     temp_file = temp_dir / row["filename"]
     temp_file.write_bytes(row["data"])
     try:
+        if row["filename"].lower().endswith(".pdf"):
+            ok, msg = zuken_service.open_pdf_in_system(str(temp_file))
+            if ok:
+                return jsonify({"status": "ok", "path": str(temp_file), "message": msg})
         os.startfile(str(temp_file))
         return jsonify({"status": "ok", "path": str(temp_file)})
     except Exception as e:
@@ -1655,6 +1801,310 @@ def delete_document(doc_id):
     conn.commit()
     conn.close()
     return jsonify({"status": "ok"})
+
+
+
+# ═══════════════════════════════════════════════════════════════════
+# ENDPOINTY ZUKEN E3 I LOKALNEGO ASYSTENTA DIAGNOSTYCZNEGO
+# ═══════════════════════════════════════════════════════════════════
+
+@app.route("/api/zuken/projects", methods=["GET"])
+def api_zuken_projects():
+    """Zwraca listę zaimportowanych schematów/projektów Zuken E3 oraz ich rewizji."""
+    try:
+        conn = zuken_service.get_db()
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT id, filename, project_name, client, ps_codes, revision_date, revision_name, total_connections, imported_at, is_active, notes
+            FROM zuken_projects
+            ORDER BY revision_date DESC, id DESC;
+        """)
+        rows = [dict(r) for r in cur.fetchall()]
+        conn.close()
+        return jsonify({"projects": rows})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/zuken/sync", methods=["POST"])
+def api_zuken_sync():
+    """Skanuje katalog Baza wiedzy i synchronizuje pliki XLSX oraz PDF ze schematami."""
+    try:
+        res = zuken_service.sync_all_knowledge_base()
+        return jsonify(res)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/zuken/pdf/schematics", methods=["GET"])
+def api_zuken_pdf_schematics():
+    """Zwraca listę zarejestrowanych schematów PDF z informacją o wersjach."""
+    try:
+        schematics = zuken_service.get_pdf_schematics()
+        return jsonify({"schematics": schematics})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/zuken/pdf/view/<int:schematic_id>")
+def api_zuken_pdf_view(schematic_id):
+    """Serwuje plik PDF ze schematem do podglądu inline w przeglądarce."""
+    try:
+        conn = zuken_service.get_db()
+        cur = conn.cursor()
+        cur.execute("SELECT filepath, filename FROM zuken_pdf_schematics WHERE id = ?", (schematic_id,))
+        row = cur.fetchone()
+        conn.close()
+        if not row:
+            return jsonify({"error": "Schemat PDF nie został znaleziony w bazie."}), 404
+        
+        filepath = row["filepath"]
+        if not os.path.exists(filepath):
+            return jsonify({"error": f"Plik fizyczny {filepath} nie istnieje."}), 404
+
+        dir_path = os.path.dirname(filepath)
+        file_name = os.path.basename(filepath)
+        response = send_from_directory(dir_path, file_name, mimetype="application/pdf", as_attachment=False)
+        response.headers["Content-Disposition"] = f'inline; filename="{file_name}"'
+        return response
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/zuken/pdf/open", methods=["POST"])
+def api_zuken_pdf_open():
+    """Otwiera wskazany schemat w Zuken E3.series (jeśli zainstalowany) lub w SumatraPDF / Acrobat na właściwym arkuszu."""
+    try:
+        data = request.get_json() or {}
+        schematic_id = data.get("schematic_id")
+        page = int(data.get("page", 1))
+
+        conn = zuken_service.get_db()
+        cur = conn.cursor()
+        cur.execute("SELECT filepath, filename FROM zuken_pdf_schematics WHERE id = ?", (schematic_id,))
+        row = cur.fetchone()
+
+        sheet_number = None
+        sheet_title = None
+        if row:
+            cur.execute(
+                "SELECT sheet_number, sheet_title FROM zuken_pdf_sheets WHERE schematic_id = ? AND page_number = ?",
+                (schematic_id, page)
+            )
+            sheet_row = cur.fetchone()
+            if sheet_row:
+                sheet_number = sheet_row["sheet_number"]
+                sheet_title = sheet_row["sheet_title"]
+
+        conn.close()
+
+        if not row:
+            return jsonify({"error": "Schemat nie został odnaleziony w bazie."}), 404
+
+        filepath = row["filepath"]
+        target = (data.get("target") or "").lower()
+
+        if target == "pdf":
+            ok, msg = zuken_service.open_pdf_in_system(filepath, page_number=page)
+        elif target == "zuken":
+            e3s_file = zuken_service.find_e3s_counterpart(filepath)
+            if e3s_file and os.path.exists(e3s_file):
+                ok, msg = zuken_service.open_in_zuken(e3s_file, sheet_number=sheet_number, sheet_title=sheet_title)
+            else:
+                ok, msg = False, "Nie znaleziono pliku projektu .e3s dla tego schematu."
+        else:
+            ok, msg = zuken_service.open_schematic_in_system(
+                filepath,
+                page_number=page,
+                sheet_number=sheet_number,
+                sheet_title=sheet_title
+            )
+
+        if ok:
+            return jsonify({"status": "success", "message": msg})
+        else:
+            return jsonify({"status": "error", "message": msg}), 500
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/zuken/glossary", methods=["GET", "POST"])
+def api_zuken_glossary():
+    """Pobiera lub dodaje/aktualizuje wpis w słowniku skrótów Zuken."""
+    if request.method == "GET":
+        try:
+            conn = zuken_service.get_db()
+            cur = conn.cursor()
+            cur.execute("SELECT prefix, category, desc_pl, desc_en FROM zuken_glossary ORDER BY category, prefix;")
+            rows = [dict(r) for r in cur.fetchall()]
+            conn.close()
+            return jsonify({"glossary": rows})
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+    else:
+        data = request.get_json() or {}
+        prefix = (data.get("prefix") or "").strip().upper()
+        category = (data.get("category") or "Ogólne").strip()
+        desc_pl = (data.get("desc_pl") or "").strip()
+        desc_en = (data.get("desc_en") or "").strip()
+
+        if not prefix or not desc_pl:
+            return jsonify({"error": "Prefiks i opis PL są wymagane."}), 400
+
+        try:
+            conn = zuken_service.get_db()
+            cur = conn.cursor()
+            cur.execute("""
+                INSERT INTO zuken_glossary (prefix, category, desc_pl, desc_en)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(prefix) DO UPDATE SET
+                    category=excluded.category,
+                    desc_pl=excluded.desc_pl,
+                    desc_en=excluded.desc_en;
+            """, (prefix, category, desc_pl, desc_en))
+            conn.commit()
+            conn.close()
+            return jsonify({"ok": True, "message": f"Zapisano skrót {prefix}"})
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/ai/diagnose", methods=["POST"])
+def api_ai_diagnose():
+    """Główny endpoint podpowiedzi diagnostycznej (100% lokalny offline)."""
+    data = request.get_json() or {}
+    element = data.get("element", "")
+    typ = data.get("typ", "")
+    opis = data.get("opisProblem", "") or data.get("opis", "")
+    ps_code = data.get("projekt", "") or data.get("ps_code", "")
+    client = data.get("klient", "") or data.get("client", "")
+    vin = data.get("vin", "")
+    record_id = data.get("record_id") or data.get("recordId", "")
+    solution_id = data.get("solution_id") or data.get("solutionId", "")
+
+    try:
+        result = zuken_service.diagnose_defect(
+            element=element,
+            typ=typ,
+            opisProblem=opis,
+            ps_code=ps_code,
+            client=client,
+            vin=vin,
+            record_id=record_id,
+            solution_id=solution_id
+        )
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# ═══════════════════════════════════════════════════════════════════
+# ENDPOINTY API DLA BOM (BILL OF MATERIAL) I ZDJĘĆ KOMPONENTÓW
+# ═══════════════════════════════════════════════════════════════════
+
+@app.route("/api/zuken/bom/catalog", methods=["GET"])
+def api_zuken_bom_catalog():
+    """Zwraca katalog artykułów z BOM z filtrowaniem i paginacją."""
+    try:
+        query = request.args.get("q", "") or request.args.get("query", "")
+        supplier = request.args.get("supplier", "")
+        category = request.args.get("category", "")
+        ps_code = request.args.get("ps_code", "") or request.args.get("projekt", "")
+        limit = int(request.args.get("limit", 100))
+        offset = int(request.args.get("offset", 0))
+
+        data = zuken_service.get_bom_catalog(
+            query=query,
+            supplier=supplier,
+            category=category,
+            ps_code=ps_code,
+            limit=limit,
+            offset=offset
+        )
+        return jsonify(data)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/zuken/bom/suppliers", methods=["GET"])
+def api_zuken_bom_suppliers():
+    """Zwraca listę dostawców z BOM."""
+    try:
+        suppliers = zuken_service.get_bom_suppliers()
+        return jsonify({"suppliers": suppliers})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/zuken/bom/categories", methods=["GET"])
+def api_zuken_bom_categories():
+    """Zwraca listę kategorii komponentów z BOM."""
+    try:
+        categories = zuken_service.get_bom_categories()
+        return jsonify({"categories": categories})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/zuken/bom/image/<path:filename>")
+def api_zuken_bom_image(filename):
+    """Serwuje lokalne zdjęcie złączki lub komponentu z folderu Baza wiedzy/zdjecia_komponentow/."""
+    try:
+        clean_name = os.path.basename(filename)
+        img_dir = zuken_service.BOM_IMAGES_DIR
+        if not os.path.exists(os.path.join(img_dir, clean_name)):
+            return jsonify({"error": "Plik zdjęcia nie istnieje."}), 404
+
+        response = send_from_directory(img_dir, clean_name)
+        response.headers["Cache-Control"] = "public, max-age=86400"
+        return response
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/zuken/bom/upload-image", methods=["POST"])
+def api_zuken_bom_upload_image():
+    """
+    Zapisuje zdjęcie złączki w folderze lokalnym Bazy Wiedzy.
+    Obsługuje zarówno wklejanie ze schowka (Base64) jak i wysyłanie pliku (Multipart).
+    """
+    try:
+        article_number = ""
+        img_bytes = None
+        ext = "png"
+
+        if request.is_json:
+            data = request.get_json() or {}
+            article_number = (data.get("article_number") or "").strip()
+            image_data = data.get("image_data") or ""
+            if "base64," in image_data:
+                header, b64_str = image_data.split("base64,", 1)
+                img_bytes = base64.b64decode(b64_str)
+                if "jpeg" in header or "jpg" in header:
+                    ext = "jpg"
+                elif "webp" in header:
+                    ext = "webp"
+            elif image_data:
+                img_bytes = base64.b64decode(image_data)
+        elif "file" in request.files:
+            f = request.files["file"]
+            article_number = request.form.get("article_number", "").strip()
+            if f and f.filename:
+                _, f_ext = os.path.splitext(f.filename)
+                ext = f_ext.lstrip(".") or "png"
+                img_bytes = f.read()
+
+        if not article_number or not img_bytes:
+            return jsonify({"error": "Wymagany numer artykułu oraz dane zdjęcia."}), 400
+
+        ok, res = zuken_service.save_component_image(article_number, img_bytes, ext=ext)
+        if ok:
+            return jsonify({"status": "success", "image_url": res, "message": "Zapisano zdjęcie komponentu w Bazie wiedzy."})
+        else:
+            return jsonify({"error": res}), 400
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 
 
 

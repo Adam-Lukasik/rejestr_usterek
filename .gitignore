@@ -26,3 +26,13 @@ ENV/
 *.tmp
 temp/
 scratch/
+SumatraPDF-settings.txt
+sumatrapdfcache/
+
+# Pliki binarne i wykonywalne
+*.exe
+
+# Baza wiedzy (dokumentacja, schematy Zuken, załączniki lokalne)
+Baza wiedzy/
+baza wiedzy/
+
