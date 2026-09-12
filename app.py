@@ -2106,9 +2106,138 @@ def api_zuken_bom_upload_image():
         return jsonify({"error": str(e)}), 500
 
 
+# ═══════════════════════════════════════════════════════════════════
+# ENDPOINTY DLA ZESTAWIEŃ TECHNICZNYCH ZUKEN E3 (PS)
+# ═══════════════════════════════════════════════════════════════════
+
+
+@app.route("/api/zuken/ps-projects", methods=["GET"])
+def api_zuken_ps_projects():
+    """Zwraca listę projektów PS z Bazy wiedzy oraz stan ich zestawień."""
+    try:
+        projs = zuken_service.get_available_ps_projects()
+        return jsonify({"projects": projs})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/zuken/summaries/generate", methods=["POST"])
+def api_zuken_summaries_generate():
+    """Generuje zestawienia (złącza z pinoutem, bezpieczniki, przekaźniki) dla wybranego PS."""
+    try:
+        data = request.get_json() or {}
+        ps_code = data.get("ps_code") or request.form.get("ps_code") or ""
+        if not ps_code:
+            return jsonify({"error": "Wymagany numer projektu PS."}), 400
+
+        res = zuken_service.generate_ps_technical_summaries(ps_code)
+        if res.get("status") == "error":
+            return jsonify(res), 400
+        return jsonify(res)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/zuken/summaries/connectors", methods=["GET"])
+def api_zuken_summaries_connectors():
+    """Zwraca listę złączy wraz z kompletnym pinoutem dla projektu PS."""
+    try:
+        ps_code = request.args.get("ps", "") or request.args.get("ps_code", "")
+        search = request.args.get("q", "") or request.args.get("search", "")
+        system_filter = request.args.get("system", "")
+        limit = int(request.args.get("limit", 100))
+        offset = int(request.args.get("offset", 0))
+
+        if not ps_code:
+            return jsonify({"error": "Parametr ps jest wymagany."}), 400
+
+        data = zuken_service.get_ps_connectors(
+            ps_code=ps_code,
+            search=search,
+            system_filter=system_filter,
+            limit=limit,
+            offset=offset
+        )
+        return jsonify(data)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/zuken/summaries/fuses", methods=["GET"])
+def api_zuken_summaries_fuses():
+    """Zwraca zestaw bezpieczników dla projektu PS."""
+    try:
+        ps_code = request.args.get("ps", "") or request.args.get("ps_code", "")
+        search = request.args.get("q", "") or request.args.get("search", "")
+        limit = int(request.args.get("limit", 100))
+        offset = int(request.args.get("offset", 0))
+
+        if not ps_code:
+            return jsonify({"error": "Parametr ps jest wymagany."}), 400
+
+        data = zuken_service.get_ps_fuses(
+            ps_code=ps_code,
+            search=search,
+            limit=limit,
+            offset=offset
+        )
+        return jsonify(data)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/zuken/summaries/relays", methods=["GET"])
+def api_zuken_summaries_relays():
+    """Zwraca zestaw przekaźników dla projektu PS."""
+    try:
+        ps_code = request.args.get("ps", "") or request.args.get("ps_code", "")
+        search = request.args.get("q", "") or request.args.get("search", "")
+        limit = int(request.args.get("limit", 100))
+        offset = int(request.args.get("offset", 0))
+
+        if not ps_code:
+            return jsonify({"error": "Parametr ps jest wymagany."}), 400
+
+        data = zuken_service.get_ps_relays(
+            ps_code=ps_code,
+            search=search,
+            limit=limit,
+            offset=offset
+        )
+        return jsonify(data)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/zuken/summaries/export", methods=["GET"])
+def api_zuken_summaries_export():
+    """Eksportuje zestawienie do pliku CSV z kodowaniem UTF-8 BOM dla Excela."""
+    try:
+        ps_code = request.args.get("ps", "") or request.args.get("ps_code", "")
+        summary_type = request.args.get("type", "connectors").lower()
+        if not ps_code:
+            return jsonify({"error": "Parametr ps jest wymagany."}), 400
+
+        if summary_type not in ["connectors", "fuses", "relays"]:
+            summary_type = "connectors"
+
+        csv_content = zuken_service.export_ps_summary_csv(ps_code, summary_type=summary_type)
+        type_names = {
+            "connectors": "zlacza_pinout",
+            "fuses": "bezpieczniki",
+            "relays": "przekazniki"
+        }
+        filename = f"{ps_code}_{type_names.get(summary_type, 'zestawienie')}.csv"
+
+        response = Response(csv_content, mimetype="text/csv", content_type="text/csv; charset=utf-8")
+        response.headers["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return response
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 if __name__ == "__main__":
+
     init_db()
     port = CFG.get("PORT", 5000)
     host = CFG.get("HOST", "127.0.0.1")

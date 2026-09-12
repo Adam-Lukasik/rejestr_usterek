@@ -6,12 +6,17 @@ Obsługuje wiele projektów PS (np. EoE, LAS) oraz wersjonowanie/rewizje wiązek
 
 import os
 import re
+import io
+import csv
+import json
 import sqlite3
 import zipfile
 import urllib.parse
 import xml.etree.ElementTree as ET
 from datetime import datetime
 from pathlib import Path
+from collections import defaultdict
+
 
 try:
     import pypdf
@@ -234,6 +239,87 @@ def init_zuken_tables():
     cur.execute("CREATE INDEX IF NOT EXISTS idx_zuken_bom_dev_clean ON zuken_bom_devices (device_clean);")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_zuken_bom_dev_item ON zuken_bom_devices (bom_item_id);")
 
+    # Tabele dla zestawień technicznych per projekt PS (złącza z pinoutem, bezpieczniki, przekaźniki)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS zuken_ps_summaries (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ps_code TEXT UNIQUE,
+            project_name TEXT,
+            client TEXT,
+            connectors_count INTEGER DEFAULT 0,
+            fuses_count INTEGER DEFAULT 0,
+            relays_count INTEGER DEFAULT 0,
+            generated_at TEXT,
+            source_files TEXT
+        );
+    """)
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS zuken_ps_connectors (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ps_code TEXT,
+            device_code TEXT,
+            device_clean TEXT,
+            system TEXT,
+            location TEXT,
+            system_desc TEXT,
+            location_desc TEXT,
+            article_number TEXT,
+            supplier TEXT,
+            description TEXT,
+            image_url TEXT,
+            pin_count INTEGER DEFAULT 0,
+            pins_json TEXT,
+            FOREIGN KEY (ps_code) REFERENCES zuken_ps_summaries (ps_code) ON DELETE CASCADE
+        );
+    """)
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS zuken_ps_fuses (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ps_code TEXT,
+            device_code TEXT,
+            device_clean TEXT,
+            rating TEXT,
+            fuse_type TEXT,
+            article_number TEXT,
+            supplier TEXT,
+            description TEXT,
+            holder_code TEXT,
+            box_code TEXT,
+            system TEXT,
+            location TEXT,
+            circuits TEXT,
+            details_json TEXT,
+            FOREIGN KEY (ps_code) REFERENCES zuken_ps_summaries (ps_code) ON DELETE CASCADE
+        );
+    """)
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS zuken_ps_relays (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ps_code TEXT,
+            device_code TEXT,
+            device_clean TEXT,
+            function TEXT,
+            relay_type TEXT,
+            article_number TEXT,
+            supplier TEXT,
+            description TEXT,
+            socket_code TEXT,
+            system TEXT,
+            location TEXT,
+            contacts_json TEXT,
+            FOREIGN KEY (ps_code) REFERENCES zuken_ps_summaries (ps_code) ON DELETE CASCADE
+        );
+    """)
+
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_zuken_ps_conn_ps ON zuken_ps_connectors (ps_code);")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_zuken_ps_conn_dev ON zuken_ps_connectors (device_clean);")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_zuken_ps_fuse_ps ON zuken_ps_fuses (ps_code);")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_zuken_ps_relay_ps ON zuken_ps_relays (ps_code);")
+
+
     # Wypełnij / zaktualizuj domyślny słownik skrótów
     cur.executemany("""
         INSERT INTO zuken_glossary (prefix, category, desc_pl, desc_en)
@@ -363,6 +449,11 @@ def extract_project_info_from_filename(filename, raw_rows):
     else:
         rev_name = f"Rewizja {rev_date}" if rev_date else "Wersja schematu"
 
+    # Wykrywanie kodu PS z nazwy pliku lub folderu
+    ps_match = re.search(r"(PS\d{4,})", filename, re.IGNORECASE)
+    if ps_match and not ps_codes:
+        ps_codes = ps_match.group(1).upper()
+
     return {
         "project_name": proj_name,
         "client": client,
@@ -372,7 +463,7 @@ def extract_project_info_from_filename(filename, raw_rows):
     }
 
 
-def import_zuken_xlsx(filepath):
+def import_zuken_xlsx(filepath, ps_code=None):
     """Importuje plik XLSX z listy połączeń Zuken E3 do bazy SQLite."""
     filename = os.path.basename(filepath)
     raw_rows = parse_xlsx_fast(filepath)
@@ -380,6 +471,9 @@ def import_zuken_xlsx(filepath):
         return 0, "Plik jest pusty lub niepoprawny."
 
     meta = extract_project_info_from_filename(filename, raw_rows)
+    if ps_code:
+        meta["ps_codes"] = ps_code
+
 
     # Wykrywanie wiersza nagłówkowego
     header_idx = -1
@@ -1733,20 +1827,22 @@ PDF_SYNONYMS = {
     "STOPNIE": ["STEP LIGHT", "CENTRAL LOCKING"],
     "SCHOWKA": ["LOCKER LIGHT"],
     "SCHOWEK": ["LOCKER LIGHT"],
-    "RADIO": ["ENTERTAIMENT RADIO", "RADIO"],
-    "INTERCOM": ["INTERCOM", "MID", "X244", "SPEAKER", "O1.14"],
-    "DOMOFON": ["INTERCOM", "MID", "X244", "SPEAKER"],
-    "GŁOŚNIK": ["SPEAKERS", "SPEAKER", "LAUTSPRECHER", "LT", "X244", "A294", "IONV MAP LIGHT SPEAKERS", "INTERCOM"],
-    "GLOSNIK": ["SPEAKERS", "SPEAKER", "LAUTSPRECHER", "LT", "X244", "A294", "IONV MAP LIGHT SPEAKERS", "INTERCOM"],
-    "GŁOŚNIKA": ["SPEAKERS", "SPEAKER", "LAUTSPRECHER", "LT", "X244", "A294", "IONV MAP LIGHT SPEAKERS", "INTERCOM"],
-    "GLOSNIKA": ["SPEAKERS", "SPEAKER", "LAUTSPRECHER", "LT", "X244", "A294", "IONV MAP LIGHT SPEAKERS", "INTERCOM"],
-    "GŁOŚNIKI": ["SPEAKERS", "SPEAKER", "LAUTSPRECHER", "LT", "X244", "A294", "IONV MAP LIGHT SPEAKERS", "INTERCOM"],
-    "GLOSNIKI": ["SPEAKERS", "SPEAKER", "LAUTSPRECHER", "LT", "X244", "A294", "IONV MAP LIGHT SPEAKERS", "INTERCOM"],
-    "SPEAKER": ["SPEAKERS", "SPEAKER", "LAUTSPRECHER", "LT", "X244", "A294", "IONV MAP LIGHT SPEAKERS", "INTERCOM"],
-    "SPEAKERS": ["SPEAKERS", "SPEAKER", "LAUTSPRECHER", "LT", "X244", "A294", "IONV MAP LIGHT SPEAKERS"],
-    "LAUTSPRECHER": ["SPEAKERS", "SPEAKER", "LT", "LT-CAB", "LT SALOON", "X244", "A294", "IONV MAP LIGHT SPEAKERS"],
-    "LT": ["LT", "LT-CAB", "LT CAB +", "LT CAB -", "LT SALOON", "SPEAKERS", "SPEAKER", "X244", "A294"],
-    "AUDIO": ["SPEAKERS", "SPEAKER", "RADIO", "INTERCOM", "LT"],
+    "RADIO": ["ENTERTAIMENT RADIO", "RADIO", "SPEAKER LEFT", "SPEAKER RIGHT", "X239", "X240", "X238", "X305", "QC5", "QC6", "QC7", "QC8", "304", "305", "306"],
+    "RADIA": ["ENTERTAIMENT RADIO", "RADIO", "SPEAKER LEFT", "SPEAKER RIGHT", "X239", "X240", "X238", "X305", "QC5", "QC6", "QC7", "QC8", "304", "305", "306"],
+    "INTERCOM": ["INTERCOM", "MID", "X45", "X49", "X39", "X40", "A101", "SPEAKER INTERCOM", "O1.14"],
+    "INTERKOM": ["INTERCOM", "MID", "X45", "X49", "X39", "X40", "A101", "SPEAKER INTERCOM", "O1.14"],
+    "DOMOFON": ["INTERCOM", "MID", "X45", "X49", "X39", "X40", "A101", "SPEAKER INTERCOM"],
+    "GŁOŚNIK": ["SPEAKERS", "SPEAKER", "LAUTSPRECHER"],
+    "GLOSNIK": ["SPEAKERS", "SPEAKER", "LAUTSPRECHER"],
+    "GŁOŚNIKA": ["SPEAKERS", "SPEAKER", "LAUTSPRECHER"],
+    "GLOSNIKA": ["SPEAKERS", "SPEAKER", "LAUTSPRECHER"],
+    "GŁOŚNIKI": ["SPEAKERS", "SPEAKER", "LAUTSPRECHER"],
+    "GLOSNIKI": ["SPEAKERS", "SPEAKER", "LAUTSPRECHER"],
+    "SPEAKER": ["SPEAKERS", "SPEAKER", "LAUTSPRECHER"],
+    "SPEAKERS": ["SPEAKERS", "SPEAKER", "LAUTSPRECHER"],
+    "LAUTSPRECHER": ["SPEAKERS", "SPEAKER"],
+    "LT": ["LT", "LT-CAB", "LT CAB +", "LT CAB -", "LT SALOON"],
+    "AUDIO": ["SPEAKERS", "SPEAKER", "RADIO", "INTERCOM"],
     "DŹWIĘK": ["SPEAKERS", "SPEAKER", "SIREN", "REVERSE ALARM", "LT"],
     "DZWIĘK": ["SPEAKERS", "SPEAKER", "SIREN", "REVERSE ALARM", "LT"],
     "TRENNWAND": ["BOX-CAB INTERFACE", "CAB", "TWM", "TWL", "TWR", "X292", "X296", "X10"],
@@ -1758,7 +1854,7 @@ PDF_SYNONYMS = {
     "PRZEKAZNIK": ["RELAY"],
     "RELAY": ["RELAY"],
     "KFG": ["KFG"],
-    "CARNATION": ["CARNATION", "A15"],
+    "CARNATION": ["CARNATION", "A15", "SPEAKER CARNATION", "X244", "X258", "LT CAB", "LT SALOON"],
     "MDVS": ["MDVS"],
     "ORTUS": ["ORTUS"],
     "ECORUN": ["ECORUN", "ECO RUN INTERFACE"],
@@ -1823,12 +1919,27 @@ def extract_query_phrases_and_tokens(query, extra_tokens=None):
                 compound_phrases.append(p_phrase)
             specific_tokens.add(p_phrase)
 
-    # Detekcja usterki głośników / audio / interkomu
-    if any(k in q_upper for k in ["GŁOŚNIK", "GLOSNIK", "SPEAKER", "LAUTSPRECHER", "LT"]):
-        for sp_p in ["SPEAKER CARNATION", "IONV MAP LIGHT SPEAKERS", "LT CAB", "LT CAB +", "LT CAB -"]:
+    # Detekcja usterki głośników / audio: rozróżnienie Carnation vs Interkom vs Radio samochodowe
+    is_carnation_intent = any(k in q_upper for k in ["CARNATION", "EVPSS", "KOMUNIKAT", "OSTRZEŻ", "OSTRZEZ"])
+    is_intercom_intent = any(k in q_upper for k in ["INTERCOM", "INTERKOM", "DOMOFON", "WOLFELEC"])
+    is_radio_intent = any(k in q_upper for k in ["RADIO", "RADIA", "RADIOW", "LEWY", "PRAWY", "LEFT", "RIGHT", "ENTERTAINMENT", "ENTERTAIMENT", "BALANS"])
+    is_speaker_intent = any(k in q_upper for k in ["GŁOŚNIK", "GLOSNIK", "SPEAKER", "LAUTSPRECHER", "LT", "AUDIO"])
+
+    if is_radio_intent:
+        for sp_p in ["ENTERTAIMENT RADIO", "SPEAKER LEFT", "SPEAKER RIGHT", "RADIO VOLUME", "RADIO INTERFACE"]:
             if sp_p not in compound_phrases:
                 compound_phrases.append(sp_p)
-        specific_tokens.update(["SPEAKERS", "SPEAKER", "LAUTSPRECHER", "LT", "X244", "A294", "-A294", "-X244"])
+        specific_tokens.update(["ENTERTAIMENT RADIO", "SPEAKER LEFT", "SPEAKER RIGHT", "X239", "X240", "X238", "X305", "QC5", "QC6", "QC7", "QC8", "-304", "-305", "-306", "304", "305", "306", "HPL", "HPR"])
+    elif is_intercom_intent:
+        for sp_p in ["SPEAKER INTERCOM CAB", "SPEAKER INTERCOM BOX", "INTERCOM"]:
+            if sp_p not in compound_phrases:
+                compound_phrases.append(sp_p)
+        specific_tokens.update(["INTERCOM", "X45", "X49", "X39", "X40", "X306", "A101", "-A101", "1612", "1613", "264", "267", "O1.14"])
+    elif is_carnation_intent or is_speaker_intent:
+        for sp_p in ["SPEAKER CARNATION", "IONV MAP LIGHT SPEAKERS", "LT CAB", "LT SALOON"]:
+            if sp_p not in compound_phrases:
+                compound_phrases.append(sp_p)
+        specific_tokens.update(["SPEAKER CARNATION", "X244", "X258", "-X244", "-X258", "A15", "-A15", "LT CAB", "LT SALOON", "304_1", "472", "473"])
 
     # Detekcja ścianki grodziowej / przejść kabina-zabudowa
     if any(k in q_upper for k in ["TRENNWAND", "GRODZIOW", "ŚCIANK", "SCIAN"]):
@@ -1840,10 +1951,10 @@ def extract_query_phrases_and_tokens(query, extra_tokens=None):
     for m_code in re.findall(r"\b([XFKM][0-9]{1,4}[A-Z]?|RT[0-9]{1,4}|SP[0-9]{1,4})\b", q_upper):
         specific_tokens.add(m_code)
 
-    all_raw_tokens = re.findall(r"[A-Za-z0-9_\-\+]+", q_upper)
+    all_raw_tokens = re.findall(r"[A-Za-z0-9ĄĆĘŁŃÓŚŹŻ_\-\+]+", q_upper)
     if extra_tokens:
         for et in extra_tokens:
-            all_raw_tokens.extend(re.findall(r"[A-Za-z0-9_\-\+]+", et.upper()))
+            all_raw_tokens.extend(re.findall(r"[A-Za-z0-9ĄĆĘŁŃÓŚŹŻ_\-\+]+", et.upper()))
 
     for t in all_raw_tokens:
         clean = re.sub(r"^[=+\-:]+", "", t)
@@ -2029,21 +2140,47 @@ def find_pdf_sheets_for_query(query, ps_code=None, limit=25, extra_tokens=None, 
             score += 2800 if not is_overview else 100
             reasons.append(f"Główny układ usterki: {sh['sheet_title']}")
 
-        # 3b. Dedykowane dopasowanie obwodów audio i głośników
-        if is_speaker_query:
-            if any(k in title_upper for k in ['SPEAKER', 'SPEAKERS', 'IONV MAP LIGHT SPEAKERS']):
-                score += 5200
-                reasons.append("Dedykowany arkusz głośnika i obwodu audio: IONV MAP LIGHT SPEAKERS")
-            elif any(k in raw_upper for k in ['SPEAKER CARNATION', '-A294', '+MID-X244', 'LT-CAB+']):
-                score += 4200
-                reasons.append("Arkusz zawiera aparat głośnika Carnation (-A294) i wtyk +MID-X244")
-            elif 'BOX-CAB INTERFACE' in title_upper or str(sh.get('sheet_number')) == '43':
-                score += 3100
-                reasons.append("Przejście grodziowe obwodu głośnika (BOX-CAB INTERFACE / X296 / X292)")
-            elif str(sh.get('sheet_number')) in ['46', '46 =CAB'] or ('CAB' in title_upper and is_overview):
-                if any(k in raw_upper for k in ['X296', 'X295', '304', '305', 'INTERFACE']):
-                    score += 1800
-                    reasons.append("Tabela pinoutu złączy grodziowych (Arkusz 46: =CAB)")
+        # 3b. Dedykowane dopasowanie obwodów audio i głośników (rozróżnienie Radio vs Interkom vs Carnation)
+        is_radio_intent = any(k in query_upper for k in ["RADIO", "RADIA", "RADIOW", "LEWY", "PRAWY", "LEFT", "RIGHT", "ENTERTAINMENT", "ENTERTAIMENT", "BALANS"])
+        is_intercom_intent = any(k in query_upper for k in ["INTERCOM", "INTERKOM", "DOMOFON", "WOLFELEC"])
+        is_carnation_intent = any(k in query_upper for k in ["CARNATION", "EVPSS", "KOMUNIKAT", "OSTRZEŻ", "OSTRZEZ"])
+
+        if is_speaker_query or is_radio_intent or is_intercom_intent or is_carnation_intent:
+            if is_radio_intent:
+                if 'ENTERTAIMENT RADIO' in title_upper or str(sh.get('sheet_number')) == '9':
+                    score += 6500
+                    reasons.append("Dedykowany arkusz nagłośnienia radia samochodowego: ENTERTAIMENT RADIO (Arkusz 9)")
+                elif any(k in raw_upper for k in ['SPEAKER LEFT', 'SPEAKER RIGHT', 'X239', 'X240', '-304', '-305']):
+                    score += 4200
+                    reasons.append("Arkusz zawiera głośniki radia (-304/-305) lub złącza X239/X240")
+                elif 'CAB' in title_upper and is_overview and any(k in raw_upper for k in ['QC5', 'QC6', 'QC7', 'QC8', 'X305']):
+                    score += 2500
+                    reasons.append("Złącza OEM radia w kabinie (-QC5..-QC8 / X305)")
+            elif is_intercom_intent:
+                if 'INTERCOM' in title_upper or str(sh.get('sheet_number')) == '27':
+                    score += 6500
+                    reasons.append("Dedykowany arkusz instalacji interkomu: INTERCOM (Arkusz 27)")
+                elif any(k in raw_upper for k in ['SPEAKER INTERCOM', 'X45', 'X49', '-A101', 'LS PR', 'LS FH']):
+                    score += 4200
+                    reasons.append("Arkusz zawiera głośniki interkomu (X45/X49) lub centralę -A101")
+            elif is_carnation_intent:
+                if 'IONV MAP LIGHT SPEAKERS' in title_upper or str(sh.get('sheet_number')) == '13':
+                    score += 6500
+                    reasons.append("Dedykowany arkusz głośnika komunikatów Carnation w kabinie: IONV MAP LIGHT SPEAKERS (Arkusz 13 / X244)")
+                elif 'PIR | PANIC' in title_upper or str(sh.get('sheet_number')) == '30':
+                    score += 6000
+                    reasons.append("Dedykowany arkusz głośnika komunikatów Carnation w przedziale pacjenta: PIR | PANIC (Arkusz 30 / X258)")
+                elif any(k in raw_upper for k in ['SPEAKER CARNATION', '+MID-X244', '+WAA-X258', 'LT-CAB', 'LT SALOON']):
+                    score += 4500
+                    reasons.append("Arkusz zawiera złącze głośnika Carnation (X244 w kabinie lub X258 w przedziale)")
+            else:
+                # Ogólne zapytanie o głośniki (bez sprecyzowania systemu)
+                if any(k in title_upper for k in ['SPEAKER', 'SPEAKERS', 'IONV MAP LIGHT SPEAKERS', 'INTERCOM', 'ENTERTAIMENT RADIO']):
+                    score += 4000
+                    reasons.append(f"Arkusz obwodów audio: {sh['sheet_title']}")
+                elif any(k in raw_upper for k in ['SPEAKER CARNATION', 'SPEAKER INTERCOM', 'SPEAKER LEFT', 'SPEAKER RIGHT']):
+                    score += 3000
+                    reasons.append("Arkusz zawiera instalacje głośnikowe pojazdu")
 
         # 4. Dopasowanie tematu/tytułu arkusza (np. 'OUTLETS', 'HVAC', 'MARKER', 'SPEAKERS')
         for st in specific_tokens:
@@ -2524,15 +2661,11 @@ def get_carnation_diagnostic_info(ps_code=None, query_text=""):
         "INVERTER": ["O3.13"],
         "230V": ["O3.13"],
 
-        # Sygnalizacja dźwiękowa i interkom
-        "GŁOŚNIK": ["O1.14"],
-        "GLOSNIK": ["O1.14"],
-        "SPEAKER": ["O1.14"],
-        "LAUTSPRECHER": ["O1.14"],
-        "LT": ["O1.14"],
-        "AUDIO": ["O1.14"],
+        # Interkom pokładowy Wolfelec (zasilanie z wyjścia O1.14)
         "INTERCOM": ["O1.14"],
+        "INTERKOM": ["O1.14"],
         "DOMOFON": ["O1.14"],
+        "WOLFELEC": ["O1.14"],
         "REVERSE ALARM": ["O1.12"],
         "BRZĘCZYK COFANIA": ["O1.12"],
         "BRZECZYK": ["O1.12"],
@@ -2646,9 +2779,11 @@ def get_carnation_diagnostic_info(ps_code=None, query_text=""):
                 "actions": r["actions"][:3]
             })
 
-    # Specyficzne komunikaty głosowe powiązane z głośnikiem
-    is_speaker = any(k in q_upper for k in ["GŁOŚNIK", "GLOSNIK", "SPEAKER", "LAUTSPRECHER", "LT", "AUDIO", "INTERCOM"])
-    if is_speaker:
+    # Specyficzne komunikaty głosowe powiązane z głośnikiem Carnation
+    is_carnation_speaker = any(k in q_upper for k in ["CARNATION", "EVPSS", "KOMUNIKAT", "OSTRZEŻ", "OSTRZEZ"]) or (
+        any(k in q_upper for k in ["GŁOŚNIK", "GLOSNIK", "SPEAKER"]) and not any(k in q_upper for k in ["RADIO", "RADIA", "INTERCOM", "INTERKOM"])
+    )
+    if is_carnation_speaker:
         voice_keys = ["N26", "N42", "N51", "N24", "N25", "N20", "N21"]
         for vk in voice_keys:
             if vk in parsed["notifications"]:
@@ -2669,6 +2804,12 @@ def get_carnation_diagnostic_info(ps_code=None, query_text=""):
     # 4. SYNTEZA PODSUMOWANIA DIAGNOSTYCZNEGO
     # ═══════════════════════════════════════════════════════════════
     summary_parts = []
+    if is_carnation_speaker and not any(k in q_upper for k in ["INTERCOM", "INTERKOM", "RADIO", "RADIA"]):
+        summary_parts.append(
+            "Głośniki komunikatów Carnation w kabinie (=CAB+MID-X244) oraz w przedziale medycznym (=BOX+WAA-X258) "
+            "odtwarzają komunikaty głosowe i ostrzeżenia sterownika Carnation Genesis EVPSS (m.in. niezapięte pasy, otwarte drzwi, stan zasilania)."
+        )
+
     if result["relevant_outputs"]:
         outs_desc = ", ".join(f"{o['code']} ({o['function']}, {o['max_current']})" for o in result["relevant_outputs"][:4])
         summary_parts.append(f"Zidentyfikowano wyjścia modułów OPM Carnation: {outs_desc}.")
@@ -2825,7 +2966,7 @@ def diagnose_defect(element="", typ="", opisProblem="", ps_code=None, client=Non
     else:
         search_text = base_search
 
-    tokens = re.findall(r"[A-Za-z0-9_\-\.\:\+]+", search_text.upper())
+    tokens = re.findall(r"[A-Za-z0-9ĄĆĘŁŃÓŚŹŻ_\-\.\:\+]+", search_text.upper())
     for vs in variant_symbols:
         clean_vs = vs.lstrip("-+=:")
         if clean_vs not in tokens:
@@ -2878,27 +3019,39 @@ def diagnose_defect(element="", typ="", opisProblem="", ps_code=None, client=Non
         "TEMPERATURY": ["EXTERNAL SENSOR", "X179", "HVAC", "TEMP"],
         "TEMPERATURA": ["EXTERNAL SENSOR", "X179", "HVAC", "TEMP"],
         "EBERSPACHER": ["HVAC", "HEATER", "47 =BOX"],
-        "GŁOŚNIK": ["LT", "LT CAB", "LT SALOON", "SPEAKER", "LAUTSPRECHER", "X244", "A294", "X296", "X292", "X10", "304_1"],
-        "GLOSNIK": ["LT", "LT CAB", "LT SALOON", "SPEAKER", "LAUTSPRECHER", "X244", "A294", "X296", "X292", "X10", "304_1"],
-        "GŁOŚNIKA": ["LT", "LT CAB", "LT SALOON", "SPEAKER", "LAUTSPRECHER", "X244", "A294", "X296", "X292", "X10", "304_1"],
-        "GLOSNIKA": ["LT", "LT CAB", "LT SALOON", "SPEAKER", "LAUTSPRECHER", "X244", "A294", "X296", "X292", "X10", "304_1"],
-        "GŁOŚNIKI": ["LT", "LT CAB", "LT SALOON", "SPEAKER", "LAUTSPRECHER", "X244", "A294", "X296", "X292", "X10", "304_1"],
-        "GLOSNIKI": ["LT", "LT CAB", "LT SALOON", "SPEAKER", "LAUTSPRECHER", "X244", "A294", "X296", "X292", "X10", "304_1"],
-        "SPEAKER": ["LT", "LT CAB", "LT SALOON", "SPEAKER", "LAUTSPRECHER", "X244", "A294", "X296", "X292", "X10", "304_1"],
-        "SPEAKERS": ["LT", "LT CAB", "LT SALOON", "SPEAKER", "LAUTSPRECHER", "X244", "A294", "X296", "X292", "X10", "304_1"],
-        "LAUTSPRECHER": ["LT", "LT CAB", "LT SALOON", "SPEAKER", "LAUTSPRECHER", "X244", "A294"],
-        "LT": ["LT", "LT CAB +", "LT CAB -", "LT SALOON +", "LT SALOON -", "304_1", "305", "304", "X244", "X296", "X10"],
-        "AUDIO": ["LT", "SPEAKER", "RADIO", "INTERCOM", "X244"],
-        "INTERCOM": ["LT", "INTERCOM", "MID", "X244", "X729", "O1.14"],
+        "GŁOŚNIK": ["SPEAKER", "LAUTSPRECHER"],
+        "GLOSNIK": ["SPEAKER", "LAUTSPRECHER"],
+        "GŁOŚNIKA": ["SPEAKER", "LAUTSPRECHER"],
+        "GLOSNIKA": ["SPEAKER", "LAUTSPRECHER"],
+        "GŁOŚNIKI": ["SPEAKER", "LAUTSPRECHER"],
+        "GLOSNIKI": ["SPEAKER", "LAUTSPRECHER"],
+        "SPEAKER": ["SPEAKER", "LAUTSPRECHER"],
+        "SPEAKERS": ["SPEAKER", "LAUTSPRECHER"],
+        "LAUTSPRECHER": ["SPEAKER"],
+        "LT": ["LT", "LT-CAB", "LT CAB +", "LT CAB -", "LT SALOON"],
+        "AUDIO": ["SPEAKER", "RADIO", "INTERCOM"],
+        "INTERCOM": ["INTERCOM", "MID", "X45", "X49", "X39", "X40", "A101", "1612", "1613", "264", "267", "O1.14"],
+        "INTERKOM": ["INTERCOM", "MID", "X45", "X49", "X39", "X40", "A101", "1612", "1613", "264", "267", "O1.14"],
         "TRENNWAND": ["TWM", "TWL", "TWR", "X296", "X292", "X10", "X11", "X43"],
         "GRODZIOWA": ["TWM", "TWL", "TWR", "X296", "X292", "X10", "X11", "X43"],
         "ŚCIANKA": ["TWM", "TWL", "TWR", "X296", "X292", "X10", "X11", "X43"],
-        "X244": ["X244", "LT CAB", "A294", "304_1"],
-        "A294": ["A294", "X244", "SPEAKER", "LT CAB"],
+        "X244": ["X244", "SPEAKER CARNATION", "LT CAB", "304_1"],
+        "X258": ["X258", "Speaker Carnation", "LT SALOON", "472", "473"],
+        "X45": ["X45", "SPEAKER INTERCOM CAB", "1612", "1613"],
+        "X49": ["X49", "SPEAKER INTERCOM BOX", "264", "267"],
+        "X239": ["X239", "SPEAKER LEFT", "300", "302", "304"],
+        "X240": ["X240", "SPEAKER RIGHT", "298", "296", "305"],
+        "X238": ["X238", "RADIO VOLUME", "306"],
+        "A294": ["A294", "X244", "SPEAKER CARNATION", "LT CAB"],
         "X292": ["X292", "X296", "TWM", "BOX-CAB INTERFACE"],
         "X296": ["X296", "X292", "TWM", "BOX-CAB INTERFACE"],
         "X10": ["X10", "TWL", "LT CAB", "LT SALOON"],
-        "CARNATION": ["CARNATION", "A15", "LT CAB", "LT SALOON", "O1.14"]
+        "CARNATION": ["CARNATION", "A15", "SPEAKER CARNATION", "LT CAB", "LT SALOON", "X244", "X258", "304_1", "472", "473"],
+        "RADIO": ["ENTERTAIMENT RADIO", "RADIO", "SPEAKER LEFT", "SPEAKER RIGHT", "X239", "X240", "X238", "X305", "QC5", "QC6", "QC7", "QC8", "304", "305", "306"],
+        "RADIA": ["ENTERTAIMENT RADIO", "RADIO", "SPEAKER LEFT", "SPEAKER RIGHT", "X239", "X240", "X238", "X305", "QC5", "QC6", "QC7", "QC8", "304", "305", "306"],
+        "RADIOWE": ["ENTERTAIMENT RADIO", "RADIO", "SPEAKER LEFT", "SPEAKER RIGHT", "X239", "X240", "X238", "X305", "QC5", "QC6", "QC7", "QC8", "304", "305", "306"],
+        "LEWY": ["SPEAKER LEFT", "Speaker LEFT 1", "Speaker LEFT 2", "X239", "QC5", "QC6", "300", "302"],
+        "PRAWY": ["SPEAKER RIGHT", "Speaker RIGHT 1", "Speaker RIGHT 2", "X240", "QC7", "QC8", "298", "296"]
     }
 
     conn = get_db()
@@ -2908,16 +3061,53 @@ def diagnose_defect(element="", typ="", opisProblem="", ps_code=None, client=Non
     # HISTORIA NAPRAW I DOKUMENTY (Wyszukiwanie kontekstowe w bazie)
     # ═══════════════════════════════════════════════════════════════
     history_solutions = []
-    hist_sql = """
-        SELECT r.id as record_id, r.projekt, r.element, r.opisProblem, s.id as solution_id, s.tytul, s.opis, s.created_by
-        FROM records r
-        JOIN solutions s ON s.record_id = r.id
-        WHERE r.element LIKE ? OR r.opisProblem LIKE ? OR r.typ LIKE ?
-        ORDER BY r.created DESC
-        LIMIT 6;
-    """
-    sample_q = f"%{element}%" if element else (f"%{tokens[0]}%" if tokens else "%")
-    cur.execute(hist_sql, (sample_q, sample_q, sample_q))
+    st_upper = search_text.upper()
+    is_carnation_query = any(k in st_upper for k in ["CARNATION", "EVPSS", "KOMUNIKAT", "OSTRZEŻ", "OSTRZEZ"])
+    is_intercom_query = any(k in st_upper for k in ["INTERCOM", "INTERKOM", "DOMOFON", "WOLFELEC"])
+    is_radio_query = any(k in st_upper for k in ["RADIO", "RADIA", "RADIOW", "LEWY", "PRAWY", "LEFT", "RIGHT", "BALANS"])
+
+    if is_carnation_query:
+        hist_sql = """
+            SELECT r.id as record_id, r.projekt, r.element, r.opisProblem, s.id as solution_id, s.tytul, s.opis, s.created_by
+            FROM records r
+            JOIN solutions s ON s.record_id = r.id
+            WHERE (r.element LIKE '%carnation%' OR r.opisProblem LIKE '%carnation%' OR s.tytul LIKE '%carnation%' OR s.opis LIKE '%carnation%' OR s.tytul LIKE '%X258%')
+            ORDER BY r.created DESC
+            LIMIT 6;
+        """
+        cur.execute(hist_sql)
+    elif is_intercom_query:
+        hist_sql = """
+            SELECT r.id as record_id, r.projekt, r.element, r.opisProblem, s.id as solution_id, s.tytul, s.opis, s.created_by
+            FROM records r
+            JOIN solutions s ON s.record_id = r.id
+            WHERE (r.element LIKE '%interkom%' OR r.opisProblem LIKE '%interkom%' OR r.element LIKE '%intercom%' OR s.tytul LIKE '%interkom%')
+            ORDER BY r.created DESC
+            LIMIT 6;
+        """
+        cur.execute(hist_sql)
+    elif is_radio_query:
+        hist_sql = """
+            SELECT r.id as record_id, r.projekt, r.element, r.opisProblem, s.id as solution_id, s.tytul, s.opis, s.created_by
+            FROM records r
+            JOIN solutions s ON s.record_id = r.id
+            WHERE (r.element LIKE '%radi%' OR r.opisProblem LIKE '%radi%' OR s.tytul LIKE '%radi%' OR s.tytul LIKE '%głośnik%')
+            ORDER BY r.created DESC
+            LIMIT 6;
+        """
+        cur.execute(hist_sql)
+    else:
+        hist_sql = """
+            SELECT r.id as record_id, r.projekt, r.element, r.opisProblem, s.id as solution_id, s.tytul, s.opis, s.created_by
+            FROM records r
+            JOIN solutions s ON s.record_id = r.id
+            WHERE r.element LIKE ? OR r.opisProblem LIKE ? OR r.typ LIKE ?
+            ORDER BY r.created DESC
+            LIMIT 6;
+        """
+        sample_q = f"%{element}%" if element else (f"%{tokens[0]}%" if tokens else "%")
+        cur.execute(hist_sql, (sample_q, sample_q, sample_q))
+
     for r in cur.fetchall():
         history_solutions.append(dict(r))
 
@@ -2968,6 +3158,13 @@ def diagnose_defect(element="", typ="", opisProblem="", ps_code=None, client=Non
             for s in found_syms:
                 clean_s = s.lstrip("-+=:")
                 if len(clean_s) >= 2:
+                    # Ochrona przed pomyłkami w historycznych wpisach (np. X258 wpisany przy interkomie)
+                    if is_intercom_query and clean_s in ["X258", "X244"]:
+                        continue
+                    if is_carnation_query and clean_s in ["X45", "X49", "X260", "A101"]:
+                        continue
+                    if is_radio_query and clean_s in ["X258", "X244", "X45", "X49", "X260", "A101"]:
+                        continue
                     extracted_history_symbols.add(clean_s)
 
     expanded_queries = set()
@@ -3281,4 +3478,950 @@ def diagnose_defect(element="", typ="", opisProblem="", ps_code=None, client=Non
         "carnation_logic": carnation_logic,
         "recommendations": recommendations
     }
+
+
+# ═══════════════════════════════════════════════════════════════════
+# ZESTAWIENIA ZUKEN E3: SPIS ZŁĄCZY Z PINOUTEM, BEZPIECZNIKI, PRZEKAŹNIKI (PS)
+# ═══════════════════════════════════════════════════════════════════
+
+def _natural_sort_key(s):
+    """Klucz sortowania naturalnego (np. '1', '2', '10', 'A', 'B')."""
+    p = str(s or "").strip()
+    if p.isdigit():
+        return (0, int(p), "")
+    m = re.match(r"^(\d+)(.*)$", p)
+    if m:
+        return (0, int(m.group(1)), m.group(2))
+    return (1, 0, p.lower())
+
+
+def get_available_ps_projects():
+    """
+    Zwraca listę projektów PS wykrytych w katalogu Baza wiedzy oraz w bazie danych SQLite.
+    Dla każdego projektu zwraca status dostępnych plików (BOM, Connection, PDF, E3S)
+    oraz liczbę wygenerowanych złączy, bezpieczników i przekaźników.
+    """
+    init_zuken_tables()
+    conn = get_db()
+    cur = conn.cursor()
+
+    # 1. Projekty z tabeli zuken_ps_summaries
+    cur.execute("""
+        SELECT ps_code, project_name, client, connectors_count, fuses_count, relays_count, generated_at, source_files
+        FROM zuken_ps_summaries;
+    """)
+    summaries_map = {r["ps_code"]: dict(r) for r in cur.fetchall()}
+
+    # 2. Projekty z tabeli zuken_projects
+    cur.execute("""
+        SELECT DISTINCT ps_codes, project_name, client
+        FROM zuken_projects
+        WHERE ps_codes IS NOT NULL AND ps_codes != '';
+    """)
+    db_projects = {}
+    for r in cur.fetchall():
+        for ps in r["ps_codes"].split(","):
+            ps_clean = ps.strip().upper()
+            if ps_clean and ps_clean not in db_projects:
+                db_projects[ps_clean] = {
+                    "project_name": r["project_name"],
+                    "client": r["client"]
+                }
+
+    # 3. Projekty wykryte w strukturze podfolderów Baza wiedzy
+    kb_projects = {}
+    if os.path.exists(BAZA_WIEDZY_DIR):
+        for entry in os.listdir(BAZA_WIEDZY_DIR):
+            folder_path = os.path.join(BAZA_WIEDZY_DIR, entry)
+            if os.path.isdir(folder_path) and entry != "zdjecia_komponentow":
+                ps_code = entry.upper()
+                try:
+                    files = os.listdir(folder_path)
+                except Exception:
+                    files = []
+                has_bom = any(f.lower().startswith("bom") and f.endswith(".xlsx") for f in files)
+                has_conn = any(("connection" in f.lower() or f.lower().endswith("_con.xlsx")) and f.endswith(".xlsx") for f in files)
+                has_pdf = any(f.lower().endswith(".pdf") for f in files)
+                has_e3s = any(f.lower().endswith(".e3s") for f in files)
+
+                kb_projects[ps_code] = {
+                    "folder_name": entry,
+                    "folder_path": folder_path,
+                    "has_bom": has_bom,
+                    "has_conn": has_conn,
+                    "has_pdf": has_pdf,
+                    "has_e3s": has_e3s,
+                    "files_count": len(files)
+                }
+
+    all_ps_codes = sorted(set(list(db_projects.keys()) + list(kb_projects.keys()) + list(summaries_map.keys())))
+    if not all_ps_codes and os.path.exists(os.path.join(BAZA_WIEDZY_DIR, "PS011871")):
+        all_ps_codes = ["PS011871"]
+
+    result = []
+    for ps in all_ps_codes:
+        kb_info = kb_projects.get(ps, {
+            "folder_name": ps,
+            "folder_path": os.path.join(BAZA_WIEDZY_DIR, ps),
+            "has_bom": False,
+            "has_conn": False,
+            "has_pdf": False,
+            "has_e3s": False,
+            "files_count": 0
+        })
+        db_info = db_projects.get(ps, {})
+        summ_info = summaries_map.get(ps, {})
+
+        result.append({
+            "ps_code": ps,
+            "project_name": summ_info.get("project_name") or db_info.get("project_name") or f"Projekt {ps}",
+            "client": summ_info.get("client") or db_info.get("client") or ("EOE Ambulance" if "EOE" in ps or ps == "PS011871" else "Pojazd specjalny"),
+            "folder_name": kb_info["folder_name"],
+            "exists_in_kb": os.path.exists(kb_info["folder_path"]),
+            "has_bom": kb_info["has_bom"],
+            "has_connection": kb_info["has_conn"],
+            "has_pdf": kb_info["has_pdf"],
+            "has_e3s": kb_info["has_e3s"],
+            "files_count": kb_info["files_count"],
+            "has_summaries": bool(summ_info.get("generated_at")),
+            "connectors_count": summ_info.get("connectors_count", 0),
+            "fuses_count": summ_info.get("fuses_count", 0),
+            "relays_count": summ_info.get("relays_count", 0),
+            "generated_at": summ_info.get("generated_at", "")
+        })
+
+    conn.close()
+    return result
+
+
+def generate_ps_technical_summaries(ps_code):
+    """
+    Ekstrahuje i generuje do bazy SQLite zestawienia dla wybranego projektu PS:
+    1. Złącza z kompletnym pinoutem (Device, kody artykułów BOM, piny, sygnały, przewody, cele)
+    2. Bezpieczniki (kod aparatu, wartość A, typ, oprawka, chronione obwody)
+    3. Przekaźniki (kod aparatu, funkcja, typ, oprawka, rozpiska styków)
+    """
+    if not ps_code:
+        return {"status": "error", "message": "Nie podano numeru PS."}
+
+    ps_code = str(ps_code).strip().upper()
+    init_zuken_tables()
+
+    # Sprawdź czy pliki dla tego PS są w katalogu Baza wiedzy i zaimportuj jeśli potrzeba
+    kb_ps_dir = os.path.join(BAZA_WIEDZY_DIR, ps_code)
+    if os.path.exists(kb_ps_dir):
+        try:
+            for f in os.listdir(kb_ps_dir):
+                full_path = os.path.join(kb_ps_dir, f)
+                if f.endswith(".xlsx") and not f.startswith("~$"):
+                    f_lower = f.lower()
+                    if f_lower.startswith("bom") or "bom" in f_lower:
+                        import_zuken_bom_xlsx(full_path, ps_code=ps_code)
+                    else:
+                        import_zuken_xlsx(full_path, ps_code=ps_code)
+                elif f.endswith(".pdf") and not f.startswith("~$"):
+                    index_zuken_pdf(full_path, ps_code=ps_code)
+        except Exception as ex:
+            print(f"[ZUKEN IMPORT WARNING] Błąd skanowania katalogu {kb_ps_dir}: {ex}")
+
+    conn = get_db()
+    cur = conn.cursor()
+
+    # Znajdź projekty powiązane z tym PS
+    cur.execute("""
+        SELECT id, filename, project_name, client, revision_name
+        FROM zuken_projects
+        WHERE ps_codes LIKE ? OR filename LIKE ?
+        ORDER BY id DESC;
+    """, (f"%{ps_code}%", f"%{ps_code}%"))
+    projects = [dict(r) for r in cur.fetchall()]
+
+    if not projects:
+        # Fallback jeśli domyślny projekt nie ma przypisanego numeru PS w nazwie
+        cur.execute("SELECT id, filename, project_name, client, revision_name FROM zuken_projects ORDER BY id DESC;")
+        projects = [dict(r) for r in cur.fetchall()]
+
+    conn_proj_ids = [p["id"] for p in projects if "bom" not in p["filename"].lower()]
+    bom_proj_ids = [p["id"] for p in projects if "bom" in p["filename"].lower()]
+
+    if not conn_proj_ids and not bom_proj_ids:
+        conn.close()
+        return {"status": "error", "message": f"Brak zaimportowanych projektów Zuken dla {ps_code}."}
+
+    # Wykryj format każdego projektu połączeń:
+    # - format "CON" (*_CON.xlsx): kolumna wire_number wypełniona, signal = nazwa sygnału
+    # - format "Connection" (Connection_*.xlsx): wire_number zawsze pusty, signal = numer przewodu
+    con_format_ids = set()
+    if conn_proj_ids:
+        ph_fmt = ",".join("?" for _ in conn_proj_ids)
+        cur.execute(f"""
+            SELECT project_id FROM zuken_connections
+            WHERE project_id IN ({ph_fmt}) AND wire_number IS NOT NULL AND wire_number != ''
+            GROUP BY project_id;
+        """, conn_proj_ids)
+        con_format_ids = {r[0] for r in cur.fetchall()}
+
+    def _norm_sig_wire(row):
+        """Normalizuje parę (numer_przewodu, nazwa_sygnału) wg formatu projektu źródłowego."""
+        sig = (row["signal"] or "").strip()
+        wn = (row["wire_number"] or "").strip()
+        if row["project_id"] in con_format_ids:
+            return wn, sig
+        return (wn or sig), (sig if wn else "")
+
+    glossary = get_glossary_dict()
+
+    # Usuń stare wpisy zestawień dla tego PS
+    cur.execute("DELETE FROM zuken_ps_connectors WHERE ps_code = ?;", (ps_code,))
+    cur.execute("DELETE FROM zuken_ps_fuses WHERE ps_code = ?;", (ps_code,))
+    cur.execute("DELETE FROM zuken_ps_relays WHERE ps_code = ?;", (ps_code,))
+
+    # ═══════════════════════════════════════════════════════════════
+    # 1. GENEROWANIE SPISU ZŁĄCZY Z PINOUTEM
+    # ═══════════════════════════════════════════════════════════════
+    connectors_map = {}
+
+    if conn_proj_ids:
+        ph_conn = ",".join("?" for _ in conn_proj_ids)
+        cur.execute(f"""
+            SELECT project_id, signal, from_device, from_component, from_pin,
+                   to_device, to_component, to_pin,
+                   wire_number, wire_type, wire_color, cross_section, cable_name, length
+            FROM zuken_connections
+            WHERE project_id IN ({ph_conn});
+        """, conn_proj_ids)
+        conn_rows = cur.fetchall()
+
+        for r in conn_rows:
+            f_dev = (r["from_device"] or "").strip()
+            t_dev = (r["to_device"] or "").strip()
+            f_pin = (r["from_pin"] or "").strip()
+            t_pin = (r["to_pin"] or "").strip()
+            w_num, sig = _norm_sig_wire(r)
+            w_col = (r["wire_color"] or "").strip()
+            w_cs = (r["cross_section"] or "").strip()
+            w_type = (r["wire_type"] or "").strip()
+
+            for dev, pin, target_dev, target_pin in [
+                (f_dev, f_pin, t_dev, t_pin),
+                (t_dev, t_pin, f_dev, f_pin)
+            ]:
+                if not dev or not pin:
+                    continue
+                # Filtrujemy tylko rzeczywiste złącza (-X)
+                is_conn = ("-X" in dev or ":X" in dev or dev.startswith("X") or "/-X" in dev)
+                if not is_conn:
+                    continue
+
+                if dev not in connectors_map:
+                    clean_code = clean_device_code(dev)
+                    m_sys = re.search(r"(=[A-Za-z0-9_]+)", dev)
+                    sys_code = m_sys.group(1) if m_sys else ""
+                    m_loc = re.search(r"(\+[A-Za-z0-9_]+)", dev)
+                    loc_code = m_loc.group(1) if m_loc else ""
+
+                    sys_desc = glossary.get(sys_code, {}).get("desc_pl", "") if sys_code else ""
+                    loc_desc = glossary.get(loc_code, {}).get("desc_pl", "") if loc_code else ""
+
+                    connectors_map[dev] = {
+                        "device_code": dev,
+                        "device_clean": clean_code,
+                        "system": sys_code,
+                        "location": loc_code,
+                        "system_desc": sys_desc,
+                        "location_desc": loc_desc,
+                        "article_number": "",
+                        "supplier": "",
+                        "description": "",
+                        "image_url": "",
+                        "pins": defaultdict(list)
+                    }
+
+                pin_entry = {
+                    "wire_number": w_num,
+                    "signal": sig,
+                    "wire_color": w_col,
+                    "cross_section": w_cs,
+                    "wire_type": w_type,
+                    "target_device": target_dev,
+                    "target_pin": target_pin,
+                    "target_desc": explain_device_code(target_dev, glossary) if target_dev else ""
+                }
+                existing = connectors_map[dev]["pins"][pin]
+                dup = next((e for e in existing
+                            if e["wire_number"] == w_num and e["target_device"] == target_dev
+                            and e["target_pin"] == target_pin), None)
+                if dup is None:
+                    existing.append(pin_entry)
+                else:
+                    # Ten sam przewód opisany w innym pliku projektu — dopełnij brakujące pola
+                    for fld in ("signal", "wire_color", "cross_section", "wire_type"):
+                        if not dup[fld] and pin_entry[fld]:
+                            dup[fld] = pin_entry[fld]
+
+    # Skojarz z artykułami z BOM
+    if bom_proj_ids and connectors_map:
+        ph_bom = ",".join("?" for _ in bom_proj_ids)
+        cur.execute(f"""
+            SELECT d.device_code, d.device_clean, d.function,
+                   i.article_number, i.supplier, i.description, i.local_image, i.category
+            FROM zuken_bom_devices d
+            JOIN zuken_bom_items i ON d.bom_item_id = i.id
+            WHERE i.project_id IN ({ph_bom});
+        """, bom_proj_ids)
+        for br in cur.fetchall():
+            d_code = br["device_code"]
+            d_clean = br["device_clean"]
+            art_num = br["article_number"]
+            target_keys = [k for k in connectors_map if k == d_code or connectors_map[k]["device_clean"] == d_clean or connectors_map[k]["device_clean"] == d_code.lstrip("=+-:")]
+            for k in target_keys:
+                if not connectors_map[k]["article_number"]:
+                    connectors_map[k]["article_number"] = art_num
+                    connectors_map[k]["supplier"] = br["supplier"]
+                    connectors_map[k]["description"] = br["description"]
+                    img = find_local_component_image(art_num)
+                    connectors_map[k]["image_url"] = img or ""
+
+    conn_inserts = []
+    for dev_code, cdata in connectors_map.items():
+        sorted_pins = []
+        for p_key in sorted(cdata["pins"].keys(), key=_natural_sort_key):
+            sorted_pins.append({
+                "pin": p_key,
+                "connections": cdata["pins"][p_key]
+            })
+
+        conn_inserts.append((
+            ps_code,
+            cdata["device_code"],
+            cdata["device_clean"],
+            cdata["system"],
+            cdata["location"],
+            cdata["system_desc"],
+            cdata["location_desc"],
+            cdata["article_number"],
+            cdata["supplier"],
+            cdata["description"],
+            cdata["image_url"],
+            len(sorted_pins),
+            json.dumps(sorted_pins, ensure_ascii=False)
+        ))
+
+    if conn_inserts:
+        cur.executemany("""
+            INSERT INTO zuken_ps_connectors (
+                ps_code, device_code, device_clean, system, location, system_desc, location_desc,
+                article_number, supplier, description, image_url, pin_count, pins_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+        """, conn_inserts)
+
+    # ═══════════════════════════════════════════════════════════════
+    # 2. GENEROWANIE ZESTAWU BEZPIECZNIKÓW
+    # ═══════════════════════════════════════════════════════════════
+    fuses_map = {}
+
+    if bom_proj_ids:
+        ph_bom = ",".join("?" for _ in bom_proj_ids)
+        cur.execute(f"""
+            SELECT DISTINCT i.article_number, i.supplier, i.description, d.device_code, d.device_clean, d.function
+            FROM zuken_bom_items i
+            JOIN zuken_bom_devices d ON d.bom_item_id = i.id
+            WHERE i.project_id IN ({ph_bom})
+              AND (i.category = 'Bezpiecznik' OR i.description LIKE '%fuse%' OR i.description LIKE '%bezpiecz%')
+              AND i.description NOT LIKE '%fuse box%' AND i.description NOT LIKE '%gniazdo%' AND i.description NOT LIKE '%terminal%';
+        """, bom_proj_ids)
+        fuse_rows = cur.fetchall()
+
+        for fr in fuse_rows:
+            d_code = fr["device_code"].strip()
+            if not d_code or d_code in fuses_map:
+                continue
+
+            desc = fr["description"] or ""
+            m_rating = re.search(r"(\d+(?:[,\.]\d+)?\s*A)", desc, re.IGNORECASE)
+            rating = m_rating.group(1).replace(" ", "") if m_rating else ""
+
+            m_type = re.search(r"\b(MEGA|MIDI|MINI|MAXI|UNI|ATO|UNIVAL)\b", desc, re.IGNORECASE)
+            fuse_type = m_type.group(1).upper() if m_type else "UNI"
+
+            clean_num = re.search(r"F(\d+)", d_code)
+            holder_candidate = ""
+            box_candidate = ""
+            if clean_num:
+                f_num = clean_num.group(1)
+                holder_candidate = re.sub(r"-F\d+", f"-FH{f_num}", d_code)
+
+            m_sys = re.search(r"(=[A-Za-z0-9_]+)", d_code)
+            sys_code = m_sys.group(1) if m_sys else ""
+            m_loc = re.search(r"(\+[A-Za-z0-9_]+)", d_code)
+            loc_code = m_loc.group(1) if m_loc else ""
+
+            circuits_found = set()
+            details = []
+            if conn_proj_ids:
+                search_devs = [d_code]
+                if holder_candidate:
+                    search_devs.append(holder_candidate)
+                ph_devs = ",".join("?" for _ in search_devs)
+                ph_conn = ",".join("?" for _ in conn_proj_ids)
+                cur.execute(f"""
+                    SELECT project_id, signal, wire_number, wire_color, cross_section, to_device, to_pin, from_device, from_pin
+                    FROM zuken_connections
+                    WHERE (from_device IN ({ph_devs}) OR to_device IN ({ph_devs}))
+                      AND project_id IN ({ph_conn});
+                """, search_devs + search_devs + conn_proj_ids)
+                details_seen = {}
+                circuits_map = {}   # numer przewodu (lub sygnał) -> nazwa sygnału
+                for conn_row in cur.fetchall():
+                    wn, s = _norm_sig_wire(conn_row)
+                    fd = conn_row["from_device"]
+                    td = conn_row["to_device"]
+                    target = td if fd in search_devs else fd
+
+                    ckey = wn or s
+                    if ckey:
+                        if ckey not in circuits_map:
+                            circuits_map[ckey] = s
+                        elif s and not circuits_map[ckey]:
+                            circuits_map[ckey] = s
+                    if target:
+                        dkey = (target, wn)
+                        if dkey not in details_seen:
+                            details_seen[dkey] = {
+                                "target": target,
+                                "target_desc": explain_device_code(target, glossary),
+                                "signal": s,
+                                "wire": wn
+                            }
+                            details.append(details_seen[dkey])
+                        elif not details_seen[dkey]["signal"] and s:
+                            details_seen[dkey]["signal"] = s
+
+                for ckey, s_val in circuits_map.items():
+                    if s_val and not s_val.isdigit():
+                        circuits_found.add(s_val)
+                    elif ckey:
+                        circuits_found.add(f"Przewód {ckey}")
+
+            circuits_str = ", ".join(sorted(circuits_found)) if circuits_found else (fr["function"] or "Obwód instalacji")
+
+            fuses_map[d_code] = {
+                "device_code": d_code,
+                "device_clean": clean_device_code(d_code),
+                "rating": rating,
+                "fuse_type": fuse_type,
+                "article_number": fr["article_number"],
+                "supplier": fr["supplier"],
+                "description": desc,
+                "holder_code": holder_candidate,
+                "box_code": box_candidate,
+                "system": sys_code,
+                "location": loc_code,
+                "circuits": circuits_str,
+                "details": details
+            }
+
+    fuse_inserts = [
+        (
+            ps_code,
+            fdata["device_code"],
+            fdata["device_clean"],
+            fdata["rating"],
+            fdata["fuse_type"],
+            fdata["article_number"],
+            fdata["supplier"],
+            fdata["description"],
+            fdata["holder_code"],
+            fdata["box_code"],
+            fdata["system"],
+            fdata["location"],
+            fdata["circuits"],
+            json.dumps(fdata["details"], ensure_ascii=False)
+        )
+        for fdata in sorted(fuses_map.values(), key=lambda x: _natural_sort_key(x["device_clean"]))
+    ]
+
+    if fuse_inserts:
+        cur.executemany("""
+            INSERT INTO zuken_ps_fuses (
+                ps_code, device_code, device_clean, rating, fuse_type, article_number,
+                supplier, description, holder_code, box_code, system, location,
+                circuits, details_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+        """, fuse_inserts)
+
+    # ═══════════════════════════════════════════════════════════════
+    # 3. GENEROWANIE ZESTAWU PRZEKAŹNIKÓW
+    # ═══════════════════════════════════════════════════════════════
+    relays_map = {}
+
+    if bom_proj_ids:
+        ph_bom = ",".join("?" for _ in bom_proj_ids)
+        cur.execute(f"""
+            SELECT DISTINCT i.article_number, i.supplier, i.description, d.device_code, d.device_clean, d.function
+            FROM zuken_bom_items i
+            JOIN zuken_bom_devices d ON d.bom_item_id = i.id
+            WHERE i.project_id IN ({ph_bom})
+              AND (i.category = 'Przekaźnik' OR i.description LIKE '%relay%' OR i.description LIKE '%przeka%'
+                   OR i.description LIKE '%stycznik%' OR d.device_code LIKE '%-K%' OR d.device_code LIKE '%REL-X%');
+        """, bom_proj_ids)
+        relay_rows = cur.fetchall()
+
+        # Pomiń aparaty z pseudo-systemu "=BOM", jeśli to samo urządzenie
+        # (identyczna część kodu +LOKALIZACJA-APARAT) występuje pod właściwym systemem
+        def _dev_suffix(code):
+            m = re.match(r"^=[A-Za-z0-9_]+(.*)$", code or "")
+            return (m.group(1) if m else (code or "")).rstrip("'\"").strip()
+
+        non_bom_suffixes = {
+            _dev_suffix(rr["device_code"])
+            for rr in relay_rows
+            if rr["device_code"] and not rr["device_code"].strip().startswith("=BOM")
+        }
+
+        for rr in relay_rows:
+            d_code = rr["device_code"].strip()
+            if not d_code or d_code in relays_map:
+                continue
+            if d_code.startswith("=BOM") and _dev_suffix(d_code) in non_bom_suffixes:
+                continue
+
+            func = rr["function"] or ""
+            desc = rr["description"] or ""
+            art = rr["article_number"] or ""
+            sup = rr["supplier"] or ""
+
+            m_sys = re.search(r"(=[A-Za-z0-9_]+)", d_code)
+            sys_code = m_sys.group(1) if m_sys else ""
+            m_loc = re.search(r"(\+[A-Za-z0-9_]+)", d_code)
+            loc_code = m_loc.group(1) if m_loc else ""
+
+            contacts = []
+            if conn_proj_ids:
+                ph_conn = ",".join("?" for _ in conn_proj_ids)
+                cur.execute(f"""
+                    SELECT project_id, from_pin, to_pin, signal, wire_number, wire_color, cross_section, to_device, from_device
+                    FROM zuken_connections
+                    WHERE (from_device = ? OR to_device = ?) AND project_id IN ({ph_conn});
+                """, (d_code, d_code) + tuple(conn_proj_ids))
+
+                relay_std_pins = {"30", "85", "86", "87", "87A", "87B"}
+                pin_map = {}      # pin gniazda -> (styk przekaźnika, nazwa sygnału)
+                raw_contacts = []
+                for cr in cur.fetchall():
+                    is_from = ((cr["from_device"] or "").strip() == d_code)
+                    pin = (cr["from_pin"] if is_from else cr["to_pin"] or "").strip()
+                    target = (cr["to_device"] if is_from else cr["from_device"] or "").strip()
+                    target_p = (cr["to_pin"] if is_from else cr["from_pin"] or "").strip()
+                    w_num, sig = _norm_sig_wire(cr)
+
+                    if not target:
+                        # Wiersz mapowania pinu gniazda na styk przekaźnika (np. "X145:2 -> :30")
+                        if target_p.upper() in relay_std_pins:
+                            pin_map[pin] = (target_p, sig)
+                        continue
+                    raw_contacts.append({
+                        "pin": pin, "target": target, "target_pin": target_p,
+                        "wire_number": w_num, "signal": sig,
+                        "wire_color": (cr["wire_color"] or "").strip(),
+                        "cross_section": (cr["cross_section"] or "").strip()
+                    })
+
+                # Scal ten sam fizyczny przewód opisany w kilku plikach projektu
+                seen_contacts = {}
+                for rc in raw_contacts:
+                    if not rc["pin"]:
+                        continue
+                    key = (rc["pin"], rc["target"], rc["target_pin"], rc["wire_number"])
+                    if key in seen_contacts:
+                        if not seen_contacts[key]["signal"] and rc["signal"]:
+                            seen_contacts[key]["signal"] = rc["signal"]
+                        continue
+                    relay_pin, map_sig = pin_map.get(rc["pin"], ("", ""))
+                    if not rc["signal"] and map_sig:
+                        rc["signal"] = map_sig
+                    rp = (relay_pin or rc["pin"]).upper()
+                    if rp in ["85", "86"]:
+                        role = "Cewka (Coil 85/86)"
+                    elif rp == "30":
+                        role = "Zasilanie (Common 30)"
+                    elif rp == "87":
+                        role = "Styk zwierny (NO 87)"
+                    elif rp in ["87A", "87B"]:
+                        role = "Styk rozwierny (NC 87a)"
+                    else:
+                        role = "Styk roboczy"
+                    entry = {
+                        "pin": rc["pin"],
+                        "relay_pin": relay_pin,
+                        "role": role,
+                        "signal": rc["signal"],
+                        "wire_number": rc["wire_number"],
+                        "wire_color": rc["wire_color"],
+                        "cross_section": rc["cross_section"],
+                        "target_device": rc["target"],
+                        "target_pin": rc["target_pin"],
+                        "target_desc": explain_device_code(rc["target"], glossary) if rc["target"] else ""
+                    }
+                    seen_contacts[key] = entry
+                    contacts.append(entry)
+
+            relay_pin_order = {"30": 0, "85": 1, "86": 2, "87": 3, "87A": 4, "87B": 4}
+            contacts.sort(key=lambda c: (
+                relay_pin_order.get((c["relay_pin"] or c["pin"]).upper(), 9),
+                _natural_sort_key(c["pin"]),
+                _natural_sort_key(c["target_device"] or "")
+            ))
+            relay_type_name = f"{sup} {desc}".strip() if sup else desc
+
+            relays_map[d_code] = {
+                "device_code": d_code,
+                "device_clean": clean_device_code(d_code),
+                "function": func or "Przekaźnik sterujący",
+                "relay_type": relay_type_name,
+                "article_number": art,
+                "supplier": sup,
+                "description": desc,
+                "socket_code": d_code if "REL-X" in d_code or "BSI-X" in d_code else "",
+                "system": sys_code,
+                "location": loc_code,
+                "contacts": contacts
+            }
+
+    relay_inserts = [
+        (
+            ps_code,
+            rdata["device_code"],
+            rdata["device_clean"],
+            rdata["function"],
+            rdata["relay_type"],
+            rdata["article_number"],
+            rdata["supplier"],
+            rdata["description"],
+            rdata["socket_code"],
+            rdata["system"],
+            rdata["location"],
+            json.dumps(rdata["contacts"], ensure_ascii=False)
+        )
+        for rdata in sorted(relays_map.values(), key=lambda x: _natural_sort_key(x["device_clean"]))
+    ]
+
+    if relay_inserts:
+        cur.executemany("""
+            INSERT INTO zuken_ps_relays (
+                ps_code, device_code, device_clean, function, relay_type, article_number,
+                supplier, description, socket_code, system, location, contacts_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+        """, relay_inserts)
+
+    # ═══════════════════════════════════════════════════════════════
+    # 4. ZAPIS W ZUKEN_PS_SUMMARIES
+    # ═══════════════════════════════════════════════════════════════
+    proj_name = projects[0]["project_name"] if projects else f"Projekt {ps_code}"
+    client_name = projects[0]["client"] if projects else "Klient specjalny"
+    source_files_list = ", ".join([p["filename"] for p in projects[:4]])
+
+    cur.execute("""
+        INSERT INTO zuken_ps_summaries (
+            ps_code, project_name, client, connectors_count, fuses_count, relays_count, generated_at, source_files
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(ps_code) DO UPDATE SET
+            project_name=excluded.project_name,
+            client=excluded.client,
+            connectors_count=excluded.connectors_count,
+            fuses_count=excluded.fuses_count,
+            relays_count=excluded.relays_count,
+            generated_at=excluded.generated_at,
+            source_files=excluded.source_files;
+    """, (
+        ps_code,
+        proj_name,
+        client_name,
+        len(conn_inserts),
+        len(fuse_inserts),
+        len(relay_inserts),
+        datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        source_files_list
+    ))
+
+    conn.commit()
+    conn.close()
+
+    return {
+        "status": "success",
+        "ps_code": ps_code,
+        "project_name": proj_name,
+        "connectors_count": len(conn_inserts),
+        "fuses_count": len(fuse_inserts),
+        "relays_count": len(relay_inserts),
+        "message": f"Wygenerowano zestawienia dla {ps_code}: {len(conn_inserts)} złączy, {len(fuse_inserts)} bezpieczników, {len(relay_inserts)} przekaźników."
+    }
+
+
+def get_ps_connectors(ps_code, search="", system_filter="", limit=100, offset=0):
+    """Pobiera listę złączy z pinoutem dla projektu PS z filtrowaniem i paginacją."""
+    if not ps_code:
+        return {"items": [], "total": 0}
+    ps_code = str(ps_code).strip().upper()
+    init_zuken_tables()
+
+    conn = get_db()
+    cur = conn.cursor()
+
+    # Sprawdź czy tabela zawiera już dane dla tego PS
+    cur.execute("SELECT COUNT(*) FROM zuken_ps_connectors WHERE ps_code = ?;", (ps_code,))
+    cnt = cur.fetchone()[0]
+    if cnt == 0:
+        # Automatyczne wygenerowanie przy pierwszym odczycie
+        conn.close()
+        generate_ps_technical_summaries(ps_code)
+        conn = get_db()
+        cur = conn.cursor()
+
+    conditions = ["ps_code = ?"]
+    params = [ps_code]
+
+    if system_filter:
+        conditions.append("system = ?")
+        params.append(system_filter.strip())
+
+    if search:
+        q_like = f"%{search.strip()}%"
+        conditions.append("""
+            (device_code LIKE ? OR device_clean LIKE ? OR article_number LIKE ? OR
+             supplier LIKE ? OR description LIKE ? OR location_desc LIKE ? OR pins_json LIKE ?)
+        """)
+        params.extend([q_like, q_like, q_like, q_like, q_like, q_like, q_like])
+
+    where_str = "WHERE " + " AND ".join(conditions)
+
+    cur.execute(f"SELECT COUNT(*) FROM zuken_ps_connectors {where_str};", params)
+    total_count = cur.fetchone()[0]
+
+    cur.execute(f"""
+        SELECT * FROM zuken_ps_connectors
+        {where_str}
+        ORDER BY system, location, device_clean
+        LIMIT ? OFFSET ?;
+    """, params + [limit, offset])
+
+    rows = cur.fetchall()
+    items = []
+    for r in rows:
+        d = dict(r)
+        d["pins"] = json.loads(d.get("pins_json") or "[]")
+        items.append(d)
+
+    conn.close()
+    return {
+        "items": items,
+        "total": total_count,
+        "ps_code": ps_code,
+        "limit": limit,
+        "offset": offset
+    }
+
+
+def get_ps_fuses(ps_code, search="", limit=100, offset=0):
+    """Pobiera zestaw bezpieczników dla projektu PS z filtrowaniem."""
+    if not ps_code:
+        return {"items": [], "total": 0}
+    ps_code = str(ps_code).strip().upper()
+    init_zuken_tables()
+
+    conn = get_db()
+    cur = conn.cursor()
+
+    cur.execute("SELECT COUNT(*) FROM zuken_ps_fuses WHERE ps_code = ?;", (ps_code,))
+    cnt = cur.fetchone()[0]
+    if cnt == 0:
+        conn.close()
+        generate_ps_technical_summaries(ps_code)
+        conn = get_db()
+        cur = conn.cursor()
+
+    conditions = ["ps_code = ?"]
+    params = [ps_code]
+
+    if search:
+        q_like = f"%{search.strip()}%"
+        conditions.append("""
+            (device_code LIKE ? OR device_clean LIKE ? OR rating LIKE ? OR
+             fuse_type LIKE ? OR circuits LIKE ? OR holder_code LIKE ? OR description LIKE ?)
+        """)
+        params.extend([q_like, q_like, q_like, q_like, q_like, q_like, q_like])
+
+    where_str = "WHERE " + " AND ".join(conditions)
+
+    cur.execute(f"SELECT COUNT(*) FROM zuken_ps_fuses {where_str};", params)
+    total_count = cur.fetchone()[0]
+
+    cur.execute(f"""
+        SELECT * FROM zuken_ps_fuses
+        {where_str}
+        ORDER BY system, location, device_clean
+        LIMIT ? OFFSET ?;
+    """, params + [limit, offset])
+
+    rows = cur.fetchall()
+    items = []
+    for r in rows:
+        d = dict(r)
+        d["details"] = json.loads(d.get("details_json") or "[]")
+        items.append(d)
+
+    conn.close()
+    return {
+        "items": items,
+        "total": total_count,
+        "ps_code": ps_code,
+        "limit": limit,
+        "offset": offset
+    }
+
+
+def get_ps_relays(ps_code, search="", limit=100, offset=0):
+    """Pobiera zestaw przekaźników dla projektu PS z filtrowaniem."""
+    if not ps_code:
+        return {"items": [], "total": 0}
+    ps_code = str(ps_code).strip().upper()
+    init_zuken_tables()
+
+    conn = get_db()
+    cur = conn.cursor()
+
+    cur.execute("SELECT COUNT(*) FROM zuken_ps_relays WHERE ps_code = ?;", (ps_code,))
+    cnt = cur.fetchone()[0]
+    if cnt == 0:
+        conn.close()
+        generate_ps_technical_summaries(ps_code)
+        conn = get_db()
+        cur = conn.cursor()
+
+    conditions = ["ps_code = ?"]
+    params = [ps_code]
+
+    if search:
+        q_like = f"%{search.strip()}%"
+        conditions.append("""
+            (device_code LIKE ? OR device_clean LIKE ? OR function LIKE ? OR
+             relay_type LIKE ? OR supplier LIKE ? OR description LIKE ? OR socket_code LIKE ?)
+        """)
+        params.extend([q_like, q_like, q_like, q_like, q_like, q_like, q_like])
+
+    where_str = "WHERE " + " AND ".join(conditions)
+
+    cur.execute(f"SELECT COUNT(*) FROM zuken_ps_relays {where_str};", params)
+    total_count = cur.fetchone()[0]
+
+    cur.execute(f"""
+        SELECT * FROM zuken_ps_relays
+        {where_str}
+        ORDER BY system, location, function, device_clean
+        LIMIT ? OFFSET ?;
+    """, params + [limit, offset])
+
+    rows = cur.fetchall()
+    items = []
+    for r in rows:
+        d = dict(r)
+        d["contacts"] = json.loads(d.get("contacts_json") or "[]")
+        items.append(d)
+
+    conn.close()
+    return {
+        "items": items,
+        "total": total_count,
+        "ps_code": ps_code,
+        "limit": limit,
+        "offset": offset
+    }
+
+
+def export_ps_summary_csv(ps_code, summary_type="connectors"):
+    """
+    Generuje plik CSV z zestawieniem (złącza z pinoutem, bezpieczniki lub przekaźniki).
+    Zawiera znacznik BOM UTF-8 (\ufeff) dla bezproblemowego otwierania w polskim MS Excel.
+    """
+    if not ps_code:
+        return ""
+    ps_code = str(ps_code).strip().upper()
+
+    output = io.StringIO()
+    output.write("\ufeff") # UTF-8 BOM
+    writer = csv.writer(output, delimiter=";", quoting=csv.QUOTE_MINIMAL)
+
+    if summary_type == "connectors":
+        writer.writerow([
+            "Projekt PS", "Kod aparatu złącza", "Kod skrócony", "System", "Lokalizacja",
+            "Opis lokalizacji", "Kod artykułu BOM", "Dostawca / Producent", "Opis katalogowy złącza",
+            "Liczba pinów", "Pin", "Nazwa sygnału", "Numer przewodu", "Kolor",
+            "Przekrój (mm2)", "Typ przewodu", "Urządzenie docelowe", "Pin docelowy", "Opis urządzenia docelowego"
+        ])
+        data = get_ps_connectors(ps_code, limit=5000)
+        for item in data.get("items", []):
+            pins = item.get("pins", [])
+            if not pins:
+                writer.writerow([
+                    ps_code, item["device_code"], item["device_clean"], item["system"], item["location"],
+                    item["location_desc"], item["article_number"], item["supplier"], item["description"],
+                    item["pin_count"], "", "", "", "", "", "", "", "", ""
+                ])
+            else:
+                for p_group in pins:
+                    pin_num = p_group.get("pin", "")
+                    for conn_info in p_group.get("connections", []):
+                        writer.writerow([
+                            ps_code, item["device_code"], item["device_clean"], item["system"], item["location"],
+                            item["location_desc"], item["article_number"], item["supplier"], item["description"],
+                            item["pin_count"], pin_num, conn_info.get("signal", ""), conn_info.get("wire_number", ""),
+                            conn_info.get("wire_color", ""), conn_info.get("cross_section", ""),
+                            conn_info.get("wire_type", ""), conn_info.get("target_device", ""),
+                            conn_info.get("target_pin", ""), conn_info.get("target_desc", "")
+                        ])
+
+    elif summary_type == "fuses":
+        writer.writerow([
+            "Projekt PS", "Bezpiecznik (Aparat)", "Kod skrócony", "Prąd znamionowy (A)", "Typ bezpiecznika",
+            "Oprawka (-FH)", "Skrzynka / Blok", "System", "Lokalizacja", "Chronione sygnały i obwody",
+            "Kod artykułu BOM", "Dostawca", "Opis katalogowy"
+        ])
+        data = get_ps_fuses(ps_code, limit=2000)
+        for item in data.get("items", []):
+            writer.writerow([
+                ps_code, item["device_code"], item["device_clean"], item["rating"], item["fuse_type"],
+                item["holder_code"], item["box_code"], item["system"], item["location"],
+                item["circuits"], item["article_number"], item["supplier"], item["description"]
+            ])
+
+    elif summary_type == "relays":
+        writer.writerow([
+            "Projekt PS", "Przekaźnik (Aparat)", "Kod skrócony", "Funkcja przekaźnika", "Typ / Model",
+            "Dostawca", "Gniazdo / Podstawa", "System", "Lokalizacja", "Pin / Rola",
+            "Sygnał", "Numer przewodu", "Kolor", "Przekrój (mm2)", "Aparat docelowy", "Pin docelowy", "Opis celu"
+        ])
+        data = get_ps_relays(ps_code, limit=2000)
+        for item in data.get("items", []):
+            contacts = item.get("contacts", [])
+            if not contacts:
+                writer.writerow([
+                    ps_code, item["device_code"], item["device_clean"], item["function"], item["relay_type"],
+                    item["supplier"], item["socket_code"], item["system"], item["location"], "", "", "", "", "", "", "", ""
+                ])
+            else:
+                for c in contacts:
+                    pin_lbl = c.get("pin", "")
+                    if c.get("relay_pin") and c["relay_pin"] != pin_lbl:
+                        pin_lbl = f"{pin_lbl}/{c['relay_pin']}"
+                    writer.writerow([
+                        ps_code, item["device_code"], item["device_clean"], item["function"], item["relay_type"],
+                        item["supplier"], item["socket_code"], item["system"], item["location"],
+                        f"Pin {pin_lbl} ({c.get('role', '')})".strip(),
+                        c.get("signal", ""), c.get("wire_number", ""), c.get("wire_color", ""),
+                        c.get("cross_section", ""), c.get("target_device", ""), c.get("target_pin", ""),
+                        c.get("target_desc", "")
+                    ])
+
+    return output.getvalue()
+
 
