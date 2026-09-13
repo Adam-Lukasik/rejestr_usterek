@@ -15,7 +15,7 @@ import urllib.parse
 import xml.etree.ElementTree as ET
 from datetime import datetime
 from pathlib import Path
-from collections import defaultdict
+from collections import defaultdict, deque
 
 
 try:
@@ -65,6 +65,8 @@ DEFAULT_GLOSSARY = [
     ("+BL1", "Lokalizacja", "Główny blok rozdzielczy zasilania 1", "Main power distribution block 1"),
     ("+BL2", "Lokalizacja", "Główny blok rozdzielczy zasilania 2", "Main power distribution block 2"),
     ("+REL", "Lokalizacja", "Panel przekaźników", "Relay board panel"),
+    ("+BF", "Lokalizacja", "Panel elektryczny / rozdzielnia zabudowy (Bedienfeld)", "Box body electrical panel"),
+    ("+BFC", "Lokalizacja", "Panel elektryczny w kabinie (Bedienfeld Cab)", "Cab electrical panel"),
     ("+NAK", "Lokalizacja", "Panel dodatkowy / konsola", "Auxiliary console"),
 
     # Urządzenia / Aparaty (-) wg DIN EN 81346
@@ -202,6 +204,18 @@ def init_zuken_tables():
     cur.execute("CREATE INDEX IF NOT EXISTS idx_zuken_pdf_sym_name ON zuken_pdf_symbols (symbol_name);")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_zuken_pdf_sym_sch ON zuken_pdf_symbols (schematic_id);")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_zuken_pdf_sheets_sch ON zuken_pdf_sheets (schematic_id, page_number);")
+
+    # Cache pozycji etykiet urządzeń na stronach PDF (do parowania
+    # bezpiecznik<->oprawka) — żeby nie ekstrahować tekstu przy każdym starcie
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS zuken_pdf_labelpos (
+            schematic_id INTEGER,
+            page_number INTEGER,
+            file_mtime REAL,
+            labels_json TEXT,
+            PRIMARY KEY (schematic_id, page_number)
+        );
+    """)
 
     # Tabele dla zestawienia materiałowego BOM (Bill of Material) i artykułów
     cur.execute("""
@@ -4194,6 +4208,279 @@ def generate_ps_technical_summaries(ps_code):
     }
 
 
+def _ps_project_ids(cur, ps_code):
+    """ID projektów Zuken powiązanych z PS: (ids połączeń, ids BOM)."""
+    cur.execute("""
+        SELECT id, filename FROM zuken_projects
+        WHERE ps_codes LIKE ? OR filename LIKE ?
+        ORDER BY id DESC;
+    """, (f"%{ps_code}%", f"%{ps_code}%"))
+    projects = cur.fetchall()
+    if not projects:
+        cur.execute("SELECT id, filename FROM zuken_projects ORDER BY id DESC;")
+        projects = cur.fetchall()
+    conn_ids = [r["id"] for r in projects if "bom" not in (r["filename"] or "").lower()]
+    bom_ids = [r["id"] for r in projects if "bom" in (r["filename"] or "").lower()]
+    return conn_ids, bom_ids
+
+
+def _wire_adjacency(cur, conn_proj_ids):
+    """Graf sąsiedztwa pinów z raportu połączeń:
+    {(device, pin): {(device, pin): wiersz_połączenia}} — nieskierowany."""
+    adj = {}
+    if not conn_proj_ids:
+        return adj
+    ph = ",".join("?" for _ in conn_proj_ids)
+    cur.execute(f"""
+        SELECT from_device, from_pin, to_device, to_pin,
+               signal, wire_number, wire_color, cross_section, wire_type, length
+        FROM zuken_connections
+        WHERE project_id IN ({ph});
+    """, conn_proj_ids)
+
+    def _richness(r):
+        return sum(1 for k in ("wire_number", "signal", "wire_color",
+                               "cross_section", "wire_type", "length")
+                   if (r[k] or "").strip())
+
+    for r in cur.fetchall():
+        a = ((r["from_device"] or "").strip(), (r["from_pin"] or "").strip())
+        b = ((r["to_device"] or "").strip(), (r["to_pin"] or "").strip())
+        if not a[0] or not b[0]:
+            continue
+        na = adj.setdefault(a, {})
+        nb = adj.setdefault(b, {})
+        prev = na.get(b)
+        if prev is None or _richness(r) > _richness(prev):
+            na[b] = r
+            nb[a] = r
+    return adj
+
+
+_PASSTHROUGH_DEV_RE = re.compile(r"^(X|SP|XS)\d", re.IGNORECASE)
+
+
+def _wire_net_paths(adj, start_node, banned=(), max_nodes=400, max_ends=24):
+    """BFS po sieci połączeń od start_node: przechodzi przez złącza (-X) i
+    rozgałęźniki (-SP), zatrzymuje się na urządzeniach końcowych i liściach.
+    Zwraca [((device, pin), path)] — path to lista krawędzi
+    [(from_node, to_node, wiersz)] od start_node do końca (najkrótsza)."""
+    if start_node not in adj:
+        return []
+    visited = set(banned) | {start_node}
+    parent = {start_node: None}
+    queue = deque([start_node])
+    ends = []
+    while queue and len(visited) <= max_nodes and len(ends) < max_ends:
+        node = queue.popleft()
+        nbrs = [n for n in adj.get(node, {}) if n not in visited]
+        if node != start_node and not (
+                nbrs and _PASSTHROUGH_DEV_RE.match(clean_device_code(node[0]) or "")):
+            ends.append(node)
+            continue
+        for n in nbrs:
+            visited.add(n)
+            parent[n] = node
+        queue.extend(nbrs)
+    out = []
+    for node in ends:
+        path = []
+        cur_n = node
+        while parent.get(cur_n) is not None:
+            p = parent[cur_n]
+            path.append((p, cur_n, adj[p][cur_n]))
+            cur_n = p
+        path.reverse()
+        out.append((node, path))
+    out.sort(key=lambda e: _natural_sort_key(
+        (clean_device_code(e[0][0]) or e[0][0]) + ":" + (e[0][1] or "")))
+    return out
+
+
+def _wire_far_ends(adj, dev, pin, target_dev, target_pin, max_nodes=300, max_ends=8):
+    """Końce przewodu patrząc od strony celu: idziemy grafem połączeń przez
+    złącza (-X) i rozgałęźniki (-SP) aż do końcowych urządzeń — do diagnostyki
+    'gdzie zginął sygnał'. Zwraca listę ((device, pin), path)."""
+    start = (dev or "", pin or "")
+    node0 = (target_dev or "", target_pin or "")
+    return _wire_net_paths(adj, node0, banned={start},
+                           max_nodes=max_nodes, max_ends=max_ends)
+
+
+def _device_function_map(cur, bom_proj_ids):
+    """device_code/device_clean -> funkcja urządzenia z BOM (np. 'OXP3 LEWA').
+    Klucz device_clean używany tylko gdy jednoznaczny."""
+    by_code = {}
+    if not bom_proj_ids:
+        return {}
+    ph = ",".join("?" for _ in bom_proj_ids)
+    cur.execute(f"""
+        SELECT d.device_code, d.device_clean, d.function
+        FROM zuken_bom_devices d
+        JOIN zuken_bom_items i ON d.bom_item_id = i.id
+        WHERE i.project_id IN ({ph}) AND d.function IS NOT NULL AND d.function != '';
+    """, bom_proj_ids)
+    clean_codes = {}
+    for r in cur.fetchall():
+        func = (r["function"] or "").strip()
+        if not func:
+            continue
+        by_code.setdefault(r["device_code"], func)
+        clean_codes.setdefault(r["device_clean"], set()).add(r["device_code"])
+    for clean, codes in clean_codes.items():
+        if len(codes) == 1 and clean not in by_code:
+            by_code[clean] = by_code[next(iter(codes))]
+    return by_code
+
+
+def _wire_hop(fdev, fpin, tdev, tpin, row):
+    """Jeden przeskok ścieżki sygnału z atrybutami przewodu z krawędzi grafu."""
+    def _g(k):
+        return ((row[k] if row else "") or "").strip()
+    ln = _g("length")
+    if ln == "0":
+        ln = ""
+    elif ln:
+        try:
+            ln = str(int(round(float(ln))))
+        except (ValueError, TypeError):
+            pass
+    return {
+        "from": fdev or "", "from_pin": fpin or "",
+        "to": tdev or "", "to_pin": tpin or "",
+        "from_clean": clean_device_code(fdev) or (fdev or ""),
+        "to_clean": clean_device_code(tdev) or (tdev or ""),
+        "signal": _g("signal"), "wire_number": _g("wire_number"),
+        "wire_color": _g("wire_color"), "cross_section": _g("cross_section"),
+        "wire_type": _g("wire_type"), "length": ln
+    }
+
+
+def _annotate_wire_far_end(entry, dev, pin, adj, glossary, dev_funcs):
+    """Dopisuje do wpisu przewodu 'far_ends' — końcowe urządzenia za złączami,
+    oraz uzupełnia 'length' z wiersza krawędzi grafu, gdy brak."""
+    td = (entry.get("target_device") or "").strip()
+    tp = (entry.get("target_pin") or "").strip()
+    if not td:
+        return
+    node_a = (dev or "", pin or "")
+    edge_row = adj.get(node_a, {}).get((td, tp))
+    if edge_row is not None and not (entry.get("length") or "").strip():
+        e_len = (edge_row["length"] or "").strip()
+        if e_len and e_len != "0":
+            try:
+                e_len = str(int(round(float(e_len))))
+            except (ValueError, TypeError):
+                pass
+            entry["length"] = e_len
+    ends = _wire_far_ends(adj, dev, pin, td, tp)
+    out = []
+    for (ed, ep), path in ends:
+        if (ed, ep) == (td, tp):
+            continue  # cel bezpośredni sam jest końcem — bez powtarzania
+        clean = clean_device_code(ed) or ed
+        hops = []
+        first_row = adj.get(node_a, {}).get((td, tp))
+        hops.append(_wire_hop(dev, pin, td, tp, first_row))
+        for (a, b, row) in path:
+            hops.append(_wire_hop(a[0], a[1], b[0], b[1], row))
+        out.append({
+            "device": ed,
+            "pin": ep,
+            "clean": clean,
+            "function": dev_funcs.get(ed) or dev_funcs.get(clean) or "",
+            "desc": explain_device_code(ed, glossary) or "",
+            "path": hops
+        })
+    if out:
+        entry["far_ends"] = out[:8]
+
+
+def trace_signal_net(ps_code, query):
+    """Śledzenie sygnału dla asystenta: zapytanie 'X429', 'X429:3',
+    'X429 pin 3', 'RT94', '=BOX+TWR-RT94:1' -> pełne sieci połączeń
+    z końcami i ścieżkami (hopy z numerem/kolorem/przekrojem/długością)."""
+    init_zuken_tables()
+    q = (query or "").strip()
+    dev_q = pin_q = ""
+    mp = re.match(r"^(.+?)\s*(?::|\s+pin\s*|\s+pin|\s+)(\d+[A-Za-z']*)\s*$", q, re.IGNORECASE)
+    if mp:
+        dev_q, pin_q = mp.group(1).strip(), mp.group(2).strip()
+    else:
+        dev_q = q
+    if "-" in dev_q:
+        dev_q = dev_q.rsplit("-", 1)[-1]
+    dev_q = dev_q.strip().upper()
+    if not dev_q:
+        return {"ok": False, "nets": []}
+
+    conn = get_db()
+    cur = conn.cursor()
+    conn_ids, bom_ids = _ps_project_ids(cur, ps_code)
+    adj = _wire_adjacency(cur, conn_ids)
+    glossary = get_glossary_dict()
+    dev_funcs = _device_function_map(cur, bom_ids)
+    conn.close()
+
+    # Urządzenia w grafie pasujące do zapytania (po czystym kodzie)
+    dev_nodes = {}
+    for (ndev, npin) in adj.keys():
+        c = (clean_device_code(ndev) or "").upper()
+        if c == dev_q:
+            dev_nodes.setdefault(ndev, set()).add(npin)
+    if not dev_nodes:
+        # fallback: wariant z primem / połączone oznaczenie (np. "FH 12" -> "FH12")
+        alt = (dev_q + pin_q).upper() if pin_q else ""
+        for (ndev, npin) in adj.keys():
+            c = (clean_device_code(ndev) or "").upper()
+            if c == dev_q + "'" or (alt and c == alt):
+                dev_nodes.setdefault(ndev, set()).add(npin)
+        if alt and dev_nodes:
+            pin_q = ""
+    if not dev_nodes:
+        return {"ok": True, "nets": [], "device": dev_q, "pin": pin_q}
+
+    def _end_info(ed, ep, path):
+        clean = clean_device_code(ed) or ed
+        hops = [_wire_hop(a[0], a[1], b[0], b[1], row) for (a, b, row) in path]
+        return {
+            "device": ed, "pin": ep, "clean": clean,
+            "function": dev_funcs.get(ed) or dev_funcs.get(clean) or "",
+            "desc": explain_device_code(ed, glossary) or "",
+            "path": hops
+        }
+
+    nets = []
+    for ndev in sorted(dev_nodes, key=_natural_sort_key):
+        pins = sorted(dev_nodes[ndev], key=_natural_sort_key)
+        if pin_q:
+            matched = [p for p in pins if p.upper() == pin_q.upper()]
+            if matched:
+                pins = matched  # gdy pin nie istnieje w raporcie — pokaż wszystkie
+        for npin in pins[:24]:
+            node = (ndev, npin)
+            ends = _wire_net_paths(adj, node, max_ends=16)
+            seen_e = set()
+            end_list = []
+            for (ed, ep), path in ends:
+                if (ed, ep) == node or (ed, ep) in seen_e:
+                    continue
+                seen_e.add((ed, ep))
+                end_list.append(_end_info(ed, ep, path))
+            if not end_list and not adj.get(node):
+                continue
+            clean = clean_device_code(ndev) or ndev
+            nets.append({
+                "start_device": ndev, "start_pin": npin, "start_clean": clean,
+                "start_function": dev_funcs.get(ndev) or dev_funcs.get(clean) or "",
+                "start_desc": explain_device_code(ndev, glossary) or "",
+                "ends": end_list
+            })
+        if len(nets) >= 24:
+            break
+    return {"ok": True, "device": dev_q, "pin": pin_q, "nets": nets}
+
+
 def get_ps_connectors(ps_code, search="", system_filter="", limit=100, offset=0):
     """Pobiera listę złączy z pinoutem dla projektu PS z filtrowaniem i paginacją."""
     if not ps_code:
@@ -4248,6 +4535,19 @@ def get_ps_connectors(ps_code, search="", system_filter="", limit=100, offset=0)
         d["pins"] = json.loads(d.get("pins_json") or "[]")
         items.append(d)
 
+    # "Drugi koniec przewodu" — przejdź grafem połączeń przez złącza/rozgałęźniki
+    # do końcowych urządzeń (diagnostyka: skąd sygnał faktycznie przychodzi).
+    conn_ids, bom_ids = _ps_project_ids(cur, ps_code)
+    adj = _wire_adjacency(cur, conn_ids)
+    if adj:
+        glossary = get_glossary_dict()
+        dev_funcs = _device_function_map(cur, bom_ids)
+        for d in items:
+            dev = d.get("device_code") or ""
+            for pin in d.get("pins") or []:
+                for c in pin.get("connections") or []:
+                    _annotate_wire_far_end(c, dev, pin.get("pin"), adj, glossary, dev_funcs)
+
     conn.close()
     return {
         "items": items,
@@ -4256,6 +4556,122 @@ def get_ps_connectors(ps_code, search="", system_filter="", limit=100, offset=0)
         "limit": limit,
         "offset": offset
     }
+
+
+_PDF_READERS = {}
+_PDF_PAGE_LABELS = {}
+_FUSE_LIST_CACHE = {}
+
+
+def _min_cost_pairs(edges, n_left, n_right):
+    """Min-costowe skojarzenie dwudzielne (algorytm węgierski): lewa strona
+    (bezpieczniki) -> prawa (oprawki/przekaźniki) na stronie schematu.
+    edges: (cost, left_idx, right_idx). Zwraca {left_idx: right_idx};
+    pozycja bez dobrej krawędzi może zostać nieskojarzona (koszt UNMATCH)."""
+    INF = 10 ** 9
+    UNMATCH = 200 * 200  # > maks. realnego dystansu (140/90 pt)
+    n, m = n_left, n_right + n_left
+    cost = [[INF] * m for _ in range(n)]
+    for c, li, ri in edges:
+        if c < cost[li][ri]:
+            cost[li][ri] = c
+    for li in range(n):
+        for k in range(n):
+            cost[li][n_right + k] = UNMATCH
+    u = [0.0] * (n + 1)
+    v = [0.0] * (m + 1)
+    p = [0] * (m + 1)
+    way = [0] * (m + 1)
+    for i in range(1, n + 1):
+        p[0] = i
+        j0 = 0
+        minv = [float("inf")] * (m + 1)
+        used = [False] * (m + 1)
+        while True:
+            used[j0] = True
+            i0 = p[j0]
+            delta = float("inf")
+            j1 = 0
+            for j in range(1, m + 1):
+                if used[j]:
+                    continue
+                cur = cost[i0 - 1][j - 1] - u[i0] - v[j]
+                if cur < minv[j]:
+                    minv[j] = cur
+                    way[j] = j0
+                if minv[j] < delta:
+                    delta = minv[j]
+                    j1 = j
+            for j in range(m + 1):
+                if used[j]:
+                    u[p[j]] += delta
+                    v[j] -= delta
+                else:
+                    minv[j] -= delta
+            j0 = j1
+            if p[j0] == 0:
+                break
+        while j0:
+            p[j0] = p[way[j0]]
+            j0 = way[j0]
+    res = {}
+    for j in range(1, m + 1):
+        if 0 < p[j] <= n and j <= n_right:
+            res[p[j] - 1] = j - 1
+    return res
+
+
+def _pdf_page_label_positions(schem_id, filepath, page_num, file_mtime=None):
+    """Etykiety urządzeń (-F/-FH/-U/-RT) z pozycjami (x, y) na stronie schematu.
+    Etykiety skrzynek -U są często wewnątrz symbolu i nie trafiają do raw_text,
+    więc parowanie robimy na współrzędnych. Cache: pamięć procesu + tabela
+    zuken_pdf_labelpos (unieważniana po mtime pliku)."""
+    key = (schem_id, filepath, page_num)
+    if key in _PDF_PAGE_LABELS:
+        return _PDF_PAGE_LABELS[key]
+    items = None
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT labels_json FROM zuken_pdf_labelpos
+        WHERE schematic_id = ? AND page_number = ? AND file_mtime IS ?;
+    """, (schem_id, page_num, file_mtime))
+    row = cur.fetchone()
+    if row is not None:
+        try:
+            items = [tuple(t) for t in json.loads(row[0])]
+        except (ValueError, TypeError):
+            items = None
+    if items is None:
+        items = []
+        if pypdf is not None:
+            try:
+                reader = _PDF_READERS.get(filepath)
+                if reader is None:
+                    reader = pypdf.PdfReader(filepath)
+                    _PDF_READERS[filepath] = reader
+                if 1 <= page_num <= len(reader.pages):
+                    label_re = re.compile(r'-(?:FH|FR|F|RT|U)\d+[A-Z]*')
+
+                    def _vis(text, cm, tm, font, size):
+                        t = (text or "").strip()
+                        if label_re.fullmatch(t):
+                            x = tm[4] * cm[0] + tm[5] * cm[2] + cm[4]
+                            y = tm[4] * cm[1] + tm[5] * cm[3] + cm[5]
+                            items.append((x, y, t))
+
+                    reader.pages[page_num - 1].extract_text(visitor_text=_vis)
+            except Exception:
+                items = []
+        cur.execute("""
+            INSERT OR REPLACE INTO zuken_pdf_labelpos
+                (schematic_id, page_number, file_mtime, labels_json)
+            VALUES (?, ?, ?, ?);
+        """, (schem_id, page_num, file_mtime, json.dumps(items)))
+        conn.commit()
+    conn.close()
+    _PDF_PAGE_LABELS[key] = items
+    return items
 
 
 def get_ps_fuses(ps_code, search="", limit=100, offset=0):
@@ -4275,6 +4691,38 @@ def get_ps_fuses(ps_code, search="", limit=100, offset=0):
         generate_ps_technical_summaries(ps_code)
         conn = get_db()
         cur = conn.cursor()
+
+    # Cache gotowej listy — zestaw jest niezmienny, dopóki nie zmienią się
+    # dane źródłowe (raporty, schemat PDF, słownik, zdjęcia komponentów).
+    cur.execute("SELECT COUNT(*), COALESCE(MAX(id),0) FROM zuken_ps_fuses WHERE ps_code = ?;", (ps_code,))
+    f_cnt, f_max = cur.fetchone()
+    cur.execute("SELECT COUNT(*), COALESCE(MAX(id),0) FROM zuken_connections;")
+    c_cnt, c_max = cur.fetchone()
+    cur.execute("SELECT COUNT(*), COALESCE(MAX(id),0) FROM zuken_bom_devices;")
+    b_cnt, b_max = cur.fetchone()
+    cur.execute("SELECT COUNT(*), COALESCE(MAX(rowid),0) FROM zuken_glossary;")
+    g_cnt, g_max = cur.fetchone()
+    cur.execute("""
+        SELECT id, file_mtime FROM zuken_pdf_schematics
+        WHERE is_active = 1 ORDER BY id DESC LIMIT 1;
+    """)
+    _s = cur.fetchone()
+    img_sig = (0, 0.0)
+    if os.path.isdir(BOM_IMAGES_DIR):
+        try:
+            img_files = [f for f in os.listdir(BOM_IMAGES_DIR)]
+            img_sig = (len(img_files),
+                       max((os.path.getmtime(os.path.join(BOM_IMAGES_DIR, f))
+                            for f in img_files), default=0.0))
+        except OSError:
+            pass
+    fingerprint = (ps_code, f_cnt, f_max, c_cnt, c_max, b_cnt, b_max,
+                   g_cnt, g_max, _s["id"] if _s else 0,
+                   _s["file_mtime"] if _s else 0, img_sig)
+    cache_key = (fingerprint, search or "", limit, offset)
+    if cache_key in _FUSE_LIST_CACHE:
+        conn.close()
+        return _FUSE_LIST_CACHE[cache_key]
 
     conditions = ["ps_code = ?"]
     params = [ps_code]
@@ -4300,20 +4748,507 @@ def get_ps_fuses(ps_code, search="", limit=100, offset=0):
     """, params + [limit, offset])
 
     rows = cur.fetchall()
+
+    glossary = get_glossary_dict()
+
+    def _gdesc(prefix, lang="desc_pl"):
+        entry = glossary.get(prefix)
+        if not entry:
+            return ""
+        return entry.get(lang) or entry.get("desc_pl") or ""
+
+    # Projekty połączeń powiązane z tym PS (jak w generate_ps_technical_summaries)
+    cur.execute("""
+        SELECT id, filename FROM zuken_projects
+        WHERE ps_codes LIKE ? OR filename LIKE ?
+        ORDER BY id DESC;
+    """, (f"%{ps_code}%", f"%{ps_code}%"))
+    projects = [dict(r) for r in cur.fetchall()]
+    if not projects:
+        cur.execute("SELECT id, filename FROM zuken_projects ORDER BY id DESC;")
+        projects = [dict(r) for r in cur.fetchall()]
+    conn_proj_ids = [p["id"] for p in projects if "bom" not in (p["filename"] or "").lower()]
+
+    con_format_ids = set()
+    if conn_proj_ids:
+        ph_fmt = ",".join("?" for _ in conn_proj_ids)
+        cur.execute(f"""
+            SELECT project_id FROM zuken_connections
+            WHERE project_id IN ({ph_fmt}) AND wire_number IS NOT NULL AND wire_number != ''
+            GROUP BY project_id;
+        """, conn_proj_ids)
+        con_format_ids = {r[0] for r in cur.fetchall()}
+
+    def _norm_sig_wire(row):
+        """Normalizuje parę (numer_przewodu, nazwa_sygnału) wg formatu projektu źródłowego."""
+        sig = (row["signal"] or "").strip()
+        wn = (row["wire_number"] or "").strip()
+        if row["project_id"] in con_format_ids:
+            return wn, sig
+        return (wn or sig), (sig if wn else "")
+
+    # Raporty Connection/BOM przypisują przewody do oprawki (-FH), a numeracja
+    # bezpiecznika (-F) i oprawki bywa różna (np. -F18 siedzi w -FH36).
+    # Parowanie odtwarzamy z sąsiedztwa etykiet na zaindeksowanych schematach PDF.
+    cur.execute("SELECT raw_text FROM zuken_pdf_sheets WHERE raw_text LIKE '%-F%';")
+    pdf_texts = [r[0] for r in cur.fetchall() if r and r[0]]
+
+    def _pdf_holder_candidates(fuse_clean, loc_code):
+        """Numery oprawek -FH narysowanych obok bezpiecznika na schemacie
+        (ta sama +lokalizacja; głosowanie pomiędzy arkuszami)."""
+        if not fuse_clean or not loc_code or not pdf_texts:
+            return []
+        pat_f = re.compile(r'-' + re.escape(fuse_clean) + r'(?![0-9A-Za-z])')
+        pat_fh = re.compile(r'-FH(\d+)(?![0-9A-Za-z])')
+        pat_loc = re.compile(re.escape(loc_code) + r'(?![0-9A-Za-z])')
+        votes = {}
+        for txt in pdf_texts:
+            fh_positions = [
+                (mh.start(), mh.group(1))
+                for mh in pat_fh.finditer(txt)
+                if pat_loc.search(txt[mh.end():mh.end() + 90])
+            ]
+            if not fh_positions:
+                continue
+            for mf in pat_f.finditer(txt):
+                for pos, num in fh_positions:
+                    if abs(pos - mf.start()) <= 450:
+                        votes[num] = votes.get(num, 0) + 1
+        if not votes:
+            return ""
+        best = max(votes, key=lambda n: votes[n])
+        # Akceptuj tylko parowanie powtórzone na >=2 arkuszach albo bez konkurencji
+        return best if (votes[best] >= 2 or len(votes) == 1) else ""
+
+    # Aktywny schemat PDF i strony, na których narysowano etykiety -F<n>
+    cur.execute("""
+        SELECT id, filepath, file_mtime FROM zuken_pdf_schematics
+        WHERE is_active = 1 ORDER BY id DESC LIMIT 1;
+    """)
+    _schem = cur.fetchone()
+    schem_path = _schem["filepath"] if _schem else None
+    schem_mtime = _schem["file_mtime"] if _schem else None
+    fuse_page_map = {}
+    if _schem and schem_path and pypdf is not None and os.path.exists(schem_path):
+        cur.execute("""
+            SELECT page_number, symbol_name FROM zuken_pdf_symbols
+            WHERE schematic_id = ? AND symbol_name LIKE '-F%';
+        """, (_schem["id"],))
+        for pg, sname in cur.fetchall():
+            if re.fullmatch(r"-F\d+", sname or ""):
+                fuse_page_map.setdefault(sname[1:], set()).add(pg)
+
+    # Mapa przekaźnik -> skrzynka bezpieczników (-U) z raportu połączeń.
+    # Etykiety -U3..-U17 nie są drukowane na schemacie — pozycja bezpiecznika
+    # nad przekaźnikiem (przewód pionowy) pozwala przypisać właściwy slot.
+    relay_to_u = {}
+    if conn_proj_ids:
+        ph_ru = ",".join("?" for _ in conn_proj_ids)
+        cur.execute(f"""
+            SELECT from_device, to_device FROM zuken_connections
+            WHERE project_id IN ({ph_ru});
+        """, conn_proj_ids)
+        for fr_dev, to_dev in cur.fetchall():
+            for a, b in ((fr_dev, to_dev), (to_dev, fr_dev)):
+                if a and b and re.fullmatch(r".*-U\d+", a) and re.fullmatch(r".*-RT\d+", b):
+                    relay_to_u.setdefault(clean_device_code(b), set()).add(a)
+
+    _ext_cache = {}
+
+    def _external_harness(dev):
+        """Złącze wiązki zewnętrznej (dostarczanej z urządzeniem, np. ORTUS) —
+        obok etykiety złącza na schemacie stoi nazwa/artykuł dostawcy."""
+        if not dev:
+            return ""
+        if dev in _ext_cache:
+            return _ext_cache[dev]
+        res = ""
+        clean = clean_device_code(dev) or ""
+        # sprawdzamy tylko złącza — dopisek dostawcy dotyczy połowy złącza
+        if re.fullmatch(r"X\d+[A-Z']*", clean):
+            pat = re.compile(r"-" + re.escape(clean) + r"(?![0-9A-Za-z])")
+            like = "%" + clean.replace("%", "").replace("_", "") + "%"
+            cur.execute("SELECT raw_text FROM zuken_pdf_sheets WHERE raw_text LIKE ?;", (like,))
+            for (txt,) in cur.fetchall():
+                if not txt:
+                    continue
+                for m in pat.finditer(txt):
+                    frag = txt[max(0, m.start() - 250):m.end() + 250].upper()
+                    if "ORTUS" in frag:
+                        res = "ORTUS"
+                        break
+                if res:
+                    break
+        _ext_cache[dev] = res
+        return res
+
+    def _resolve_dev_label(clean, sys_code, loc_code):
+        """Etykieta z PDF (np. FH36) -> pełny kod urządzenia z BOM/raportów.
+        Prefiks lokalizacji bezpiecznika ma pierwszeństwo, ale nie jest wymagany
+        (oprawka bywa w innej lokalizacji, np. -F20 z =CAB+BFC siedzi w -FH1 z +TWR)."""
+        cands = clean_to_devs.get(clean) or []
+        if not cands:
+            return ""
+        pref = f"{sys_code or ''}{loc_code or ''}-{clean}"
+        return pref if pref in cands else cands[0]
+
+    _geo_cache = {}
+
+    def _pdf_geometry_candidates(fuse_clean, sys_code, loc_code):
+        """Oprawka wg geometrii schematu: najbliższa etykieta -FH/-U obok -F,
+        a gdy brak — slot -U powiązany z przekaźnikiem narysowanym pod -F."""
+        if not fuse_clean or fuse_clean.startswith(("FH", "FR")):
+            return []
+        if fuse_clean in _geo_cache:
+            return _geo_cache[fuse_clean]
+        votes = {}
+        for pg in fuse_page_map.get(fuse_clean, ()):
+            items = _pdf_page_label_positions(_schem["id"], schem_path, pg, schem_mtime)
+            # Dopasowanie F <-> oprawka (FH/U) minimalizujące sumę odległości
+            # na stronie — "najbliższa etykieta" zawodzi, gdy etykiety są
+            # upakowane (np. na ark. 51: F19 jest bliżej FH1, ale fizycznie
+            # FH1 zawiera F20 — poprawny przydział to F20-FH1, F19-FH15).
+            holders = [(x, y, l) for x, y, l in items
+                       if l.startswith("-FH") or re.fullmatch(r"-U\d+", l)]
+            fuses = [(x, y, l) for x, y, l in items if re.fullmatch(r"-F\d+", l)]
+            edges = []
+            for fi, (fx, fy, flab) in enumerate(fuses):
+                for hi, (hx, hy, hl) in enumerate(holders):
+                    d2 = (hx - fx) ** 2 + (hy - fy) ** 2
+                    lim = 140 if hl.startswith("-FH") else 90
+                    if d2 <= lim * lim:
+                        edges.append((d2, fi, hi))
+            assign = _min_cost_pairs(edges, len(fuses), len(holders))
+            # Bezpieczniki bez oprawki obok: przewód schodzi pionowo do
+            # przekaźnika — dopasowanie min-cost po |dx| (etykiety RT są
+            # przesunięte o stały offset, więc "najbliższy" myli sąsiadów).
+            relays = [(x, y, l) for x, y, l in items if re.fullmatch(r"-RT\d+", l)]
+            edges_rt = []
+            for fi, (fx, fy, flab) in enumerate(fuses):
+                if fi in assign:
+                    continue
+                for ri, (rx, ry, rl) in enumerate(relays):
+                    dx = rx - fx
+                    dy = fy - ry
+                    # w kolumnie bywa kilka przekaźników — wygrywa najbliższy
+                    if abs(dx) <= 40 and dy >= 20:
+                        edges_rt.append((dx * dx + dy * dy, fi, ri))
+            assign_rt = _min_cost_pairs(edges_rt, len(fuses), len(relays))
+            for fi, (fx, fy, lab) in enumerate(fuses):
+                if lab != "-" + fuse_clean:
+                    continue
+                hi = assign.get(fi)
+                if hi is not None:
+                    code = _resolve_dev_label(holders[hi][2].lstrip("-"),
+                                              sys_code, loc_code)
+                    if code:
+                        votes[code] = votes.get(code, 0) + 1
+                else:
+                    ri = assign_rt.get(fi)
+                    if ri is not None:
+                        # Slot -U poznajemy po powiązaniu -U -> -RT w raporcie
+                        for udev in sorted(relay_to_u.get(relays[ri][2].lstrip("-"), ())):
+                            votes[udev] = votes.get(udev, 0) + 1
+        out = sorted(votes, key=lambda c: (-votes[c], c))
+        _geo_cache[fuse_clean] = out
+        return out
+
+    _cand_cache = {}
+
+    def _fuse_holder_candidates(fuse_clean, sys_code, loc_code):
+        """Kandydaci na oprawkę: geometria PDF (FH/U), potem głosowanie
+        tekstowe -FH jako fallback. Wiersze oprawek (-FH/-FR) nie dostają
+        własnej oprawki."""
+        if not fuse_clean or fuse_clean.startswith(("FH", "FR")):
+            return []
+        key = (fuse_clean, sys_code or "", loc_code or "")
+        if key in _cand_cache:
+            return _cand_cache[key]
+        out, seen = [], set()
+        for c in _pdf_geometry_candidates(fuse_clean, sys_code, loc_code):
+            if c and c not in seen:
+                seen.add(c)
+                out.append(c)
+        fh_num = _pdf_holder_candidates(fuse_clean, loc_code)
+        if fh_num:
+            c = _resolve_dev_label("FH" + fh_num, sys_code, loc_code) or f"{sys_code}{loc_code}-FH{fh_num}"
+            if c not in seen:
+                seen.add(c)
+                out.append(c)
+        _cand_cache[key] = out
+        return out
+
+    def _fuse_wires(device_code, holder_code, fuse_clean="", loc_code="", sys_code=""):
+        """Przewody dochodzące do bezpiecznika / jego oprawki (jak styki przekaźnika).
+        Zwraca (wires, holder_used) — holder_used to kod oprawki, która faktycznie
+        wystąpiła w połączeniach (może mieć inny numer niż bezpiecznik)."""
+        if not conn_proj_ids:
+            return [], ""
+        search_devs = [d for d in (device_code, holder_code) if d]
+        wires, matched = _query_fuse_wires(search_devs)
+        if wires:
+            return wires, (holder_code if holder_code in matched else "")
+        if fuse_clean:
+            # Oprawka o innym numerze niż bezpiecznik — parowanie z etykiet schematu
+            for alt_holder in _fuse_holder_candidates(fuse_clean, sys_code, loc_code):
+                if alt_holder in (device_code, holder_code):
+                    continue
+                wires, matched = _query_fuse_wires([d for d in (device_code, alt_holder) if d])
+                if wires:
+                    return wires, (alt_holder if alt_holder in matched else "")
+        return [], ""
+
+    def _query_fuse_wires(search_devs):
+        if not search_devs:
+            return [], set()
+        ph_devs = ",".join("?" for _ in search_devs)
+        ph_conn = ",".join("?" for _ in conn_proj_ids)
+        con_prio = ""
+        con_params = ()
+        if con_format_ids:
+            ph_cfmt = ",".join("?" for _ in con_format_ids)
+            con_prio = f"ORDER BY CASE WHEN project_id IN ({ph_cfmt}) THEN 0 ELSE 1 END"
+            con_params = tuple(con_format_ids)
+        cur.execute(f"""
+            SELECT project_id, from_device, from_pin, to_device, to_pin, signal,
+                   wire_number, wire_color, cross_section, wire_type, length
+            FROM zuken_connections
+            WHERE (from_device IN ({ph_devs}) OR to_device IN ({ph_devs}))
+              AND project_id IN ({ph_conn})
+            {con_prio};
+        """, tuple(search_devs + search_devs + conn_proj_ids) + con_params)
+
+        seen = {}
+        wires = []
+        matched_devs = set()
+        for cr in cur.fetchall():
+            fd = (cr["from_device"] or "").strip()
+            td = (cr["to_device"] or "").strip()
+            if fd in search_devs and td in search_devs:
+                continue  # połączenie wewnętrzne bezpiecznik <-> oprawka
+            is_from = fd in search_devs
+            if is_from:
+                matched_devs.add(fd)
+            elif td in search_devs:
+                matched_devs.add(td)
+            else:
+                continue
+            pin = (cr["from_pin"] if is_from else cr["to_pin"]) or ""
+            pin = pin.strip()
+            target = (td if is_from else fd)
+            target_p = ((cr["to_pin"] if is_from else cr["from_pin"]) or "").strip()
+            w_num, sig = _norm_sig_wire(cr)
+            c_len = (cr["length"] or "").strip()
+            try:
+                c_len = str(int(round(float(c_len))))
+            except (ValueError, TypeError):
+                pass
+            if c_len in ("0", "0.0"):
+                c_len = ""
+            entry = {
+                "pin": pin,
+                "wire_number": w_num,
+                "signal": sig,
+                "wire_color": (cr["wire_color"] or "").strip(),
+                "cross_section": (cr["cross_section"] or "").strip(),
+                "wire_type": (cr["wire_type"] or "").strip(),
+                "length": c_len,
+                "target_device": target,
+                "target_pin": target_p,
+            }
+            if not (w_num or sig or entry["wire_color"] or entry["cross_section"] or c_len):
+                continue  # "ślepy" zapis bez danych przewodu
+            key = (pin, target, target_p, w_num)
+            if key in seen:
+                for fld in ("signal", "wire_color", "cross_section", "wire_type", "length"):
+                    if not seen[key][fld] and entry[fld]:
+                        seen[key][fld] = entry[fld]
+                continue
+            entry["target_desc"] = explain_device_code(target, glossary) if target else ""
+            ext = _external_harness(target)
+            if ext:
+                entry["external"] = ext
+            seen[key] = entry
+            wires.append(entry)
+
+        # Segment oprawka(-U/-FH) -> przekaźnik nie niesie atrybutów przewodu,
+        # ale ten sam przewód jest zapisany jako -RT -> kolejne urządzenie
+        # (np. U17->RT94 bez danych, a RT94->RT171: 389 / 16mm² / Czerwony).
+        # Uzupełniamy z sąsiedniego wiersza o tym samym urządzeniu i sygnale.
+        need = [w for w in wires if not (w["wire_number"] and w["wire_color"])]
+        if need:
+            tgts = {w["target_device"] for w in need if w["target_device"]}
+            if tgts:
+                ph_t = ",".join("?" for _ in tgts)
+                cur.execute(f"""
+                    SELECT project_id, from_device, to_device, signal,
+                           wire_number, wire_color, cross_section, wire_type, length
+                    FROM zuken_connections
+                    WHERE (from_device IN ({ph_t}) OR to_device IN ({ph_t}))
+                      AND project_id IN ({ph_conn});
+                """, tuple(tgts) + tuple(tgts) + tuple(conn_proj_ids))
+                siblings = defaultdict(list)
+                for cr in cur.fetchall():
+                    wn2, sg2 = _norm_sig_wire(cr)
+                    if not (wn2 or sg2 or cr["wire_color"] or cr["cross_section"]):
+                        continue
+                    for dev in (cr["from_device"], cr["to_device"]):
+                        if dev in tgts:
+                            for k in (sg2, wn2):
+                                if k:
+                                    siblings[(dev, k)].append(cr)
+                for w in need:
+                    for key in ((w["target_device"], w["signal"]),
+                                (w["target_device"], w["wire_number"])):
+                        if not key[1]:
+                            continue
+                        for cr in siblings.get(key, ()):
+                            wn2, sg2 = _norm_sig_wire(cr)
+                            if not w["wire_number"] and wn2:
+                                w["wire_number"] = wn2
+                            if not w["signal"] and sg2:
+                                w["signal"] = sg2
+                            if not w["wire_color"] and (cr["wire_color"] or "").strip():
+                                w["wire_color"] = cr["wire_color"].strip()
+                            if not w["cross_section"] and (cr["cross_section"] or "").strip():
+                                w["cross_section"] = cr["cross_section"].strip()
+                            if not w["wire_type"] and (cr["wire_type"] or "").strip():
+                                w["wire_type"] = cr["wire_type"].strip()
+                            if not w["length"] and (cr["length"] or "").strip() not in ("", "0", "0.0"):
+                                try:
+                                    w["length"] = str(int(round(float(cr["length"]))))
+                                except (ValueError, TypeError):
+                                    w["length"] = cr["length"].strip()
+
+        wires.sort(key=lambda w: (_natural_sort_key(w["pin"]), _natural_sort_key(w["target_device"] or "")))
+        return wires, matched_devs
+
+    # Zbiór urządzeń istniejących w BOM/raportach — do weryfikacji nominalnej oprawki
+    known_devs = set()
+    cur.execute("SELECT DISTINCT device_code FROM zuken_bom_devices;")
+    known_devs.update(r[0] for r in cur.fetchall() if r[0])
+    if conn_proj_ids:
+        ph_kd = ",".join("?" for _ in conn_proj_ids)
+        cur.execute(f"""
+            SELECT DISTINCT from_device AS dev FROM zuken_connections WHERE project_id IN ({ph_kd})
+            UNION
+            SELECT DISTINCT to_device FROM zuken_connections WHERE project_id IN ({ph_kd});
+        """, conn_proj_ids + conn_proj_ids)
+        known_devs.update(r[0] for r in cur.fetchall() if r[0])
+
+    clean_to_devs = {}
+    for dev in known_devs:
+        c = clean_device_code(dev)
+        if c:
+            clean_to_devs.setdefault(c, []).append(dev)
+
+    # "Drugi koniec przewodu" — graf połączeń do przejścia przez złącza
+    adj = _wire_adjacency(cur, conn_proj_ids)
+    _, _bom_ids_f = _ps_project_ids(cur, ps_code)
+    dev_funcs = _device_function_map(cur, _bom_ids_f)
+
     items = []
     for r in rows:
         d = dict(r)
         d["details"] = json.loads(d.get("details_json") or "[]")
+        d["holder_clean"] = (clean_device_code(d.get("holder_code"))
+                             or clean_device_code(d.get("box_code"))
+                             or (d["device_clean"] if str(d.get("device_clean") or "").startswith("FH") else ""))
+        d["system_desc"] = _gdesc(d.get("system"))
+        d["location_desc"] = _gdesc(d.get("location"))
+        d["system_desc_en"] = _gdesc(d.get("system"), "desc_en")
+        d["location_desc_en"] = _gdesc(d.get("location"), "desc_en")
+        d["image_url"] = find_local_component_image(d.get("article_number"))
+        wires, holder_used = _fuse_wires(d.get("device_code"), d.get("holder_code"),
+                                       d.get("device_clean"), d.get("location"), d.get("system"))
+        if not holder_used:
+            # Oprawka sparowana na schemacie, ale bez przewodów w raporcie
+            for cand in _fuse_holder_candidates(d.get("device_clean"),
+                                                d.get("system"), d.get("location")):
+                if cand in known_devs and cand != d.get("device_code"):
+                    holder_used = cand
+                    break
+        if not holder_used and d.get("holder_code") in known_devs:
+            holder_used = d["holder_code"]
+        for w in wires:
+            _annotate_wire_far_end(w, d.get("device_code"), w.get("pin"), adj, glossary, dev_funcs)
+        d["wires"] = wires
+        d["holder_real"] = holder_used
+        d["holder_real_clean"] = clean_device_code(holder_used)
         items.append(d)
 
+    # Scal wiersz oprawki (-FH) z wierszem jej bezpiecznika (-F) — jeden zespół
+    by_code = {d["device_code"]: d for d in items}
+    merged_codes = set()
+    for d in items:
+        hrow = by_code.get(d.get("holder_real") or "")
+        if hrow is not None and hrow is not d:
+            d["holder_article"] = hrow.get("article_number") or ""
+            d["holder_supplier"] = hrow.get("supplier") or ""
+            d["holder_description"] = hrow.get("description") or ""
+            d["holder_image_url"] = hrow.get("image_url")
+            merged_codes.add(hrow["device_code"])
+    if merged_codes:
+        items = [d for d in items if d["device_code"] not in merged_codes]
+
+    # Artykuł oprawki z BOM — także dla skrzynek -U, które nie mają
+    # własnego wiersza w tabeli bezpieczników
+    missing_holder = {d["holder_real"] for d in items
+                      if d.get("holder_real") and not d.get("holder_article")}
+    if missing_holder:
+        ph_h = ",".join("?" for _ in missing_holder)
+        cur.execute(f"""
+            SELECT d.device_code, i.article_number, i.supplier, i.description
+            FROM zuken_bom_devices d JOIN zuken_bom_items i ON i.id = d.bom_item_id
+            WHERE d.device_code IN ({ph_h});
+        """, tuple(missing_holder))
+        holder_bom = {}
+        for hcode, hart, hsup, hdesc in cur.fetchall():
+            holder_bom.setdefault(hcode, (hart, hsup, hdesc))
+        for d in items:
+            hb = holder_bom.get(d.get("holder_real") or "")
+            if hb:
+                d["holder_article"] = hb[0] or ""
+                d["holder_supplier"] = hb[1] or ""
+                d["holder_description"] = hb[2] or ""
+
+    # Scal urządzenia bez lokalizacji (-F18) z kwalifikowanym odpowiednikiem
+    # (=CAB+TWR-F18) — ten sam aparat figuruje w BOM pod dwoma oznaczeniami
+    qualified = {}
+    for d in items:
+        if (d.get("system") or d.get("location")) and d.get("device_clean"):
+            qualified.setdefault(d["device_clean"], []).append(d)
+
+    def _is_bare_alias(d):
+        if d.get("system") or d.get("location"):
+            return False
+        cands = qualified.get(d.get("device_clean") or "")
+        if not cands or len(cands) != 1:
+            return False
+        q = cands[0]
+        return (not d.get("article_number") or not q.get("article_number")
+                or d["article_number"] == q["article_number"])
+
+    items = [d for d in items if not _is_bare_alias(d)]
+
+    # Sortowanie naturalne wg numeru bezpiecznika: F1, F2, ..., F12, FH36
+    def _fuse_num_key(d):
+        c = str(d.get("device_clean") or "")
+        m = re.search(r"(\d+)", c)
+        return (int(m.group(1)) if m else 99999, c.lower())
+
+    items.sort(key=_fuse_num_key)
+
     conn.close()
-    return {
+    result = {
         "items": items,
-        "total": total_count,
+        "total": len(items),
         "ps_code": ps_code,
         "limit": limit,
         "offset": offset
     }
+    _FUSE_LIST_CACHE[cache_key] = result
+    return result
 
 
 def get_ps_relays(ps_code, search="", limit=100, offset=0):
@@ -4376,6 +5311,15 @@ def get_ps_relays(ps_code, search="", limit=100, offset=0):
         d["system_desc_en"] = _gdesc(d.get("system"), "desc_en")
         d["location_desc_en"] = _gdesc(d.get("location"), "desc_en")
         items.append(d)
+
+    # "Drugi koniec przewodu" — końcowe urządzenie za złączami/rozgałęźnikami
+    conn_ids, bom_ids = _ps_project_ids(cur, ps_code)
+    adj = _wire_adjacency(cur, conn_ids)
+    if adj:
+        dev_funcs = _device_function_map(cur, bom_ids)
+        for d in items:
+            for c in d.get("contacts") or []:
+                _annotate_wire_far_end(c, d.get("device_code"), c.get("pin"), adj, glossary, dev_funcs)
 
     conn.close()
     return {

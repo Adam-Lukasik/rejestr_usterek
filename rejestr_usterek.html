@@ -2012,13 +2012,11 @@
               <table class="data-table" style="width:100%; margin:0;">
                 <thead>
                   <tr>
-                    <th style="width:140px;" data-i18n="ui.zuken.fuseColDevice">Bezpiecznik (Aparat)</th>
-                    <th style="width:100px;" data-i18n="ui.zuken.fuseColRating">Prąd znamionowy</th>
-                    <th style="width:90px;" data-i18n="ui.zuken.fuseColType">Typ</th>
-                    <th style="width:130px;" data-i18n="ui.zuken.fuseColHolder">Oprawka / Skrzynka</th>
-                    <th data-i18n="ui.zuken.fuseColCircuits">Chronione sygnały & Obwody zasilane</th>
-                    <th style="width:150px;" data-i18n="ui.zuken.fuseColLocation">Lokalizacja</th>
-                    <th style="width:180px;" data-i18n="ui.zuken.fuseColBom">Artykuł BOM & Producent</th>
+                    <th style="width:130px;" data-i18n="ui.zuken.fuseColDevice">Bezpiecznik</th>
+                    <th style="width:150px;" data-i18n="ui.zuken.fuseColRatingType">Prąd — Typ</th>
+                    <th data-i18n="ui.zuken.fuseColWires">Przewody & obwody zasilane</th>
+                    <th style="width:220px;" data-i18n="ui.zuken.fuseColLocation">Lokalizacja</th>
+                    <th style="width:230px;" data-i18n="ui.zuken.fuseColBom">Artykuł BOM & Producent</th>
                   </tr>
                 </thead>
                 <tbody id="zuken-fuses-tbody">
@@ -6164,9 +6162,23 @@ async function runAiDiagnosisSearch() {
       solution_id: ZUKEN_STATE.currentContext.solution_id || ''
     };
 
+    // Jeśli zapytanie to kod urządzenia/pinu (X429, X429:3, F18, RT94...) —
+    // równolegle policz "Ścieżkę sygnału" (szybkie) obok pełnej diagnostyki
+    const psForPath = payload.projekt || '';
+    const looksLikeDev = /^[A-Za-z]{1,4}\d{1,5}[A-Za-z']*(\s*(:|pin\s*|\s)\s*\d+[A-Za-z']*)?$/i.test(query);
+    const pathPromise = (looksLikeDev && psForPath)
+      ? apiCall(`/api/zuken/signal-path?ps=${encodeURIComponent(psForPath)}&q=${encodeURIComponent(query)}`).catch(() => null)
+      : Promise.resolve(null);
+
     const res = await apiCall('/api/ai/diagnose', 'POST', payload);
     ZUKEN_STATE.lastResults = res;
     renderDiagnosisResults(res);
+
+    try {
+      const sp = await pathPromise;
+      const card = signalPathCardHtml(sp, query);
+      if (card) resBody.insertAdjacentHTML('afterbegin', card);
+    } catch (e) { /* ścieżka to dodatek — nie blokuj wyników diagnostyki */ }
   } catch (err) {
     resBody.innerHTML = `
       <div style="padding:20px; background:var(--red-bg); color:var(--red-text); border-radius:var(--radius-md); font-size:13px;">
@@ -7083,7 +7095,16 @@ async function saveZukenComponentImage() {
 
       // Odśwież bieżący widok
       const activeTabBom = document.getElementById('zuken-bom-body')?.style.display !== 'none';
-      if (activeTabBom) {
+      const fusesPanel = document.getElementById('tab-summ-panel-fuses');
+      const relaysPanel = document.getElementById('tab-summ-panel-relays');
+      const connPanel = document.getElementById('tab-summ-panel-connectors');
+      if (fusesPanel && fusesPanel.style.display !== 'none') {
+        loadZukenFusesList();
+      } else if (relaysPanel && relaysPanel.style.display !== 'none') {
+        loadZukenRelaysList();
+      } else if (connPanel && connPanel.style.display !== 'none') {
+        loadZukenConnectorsList();
+      } else if (activeTabBom) {
         loadBomCatalog();
       } else {
         runAiDiagnosisSearch();
@@ -7498,10 +7519,10 @@ async function loadZukenConnectorsList() {
                     <tr>
                       <td style="font-weight:800; text-align:center; font-family:var(--font-mono, monospace); color:var(--primary);">${escapeHtml(p.pin)}</td>
                       <td style="font-weight:700; color:var(--text-main);">${escapeHtml(c.signal || '—')}</td>
-                      <td style="font-family:var(--font-mono, monospace);">${escapeHtml(c.wire_number || '—')} ${c.wire_type ? '<span style="font-size:10px; color:var(--text-muted);">(' + escapeHtml(c.wire_type) + ')</span>' : ''}</td>
+                      <td style="font-family:var(--font-mono, monospace);">${escapeHtml(c.wire_number || '—')} ${c.wire_type ? '<span style="font-size:10px; color:var(--text-muted);">(' + escapeHtml(c.wire_type) + ')</span>' : ''}${c.length && c.length !== '0' ? `<div style="font-size:10px; color:var(--text-muted);">${escapeHtml(fmtWireLength(c.length))}</div>` : ''}</td>
                       <td>${getWireColorBadge(c.wire_color)}</td>
                       <td style="font-family:var(--font-mono, monospace);">${c.cross_section ? escapeHtml(c.cross_section) + ' mm²' : '—'}</td>
-                      <td style="font-weight:600; font-family:var(--font-mono, monospace); color:#0284c7;">${escapeHtml(c.target_device || '')}${c.target_pin ? ':' + escapeHtml(c.target_pin) : ''}</td>
+                      <td style="font-weight:600; font-family:var(--font-mono, monospace); color:#0284c7;">${escapeHtml(c.target_device || '')}${c.target_pin ? ':' + escapeHtml(c.target_pin) : ''}${(c.far_ends || []).map(e => `<div data-fe="${escapeHtml(JSON.stringify(e))}" onclick="showWirePath(this)" style="margin-top:2px; color:#16a34a; cursor:pointer;" title="${escapeHtml(e.device)}">⇒ ${escapeHtml(e.clean || e.device)}${e.pin ? ':' + escapeHtml(e.pin) : ''}${(e.function || e.desc) ? `<div style="font-weight:400; font-size:10px; color:var(--text-muted); font-family:inherit;">${escapeHtml(e.function || e.desc)}</div>` : ''}</div>`).join('')}</td>
                       <td style="font-size:11px; color:var(--text-muted);">${escapeHtml(c.target_desc || '—')}</td>
                     </tr>
                   `).join('');
@@ -7549,7 +7570,7 @@ async function loadZukenFusesList() {
   const countEl = document.getElementById('zuken-fuse-count-label');
   if (!tbody || !ps) return;
 
-  tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; padding:30px; color:var(--text-muted);">${t('ui.zuken.loadingFusesLong')}</td></tr>`;
+  tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; padding:30px; color:var(--text-muted);">${t('ui.zuken.loadingFusesLong')}</td></tr>`;
   if (emptyEl) emptyEl.style.display = 'none';
 
   try {
@@ -7557,6 +7578,12 @@ async function loadZukenFusesList() {
     const res = await apiCall(`/api/zuken/summaries/fuses?ps=${encodeURIComponent(ps)}&q=${encodeURIComponent(q)}&limit=200`);
     const items = (res && res.items) ? res.items : [];
     if (countEl) countEl.textContent = t('ui.zuken.shownFuses', { n: items.length, total: res.total || 0 });
+    // Lista jest deduplikowana po stronie backendu — zsynchronizuj liczniki KPI/zakładki
+    const realFuseCnt = res.total || 0;
+    const kpiFusesEl = document.getElementById('zuken-kpi-fuses');
+    const badgeFusesEl = document.getElementById('badge-summ-fuses-cnt');
+    if (kpiFusesEl) kpiFusesEl.textContent = realFuseCnt;
+    if (badgeFusesEl) badgeFusesEl.textContent = realFuseCnt;
 
     if (items.length === 0) {
       tbody.innerHTML = '';
@@ -7566,26 +7593,56 @@ async function loadZukenFusesList() {
 
     let html = '';
     items.forEach(item => {
+      const isPl = (typeof CURRENT_LANG === 'undefined' || CURRENT_LANG === 'pl');
+      const sysDesc = isPl ? (item.system_desc || item.system_desc_en) : (item.system_desc_en || item.system_desc);
+      const locDesc = isPl ? (item.location_desc || item.location_desc_en) : (item.location_desc_en || item.location_desc);
+      const fuseLocDesc = [sysDesc, locDesc].filter(Boolean).join(' → ');
+
+      const wires = item.wires || [];
+      const wiresHtml = wires.length
+        ? wires.map((w, wi) => `
+          <div style="padding:3px 0; ${wi < wires.length - 1 ? 'border-bottom:1px dashed var(--border);' : ''}">
+            <div style="display:flex; align-items:baseline; gap:7px; flex-wrap:wrap; font-size:11.5px;">
+              <span style="font-family:var(--font-mono, monospace); font-weight:800; color:#0284c7; min-width:14px; text-align:center;">${escapeHtml(w.pin || '—')}</span>
+              <span style="font-weight:700; color:var(--text-main);">${escapeHtml(w.signal || '—')}</span>
+              <span style="font-family:var(--font-mono, monospace);">${escapeHtml(w.wire_number || '—')}</span>
+              ${getWireColorBadge(w.wire_color)}
+              <span style="font-family:var(--font-mono, monospace); font-size:11px; color:var(--text-muted);">${escapeHtml(fmtWireCross(w.cross_section))}</span>
+              <span style="font-family:var(--font-mono, monospace); font-size:11px; color:var(--text-muted);">${escapeHtml(fmtWireLength(w.length))}</span>
+              <span style="font-weight:600; font-family:var(--font-mono, monospace); color:#0284c7;">→ ${escapeHtml(w.target_device || '')}${w.target_pin ? ':' + escapeHtml(w.target_pin) : ''}</span>
+            </div>
+            ${w.target_desc ? `<div style="font-size:10.5px; color:var(--text-muted); margin-top:1px; padding-left:21px;">${escapeHtml(w.target_desc)}</div>` : ''}
+            ${(w.far_ends || []).map(e => `<div data-fe="${escapeHtml(JSON.stringify(e))}" onclick="showWirePath(this)" style="font-size:10.5px; margin-top:1px; padding-left:21px; font-family:var(--font-mono, monospace); color:#16a34a; font-weight:700; cursor:pointer;" title="${escapeHtml(e.device)}">⇒ ${escapeHtml(e.clean || e.device)}${e.pin ? ':' + escapeHtml(e.pin) : ''}${(e.function || e.desc) ? ` <span style="font-weight:400; font-family:inherit; color:var(--text-muted); font-size:10px;">— ${escapeHtml(e.function || e.desc)}</span>` : ''}</div>`).join('')}
+            ${w.external ? `<div style="font-size:10.5px; margin-top:1px; padding-left:21px;"><span class="badge" style="font-weight:700; background:rgba(217,119,6,0.12); color:#b45309; font-size:10px;">${escapeHtml(t('fuseExternalHarness', {name: w.external}))}</span></div>` : ''}
+          </div>`).join('')
+        : `<span style="font-weight:600; color:var(--text-muted);">${escapeHtml(item.circuits || 'Obwód instalacji')}</span>`;
+
       html += `
         <tr>
           <td style="font-weight:800; font-family:var(--font-mono, monospace); color:var(--text-main);">
-            ${escapeHtml(item.device_code)}
-            ${item.device_clean && item.device_clean !== item.device_code ? `<div style="font-size:11px; font-weight:normal; color:var(--text-muted);">${escapeHtml(item.device_clean)}</div>` : ''}
+            ${escapeHtml(item.device_clean || item.device_code)}${item.holder_real_clean && item.holder_real_clean !== item.device_clean ? ` <span style="font-weight:600; color:var(--text-muted);">—</span> ${escapeHtml(item.holder_real_clean)}` : ''}
+            ${item.device_code && item.device_code !== item.device_clean ? `<div style="font-size:11px; font-weight:normal; color:var(--text-muted);">${escapeHtml(item.device_code)}</div>` : ''}
           </td>
-          <td>${getFuseAmpBadge(item.rating)}</td>
-          <td><span class="badge" style="font-weight:700; background:rgba(2,132,199,0.1); color:#0284c7;">${escapeHtml(item.fuse_type || 'UNI')}</span></td>
-          <td style="font-family:var(--font-mono, monospace); font-weight:600; color:#475569;">
-            ${escapeHtml(item.holder_code || item.box_code || '—')}
+          <td style="white-space:nowrap;">
+            ${getFuseAmpBadge(String(item.device_clean || '').startsWith('FH') && item.rating ? '≤' + item.rating : item.rating)}
+            <span style="color:var(--text-muted); margin:0 4px;">—</span>
+            <span class="badge" style="font-weight:700; background:rgba(2,132,199,0.1); color:#0284c7;">${escapeHtml(item.fuse_type || 'UNI')}</span>
           </td>
-          <td style="font-weight:600; color:var(--text-main);">
-            ${escapeHtml(item.circuits || 'Obwód instalacji')}
-          </td>
+          <td>${wiresHtml}</td>
           <td style="font-size:12px; color:var(--text-muted);">
-            📍 ${escapeHtml(item.system || '')} ${escapeHtml(item.location || '')}
+            📍 ${escapeHtml(item.system || '')} ${escapeHtml(item.location || '')}${fuseLocDesc ? `<div style="font-weight:600; color:var(--text-main);">${escapeHtml(fuseLocDesc)}</div>` : ''}
           </td>
           <td style="font-size:11.5px;">
-            <div style="font-weight:700; color:var(--text-main);">${escapeHtml(item.article_number || '—')}</div>
-            <div style="color:var(--text-muted);">${escapeHtml(item.supplier || '')}</div>
+            <div style="display:flex; align-items:center; gap:9px;">
+              ${item.image_url
+                ? `<img src="${escapeHtml(item.image_url)}" alt="${escapeHtml(item.article_number || '')}" style="width:52px; height:52px; object-fit:contain; border-radius:6px; background:#ffffff; padding:3px; border:1px solid var(--border); cursor:pointer; flex:0 0 auto;" onclick="openZukenImageLightbox('${escapeHtml(item.image_url)}', '${escapeHtml(item.article_number || '')}', '${escapeHtml(item.supplier || '')}', '${escapeHtml(item.description || '')}')" title="Kliknij, aby powiększyć zdjęcie">`
+                : `<div style="width:52px; height:52px; border-radius:6px; background:var(--bg-card-subtle); border:1px dashed var(--border); display:flex; align-items:center; justify-content:center; font-size:20px; color:var(--text-muted); cursor:pointer; flex:0 0 auto;" onclick="openZukenUploadPhotoModal('${escapeHtml(item.article_number || '')}', '${escapeHtml(item.supplier || '')}', '${escapeHtml(item.description || '')}')" title="Kliknij, aby wgrać lub wkleić zdjęcie">📷</div>`}
+              <div>
+                <div style="font-weight:700; color:var(--text-main);">${escapeHtml(item.article_number || '—')}</div>
+                <div style="color:var(--text-muted);">${escapeHtml(item.supplier || '')}</div>
+                ${item.holder_article ? `<div style="font-size:10.5px; color:var(--text-muted); margin-top:3px; border-top:1px dashed var(--border); padding-top:2px;">${escapeHtml(item.holder_real_clean || '')}: <span style="font-family:var(--font-mono, monospace); font-weight:700; color:var(--text-main);">${escapeHtml(item.holder_article)}</span>${item.holder_supplier ? ' · ' + escapeHtml(item.holder_supplier) : ''}${item.holder_description ? `<br>${escapeHtml(item.holder_description)}` : ''}</div>` : ''}
+              </div>
+            </div>
           </td>
         </tr>
       `;
@@ -7593,7 +7650,7 @@ async function loadZukenFusesList() {
 
     tbody.innerHTML = html;
   } catch(err) {
-    tbody.innerHTML = `<tr><td colspan="7" style="color:var(--red); text-align:center; padding:20px;">${t('ui.zuken.errLoadFuses', { v: err.message })}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="5" style="color:var(--red); text-align:center; padding:20px;">${t('ui.zuken.errLoadFuses', { v: err.message })}</td></tr>`;
   }
 }
 
@@ -7633,9 +7690,18 @@ function fmtWireLength(l) {
   return v + ' mm';
 }
 
-// Rysunek gniazda przekaźnika widzianego z góry (standardowy footprint mini-ISO):
-// pozycje nóżek przekaźnika 30/85/86/87/87A z podanymi numerami pinów gniazda
-const RELAY_SOCKET_LAYOUT = [['87', 62, 40], ['87A', 158, 40], ['30', 110, 78], ['86', 62, 116], ['85', 158, 116]];
+// Rysunek gniazda przekaźnika widzianego z góry po wyjęciu przekaźnika.
+// Układ pola styków wg gniazda Hella 8JA 003 526 (9-pol., 5x6.3mm dla przekaźnika
+// + 4x2.8mm pomocnicze w rogach): [styk przekaźnika, cx, cy, pionowo]
+const RELAY_SOCKET_LAYOUT = [
+  ['30',  110, 32,  false],
+  ['86',  62,  96,  true],
+  ['87A', 110, 96,  false],
+  ['85',  158, 96,  true],
+  ['87',  110, 160, true],
+];
+// pomocnicze pola 2.8mm w rogach (nieużywane przez przekaźnik): [cx, cy, nr pola]
+const RELAY_SOCKET_AUX = [[62, 32, '1'], [158, 32, '3'], [62, 160, '7'], [158, 160, '9']];
 
 function relaySocketDiagram(item) {
   const STD = ['30', '85', '86', '87', '87A', '87B'];
@@ -7654,27 +7720,40 @@ function relaySocketDiagram(item) {
   const allStd = contacts.every(c => STD.includes(String(c.pin || '').trim().toUpperCase()));
   if (!hasMap && !allStd) return '';   // styczniki/aparaty o nietypowej obsadzie — bez rysunku
 
+  // Układ rysunku obowiązuje dla gniazda 9-pin (Hella 8JA 003 526);
+  // przy innym gnieździe (np. podstawa Micro 5-pin) nie rysujmy złej geometrii
+  const is9pin = /003\s*526|9\s*pin/i.test((item.article_number || '') + ' ' + (item.description || ''));
+  if (!is9pin) return '';
+
   let slots = '';
-  RELAY_SOCKET_LAYOUT.forEach(([rp, cx, cy]) => {
+  RELAY_SOCKET_LAYOUT.forEach(([rp, cx, cy, vert]) => {
     const d = pos[rp];
     const conn = !!d;
+    const sw = vert ? 24 : 38, sh = vert ? 38 : 24;
+    const labelY = cy + sh / 2 + 12, sigY = labelY + 10;
     slots += `
-      <rect x="${cx - 19}" y="${cy - 12}" width="38" height="24" rx="5"
+      <rect x="${cx - sw / 2}" y="${cy - sh / 2}" width="${sw}" height="${sh}" rx="5"
             fill="${conn ? 'rgba(139,92,246,0.14)' : 'transparent'}"
             stroke="${conn ? '#8b5cf6' : 'var(--border)'}" stroke-width="1.4"${conn ? '' : ' stroke-dasharray="4 3"'}/>
       <text x="${cx}" y="${cy + 4}" text-anchor="middle" font-size="11" font-weight="800"
             fill="${conn ? '#7c3aed' : 'var(--text-muted)'}">${rp}</text>
-      <text x="${cx}" y="${cy + 22}" text-anchor="middle" font-size="8.5" fill="var(--text-muted)">${conn ? 'gn. ' + escapeHtml(d.sock) : '—'}</text>
-      ${conn && d.sigs.length ? `<text x="${cx}" y="${cy + 32}" text-anchor="middle" font-size="8" fill="var(--text-muted)">${escapeHtml(d.sigs.slice(0, 2).join(' + '))}</text>` : ''}`;
+      <text x="${cx}" y="${labelY}" text-anchor="middle" font-size="8.5" fill="var(--text-muted)">${conn ? 'gn. ' + escapeHtml(d.sock) : '—'}</text>
+      ${conn && d.sigs.length ? `<text x="${cx}" y="${sigY}" text-anchor="middle" font-size="8" fill="var(--text-muted)">${escapeHtml(d.sigs.slice(0, 2).join(' + '))}</text>` : ''}`;
+  });
+
+  let aux = '';
+  RELAY_SOCKET_AUX.forEach(([cx, cy, n]) => {
+    aux += `
+      <rect x="${cx - 7}" y="${cy - 12}" width="14" height="24" rx="3"
+            fill="transparent" stroke="var(--border)" stroke-width="1" stroke-dasharray="3 3"/>
+      <text x="${cx}" y="${cy + 3}" text-anchor="middle" font-size="7" fill="var(--text-muted)">${n}</text>`;
   });
 
   return `
     <div style="flex:0 0 auto; text-align:center;">
-      <svg viewBox="0 0 220 158" style="width:200px; max-width:100%;">
-        <rect x="26" y="8" width="168" height="142" rx="12" fill="var(--bg-card-subtle)" stroke="var(--border)" stroke-width="1.2"/>
-        <line x1="110" y1="78" x2="66" y2="46" stroke="var(--border)" stroke-width="1" stroke-dasharray="3 3"/>
-        <line x1="110" y1="78" x2="154" y2="46" stroke="var(--border)" stroke-width="1" stroke-dasharray="3 3"/>
-        <line x1="62" y1="116" x2="158" y2="116" stroke="var(--border)" stroke-width="1" stroke-dasharray="3 3"/>
+      <svg viewBox="0 0 220 210" style="width:190px; max-width:100%;">
+        <rect x="30" y="8" width="160" height="196" rx="12" fill="var(--bg-card-subtle)" stroke="var(--border)" stroke-width="1.2"/>
+        ${aux}
         ${slots}
       </svg>
       <div style="font-size:10px; color:var(--text-muted); margin-top:2px;">${t('ui.zuken.relaySocketCaption')}</div>
@@ -7720,6 +7799,9 @@ async function loadZukenRelaysList() {
           <div style="font-size:12px; color:var(--text-muted); margin-bottom:8px;">
             📍 ${escapeHtml(item.system || '')} ${escapeHtml(item.location || '')}${(sysDesc || locDesc) ? ' — ' + escapeHtml([sysDesc, locDesc].filter(Boolean).join(' → ')) : ''}
           </div>
+          ${(item.article_number || item.description) ? `<div style="font-size:11.5px; color:var(--text-muted); margin-bottom:8px;">
+            ${item.article_number ? `<span style="font-family:var(--font-mono, monospace); font-weight:700; color:var(--text-main);">${escapeHtml(item.article_number)}</span>` : ''}${item.supplier && item.supplier !== 'Nieznany' ? ` (${escapeHtml(item.supplier)})` : ''}${item.description ? ` — ${escapeHtml(item.description)}` : ''}
+          </div>` : ''}
 
           <!-- Tabela styków przekaźnika (zdeduplikowane połączenia; pin gniazda + styk przekaźnika) -->
           ${contacts.length > 0 ? `
@@ -7746,7 +7828,7 @@ async function loadZukenRelaysList() {
                       <td><span style="font-family:var(--font-mono, monospace);">${escapeHtml(c.wire_number || '—')}</span> ${getWireColorBadge(c.wire_color)}</td>
                       <td style="font-family:var(--font-mono, monospace); font-size:11.5px; color:var(--text-muted);">${escapeHtml(fmtWireCross(c.cross_section))}</td>
                       <td style="font-family:var(--font-mono, monospace); font-size:11.5px; color:var(--text-muted);">${escapeHtml(fmtWireLength(c.length))}</td>
-                      <td style="font-weight:600; font-family:var(--font-mono, monospace); color:#0284c7;">${escapeHtml(c.target_device || '')}${c.target_pin ? ':' + escapeHtml(c.target_pin) : ''}${c.target_desc ? `<div style="font-weight:400; font-size:10.5px; color:var(--text-muted); font-family:inherit;">${escapeHtml(c.target_desc)}</div>` : ''}</td>
+                      <td style="font-weight:600; font-family:var(--font-mono, monospace); color:#0284c7;">${escapeHtml(c.target_device || '')}${c.target_pin ? ':' + escapeHtml(c.target_pin) : ''}${c.target_desc ? `<div style="font-weight:400; font-size:10.5px; color:var(--text-muted); font-family:inherit;">${escapeHtml(c.target_desc)}</div>` : ''}${(c.far_ends || []).map(e => `<div data-fe="${escapeHtml(JSON.stringify(e))}" onclick="showWirePath(this)" style="margin-top:2px; color:#16a34a; cursor:pointer;" title="${escapeHtml(e.device)}">⇒ ${escapeHtml(e.clean || e.device)}${e.pin ? ':' + escapeHtml(e.pin) : ''}${(e.function || e.desc) ? `<div style="font-weight:400; font-size:10px; color:var(--text-muted); font-family:inherit;">${escapeHtml(e.function || e.desc)}</div>` : ''}</div>`).join('')}</td>
                     </tr>
                   `).join('')}
                 </tbody>
@@ -7763,6 +7845,96 @@ async function loadZukenRelaysList() {
   } catch(err) {
     container.innerHTML = `<div style="color:var(--red); padding:20px; text-align:center;">${t('ui.zuken.errLoadRelays', { v: err.message })}</div>`;
   }
+}
+
+// ═══ Ścieżka sygnału — modal z pełnym torem przewodu (diagnostyka) ═══
+function closeWirePath() {
+  document.getElementById('wire-path-overlay')?.remove();
+}
+
+function showWirePath(el) {
+  let e = {};
+  try { e = JSON.parse(el.dataset.fe || '{}'); } catch(err) { return; }
+  const hops = e.path || [];
+  if (!hops.length) return;
+  closeWirePath();
+
+  const hopHtml = hops.map(h => {
+    const wlabel = h.wire_number || h.signal || '';
+    const attrs = [wlabel, h.cross_section ? h.cross_section + ' mm²' : '', (h.length && h.length !== '0') ? fmtWireLength(h.length) : ''].filter(Boolean).join(' · ');
+    return `<div style="display:flex; align-items:center; gap:8px; padding:6px 0; border-bottom:1px dashed var(--border); font-size:12px;">
+      <span style="font-family:var(--font-mono, monospace); font-weight:700; color:var(--text-main); white-space:nowrap;">${escapeHtml(h.from_clean)}${h.from_pin ? ':' + escapeHtml(h.from_pin) : ''}</span>
+      <span style="color:var(--text-muted);">→</span>
+      <span style="flex:1; font-size:11px; color:var(--text-muted); min-width:70px;">${getWireColorBadge(h.wire_color)} ${escapeHtml(attrs)}</span>
+      <span style="font-family:var(--font-mono, monospace); font-weight:700; color:#0284c7; white-space:nowrap;">${escapeHtml(h.to_clean)}${h.to_pin ? ':' + escapeHtml(h.to_pin) : ''}</span>
+    </div>`;
+  }).join('');
+
+  const startL = `${hops[0].from_clean}${hops[0].from_pin ? ':' + hops[0].from_pin : ''}`;
+  const endL = `${e.clean || e.device}${e.pin ? ':' + e.pin : ''}`;
+  const overlay = document.createElement('div');
+  overlay.id = 'wire-path-overlay';
+  overlay.style.cssText = 'position:fixed; inset:0; background:rgba(0,0,0,0.45); z-index:9999; display:flex; align-items:center; justify-content:center; padding:20px;';
+  overlay.onclick = (ev) => { if (ev.target === overlay) closeWirePath(); };
+  overlay.innerHTML = `
+    <div style="background:var(--bg-card, #fff); border-radius:12px; max-width:740px; width:100%; max-height:80vh; display:flex; flex-direction:column; box-shadow:0 20px 50px rgba(0,0,0,0.3); border:1px solid var(--border);">
+      <div style="padding:14px 18px; border-bottom:1px solid var(--border); display:flex; align-items:flex-start; justify-content:space-between; gap:10px;">
+        <div>
+          <div style="font-weight:800; font-size:14px; color:var(--text-main);">${escapeHtml(t('ui.zuken.wirePathTitle'))}</div>
+          <div style="font-size:12px; color:var(--text-muted); font-family:var(--font-mono, monospace); margin-top:2px;">${escapeHtml(startL)} ⇢ ${escapeHtml(endL)}${e.function ? ' · ' + escapeHtml(e.function) : ''}</div>
+        </div>
+        <button onclick="closeWirePath()" style="background:none; border:none; font-size:18px; cursor:pointer; color:var(--text-muted); line-height:1;">✕</button>
+      </div>
+      <div style="padding:8px 18px; overflow-y:auto;">${hopHtml}</div>
+      <div style="padding:12px 18px; border-top:1px solid var(--border); display:flex; gap:10px; justify-content:flex-end;">
+        <button class="btn" data-dev="${escapeHtml(endL.split(':')[0])}" onclick="jumpToWireDevice(this.dataset.dev)" style="padding:7px 14px; font-size:12px; font-weight:700; border:1px solid var(--border); border-radius:8px; background:rgba(2,132,199,0.1); color:#0284c7; cursor:pointer;">${escapeHtml(t('ui.zuken.wirePathJump'))}: ${escapeHtml(endL)}</button>
+        <button class="btn" onclick="closeWirePath()" style="padding:7px 14px; font-size:12px; font-weight:700; border:1px solid var(--border); border-radius:8px; background:var(--bg-card-subtle); color:var(--text-main); cursor:pointer;">${escapeHtml(t('ui.zuken.wirePathClose'))}</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+}
+
+function jumpToWireDevice(clean) {
+  closeWirePath();
+  const c = (clean || '').toUpperCase().replace(/'/g, '');
+  let tab = 'connectors';
+  if (/^(RT|K)\d/.test(c)) tab = 'relays';
+  else if (/^FH?\d/.test(c)) tab = 'fuses';
+  switchZukenSummaryTab(tab);
+  const ids = { connectors: 'zuken-conn-search', fuses: 'zuken-fuse-search', relays: 'zuken-relay-search' };
+  const inp = document.getElementById(ids[tab]);
+  if (inp) inp.value = c;
+  if (tab === 'connectors') { ZUKEN_SUMM_STATE.connectorsSearch = c; loadZukenConnectorsList(); }
+  else if (tab === 'fuses') { ZUKEN_SUMM_STATE.fusesSearch = c; loadZukenFusesList(); }
+  else { ZUKEN_SUMM_STATE.relaysSearch = c; loadZukenRelaysList(); }
+}
+
+// Karta "Ścieżka sygnału" w wynikach asystenta — sieć połączeń od pinu do końców
+function signalPathCardHtml(sp, query) {
+  if (!sp || !sp.ok || !sp.nets || !sp.nets.length) return '';
+  const netsHtml = sp.nets.map(net => {
+    const startL = (net.start_clean || net.start_device) + (net.start_pin ? ':' + net.start_pin : '');
+    const endsHtml = (net.ends || []).map(e => {
+      const endL = (e.clean || e.device) + (e.pin ? ':' + e.pin : '');
+      const hopsTxt = (e.path || []).map(h => {
+        const wlabel = h.wire_number || h.signal || '';
+        const attrs = [wlabel, h.wire_color, h.cross_section ? h.cross_section + ' mm²' : '', (h.length && h.length !== '0') ? fmtWireLength(h.length) : ''].filter(Boolean).join(' · ');
+        return `${escapeHtml(h.from_clean)}${h.from_pin ? ':' + escapeHtml(h.from_pin) : ''} <span style="color:var(--text-muted);">—[${escapeHtml(attrs)}]→</span>`;
+      }).join(' ');
+      return `<div data-fe="${escapeHtml(JSON.stringify(e))}" onclick="showWirePath(this)" style="margin:4px 0 4px 14px; padding:6px 10px; background:var(--bg-card); border:1px solid var(--border); border-left:3px solid #16a34a; border-radius:6px; cursor:pointer;" title="${escapeHtml(e.device)} — kliknij, aby zobaczyć krok po kroku">
+        <div style="font-weight:700; color:#16a34a; font-size:12px; font-family:var(--font-mono, monospace);">⇒ ${escapeHtml(endL)}${(e.function || e.desc) ? ` <span style="color:var(--text-muted); font-weight:400; font-family:inherit; font-size:11px;">— ${escapeHtml(e.function || e.desc)}</span>` : ''}</div>
+        <div style="font-size:11px; color:var(--text-muted); margin-top:2px; font-family:var(--font-mono, monospace); line-height:1.5;">${hopsTxt}</div>
+      </div>`;
+    }).join('');
+    return `<div style="margin-bottom:8px;">
+      <div style="font-weight:800; font-size:12.5px; color:var(--text-main); font-family:var(--font-mono, monospace);">${escapeHtml(startL)}${net.start_function ? ` <span style="font-family:inherit; font-weight:600; font-size:11px; color:var(--text-muted);">— ${escapeHtml(net.start_function)}</span>` : ''}</div>
+      ${endsHtml || '<div style="font-size:11.5px; color:var(--text-muted); margin:4px 0 0 14px; font-style:italic;">brak dalszych połączeń w raporcie</div>'}
+    </div>`;
+  }).join('');
+  return `<div style="padding:12px 16px; background:linear-gradient(135deg, rgba(22,163,74,0.08), rgba(2,132,199,0.06)); border:1px solid rgba(22,163,74,0.35); border-radius:var(--radius-md);">
+    <div style="font-size:11.5px; font-weight:700; color:#16a34a; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:8px;">⇒ ${escapeHtml(t('ui.zuken.wirePathTitle'))}: ${escapeHtml(query)}</div>
+    ${netsHtml}
+  </div>`;
 }
 </script>
 </body>

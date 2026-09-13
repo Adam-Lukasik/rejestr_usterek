@@ -2209,6 +2209,20 @@ def api_zuken_summaries_relays():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/zuken/signal-path", methods=["GET"])
+def api_zuken_signal_path():
+    """Śledzenie sygnału przez graf połączeń — 'skąd dokąd jakim przewodem'.
+    q przyjmuje formy: X429, X429:3, 'X429 pin 3', FH12, RT94..."""
+    try:
+        ps_code = request.args.get("ps", "") or request.args.get("ps_code", "")
+        query = request.args.get("q", "") or request.args.get("query", "")
+        if not ps_code or not query:
+            return jsonify({"error": "Parametry ps i q są wymagane."}), 400
+        return jsonify(zuken_service.trace_signal_net(ps_code, query))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/api/zuken/summaries/export", methods=["GET"])
 def api_zuken_summaries_export():
     """Eksportuje zestawienie do pliku CSV z kodowaniem UTF-8 BOM dla Excela."""
