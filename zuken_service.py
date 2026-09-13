@@ -3701,6 +3701,11 @@ def generate_ps_technical_summaries(ps_code):
             w_col = (r["wire_color"] or "").strip()
             w_cs = (r["cross_section"] or "").strip()
             w_type = (r["wire_type"] or "").strip()
+            w_len = (r["length"] or "").strip()
+            w_cab = (r["cable_name"] or "").strip()
+            if not (w_num or sig or w_col or w_cs or w_type or w_len or w_cab):
+                # "Ślepy" zapis bez żadnych danych przewodu — artefakt schematu
+                continue
 
             for dev, pin, target_dev, target_pin in [
                 (f_dev, f_pin, t_dev, t_pin),
@@ -3709,7 +3714,8 @@ def generate_ps_technical_summaries(ps_code):
                 if not dev or not pin:
                     continue
                 # Filtrujemy tylko rzeczywiste złącza (-X)
-                is_conn = ("-X" in dev or ":X" in dev or dev.startswith("X") or "/-X" in dev)
+                dev_up = dev.upper()
+                is_conn = ("-X" in dev_up or ":X" in dev_up or dev_up.startswith("X") or "/-X" in dev_up)
                 if not is_conn:
                     continue
 
@@ -3865,7 +3871,7 @@ def generate_ps_technical_summaries(ps_code):
                 ph_devs = ",".join("?" for _ in search_devs)
                 ph_conn = ",".join("?" for _ in conn_proj_ids)
                 cur.execute(f"""
-                    SELECT project_id, signal, wire_number, wire_color, cross_section, to_device, to_pin, from_device, from_pin
+                    SELECT project_id, signal, wire_number, wire_color, cross_section, length, to_device, to_pin, from_device, from_pin
                     FROM zuken_connections
                     WHERE (from_device IN ({ph_devs}) OR to_device IN ({ph_devs}))
                       AND project_id IN ({ph_conn});
@@ -3877,6 +3883,11 @@ def generate_ps_technical_summaries(ps_code):
                     fd = conn_row["from_device"]
                     td = conn_row["to_device"]
                     target = td if fd in search_devs else fd
+
+                    if target and not (wn or s or (conn_row["wire_color"] or "").strip()
+                                       or (conn_row["cross_section"] or "").strip() or (conn_row["length"] or "").strip()):
+                        # "Ślepy" zapis bez żadnych danych przewodu — artefakt schematu
+                        continue
 
                     ckey = wn or s
                     if ckey:
@@ -3999,11 +4010,20 @@ def generate_ps_technical_summaries(ps_code):
             contacts = []
             if conn_proj_ids:
                 ph_conn = ",".join("?" for _ in conn_proj_ids)
+                # Wiersze z formatu CON najpierw — zawierają nazwy sygnałów i jednostki (mm²)
+                con_prio = ""
+                con_params = ()
+                if con_format_ids:
+                    ph_cfmt = ",".join("?" for _ in con_format_ids)
+                    con_prio = f"ORDER BY CASE WHEN project_id IN ({ph_cfmt}) THEN 0 ELSE 1 END"
+                    con_params = tuple(con_format_ids)
                 cur.execute(f"""
-                    SELECT project_id, from_pin, to_pin, signal, wire_number, wire_color, cross_section, to_device, from_device
+                    SELECT project_id, from_pin, to_pin, signal, wire_number, wire_color,
+                           cross_section, wire_type, length, cable_name, to_device, from_device
                     FROM zuken_connections
-                    WHERE (from_device = ? OR to_device = ?) AND project_id IN ({ph_conn});
-                """, (d_code, d_code) + tuple(conn_proj_ids))
+                    WHERE (from_device = ? OR to_device = ?) AND project_id IN ({ph_conn})
+                    {con_prio};
+                """, (d_code, d_code) + tuple(conn_proj_ids) + con_params)
 
                 relay_std_pins = {"30", "85", "86", "87", "87A", "87B"}
                 pin_map = {}      # pin gniazda -> (styk przekaźnika, nazwa sygnału)
@@ -4020,11 +4040,24 @@ def generate_ps_technical_summaries(ps_code):
                         if target_p.upper() in relay_std_pins:
                             pin_map[pin] = (target_p, sig)
                         continue
+                    c_len = (cr["length"] or "").strip()
+                    try:
+                        c_len = str(int(round(float(c_len))))
+                    except (ValueError, TypeError):
+                        pass
+                    c_col = (cr["wire_color"] or "").strip()
+                    c_cs = (cr["cross_section"] or "").strip()
+                    c_type = (cr["wire_type"] or "").strip()
+                    if not (w_num or sig or c_col or c_cs or c_len or c_type):
+                        # "Ślepy" zapis bez żadnych danych przewodu — artefakt schematu
+                        continue
                     raw_contacts.append({
                         "pin": pin, "target": target, "target_pin": target_p,
                         "wire_number": w_num, "signal": sig,
-                        "wire_color": (cr["wire_color"] or "").strip(),
-                        "cross_section": (cr["cross_section"] or "").strip()
+                        "wire_color": c_col,
+                        "cross_section": c_cs,
+                        "wire_type": c_type,
+                        "length": c_len
                     })
 
                 # Scal ten sam fizyczny przewód opisany w kilku plikach projektu
@@ -4034,8 +4067,9 @@ def generate_ps_technical_summaries(ps_code):
                         continue
                     key = (rc["pin"], rc["target"], rc["target_pin"], rc["wire_number"])
                     if key in seen_contacts:
-                        if not seen_contacts[key]["signal"] and rc["signal"]:
-                            seen_contacts[key]["signal"] = rc["signal"]
+                        for fld in ("signal", "wire_color", "cross_section", "wire_type", "length"):
+                            if not seen_contacts[key][fld] and rc[fld]:
+                                seen_contacts[key][fld] = rc[fld]
                         continue
                     relay_pin, map_sig = pin_map.get(rc["pin"], ("", ""))
                     if not rc["signal"] and map_sig:
@@ -4059,6 +4093,8 @@ def generate_ps_technical_summaries(ps_code):
                         "wire_number": rc["wire_number"],
                         "wire_color": rc["wire_color"],
                         "cross_section": rc["cross_section"],
+                        "wire_type": rc["wire_type"],
+                        "length": rc["length"],
                         "target_device": rc["target"],
                         "target_pin": rc["target_pin"],
                         "target_desc": explain_device_code(rc["target"], glossary) if rc["target"] else ""
@@ -4322,10 +4358,23 @@ def get_ps_relays(ps_code, search="", limit=100, offset=0):
     """, params + [limit, offset])
 
     rows = cur.fetchall()
+
+    glossary = get_glossary_dict()
+
+    def _gdesc(prefix, lang="desc_pl"):
+        entry = glossary.get(prefix)
+        if not entry:
+            return ""
+        return entry.get(lang) or entry.get("desc_pl") or ""
+
     items = []
     for r in rows:
         d = dict(r)
         d["contacts"] = json.loads(d.get("contacts_json") or "[]")
+        d["system_desc"] = _gdesc(d.get("system"))
+        d["location_desc"] = _gdesc(d.get("location"))
+        d["system_desc_en"] = _gdesc(d.get("system"), "desc_en")
+        d["location_desc_en"] = _gdesc(d.get("location"), "desc_en")
         items.append(d)
 
     conn.close()
@@ -4397,16 +4446,19 @@ def export_ps_summary_csv(ps_code, summary_type="connectors"):
     elif summary_type == "relays":
         writer.writerow([
             "Projekt PS", "Przekaźnik (Aparat)", "Kod skrócony", "Funkcja przekaźnika", "Typ / Model",
-            "Dostawca", "Gniazdo / Podstawa", "System", "Lokalizacja", "Pin / Rola",
-            "Sygnał", "Numer przewodu", "Kolor", "Przekrój (mm2)", "Aparat docelowy", "Pin docelowy", "Opis celu"
+            "Dostawca", "Gniazdo / Podstawa", "System", "Lokalizacja", "Lokalizacja (opis)", "Pin / Rola",
+            "Sygnał", "Numer przewodu", "Kolor", "Przekrój (mm2)", "Długość (mm)",
+            "Aparat docelowy", "Pin docelowy", "Opis celu"
         ])
         data = get_ps_relays(ps_code, limit=2000)
         for item in data.get("items", []):
+            loc_desc = item.get("location_desc") or ""
             contacts = item.get("contacts", [])
             if not contacts:
                 writer.writerow([
                     ps_code, item["device_code"], item["device_clean"], item["function"], item["relay_type"],
-                    item["supplier"], item["socket_code"], item["system"], item["location"], "", "", "", "", "", "", "", ""
+                    item["supplier"], item["socket_code"], item["system"], item["location"], loc_desc,
+                    "", "", "", "", "", "", "", "", ""
                 ])
             else:
                 for c in contacts:
@@ -4415,11 +4467,11 @@ def export_ps_summary_csv(ps_code, summary_type="connectors"):
                         pin_lbl = f"{pin_lbl}/{c['relay_pin']}"
                     writer.writerow([
                         ps_code, item["device_code"], item["device_clean"], item["function"], item["relay_type"],
-                        item["supplier"], item["socket_code"], item["system"], item["location"],
+                        item["supplier"], item["socket_code"], item["system"], item["location"], loc_desc,
                         f"Pin {pin_lbl} ({c.get('role', '')})".strip(),
                         c.get("signal", ""), c.get("wire_number", ""), c.get("wire_color", ""),
-                        c.get("cross_section", ""), c.get("target_device", ""), c.get("target_pin", ""),
-                        c.get("target_desc", "")
+                        c.get("cross_section", ""), c.get("length", ""),
+                        c.get("target_device", ""), c.get("target_pin", ""), c.get("target_desc", "")
                     ])
 
     return output.getvalue()

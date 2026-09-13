@@ -7617,6 +7617,70 @@ function relayPinRole(pin) {
   return '';
 }
 
+// Formatowanie przekroju przewodu: dopina "mm²" gdy raport podaje gołą liczbę
+function fmtWireCross(cs) {
+  const v = String(cs || '').trim();
+  if (!v) return '—';
+  return /mm/i.test(v) ? v : v + ' mm²';
+}
+
+// Formatowanie długości przewodu: raport podaje mm; >= 1000 mm pokazuj w metrach
+function fmtWireLength(l) {
+  const v = String(l || '').trim();
+  if (!v || v === '0') return '—';
+  const n = parseFloat(v);
+  if (!isNaN(n) && n >= 1000) return (n / 1000).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' m';
+  return v + ' mm';
+}
+
+// Rysunek gniazda przekaźnika widzianego z góry (standardowy footprint mini-ISO):
+// pozycje nóżek przekaźnika 30/85/86/87/87A z podanymi numerami pinów gniazda
+const RELAY_SOCKET_LAYOUT = [['87', 62, 40], ['87A', 158, 40], ['30', 110, 78], ['86', 62, 116], ['85', 158, 116]];
+
+function relaySocketDiagram(item) {
+  const STD = ['30', '85', '86', '87', '87A', '87B'];
+  const contacts = item.contacts || [];
+  if (!contacts.length) return '';
+
+  const pos = {};   // styk przekaźnika -> { sock: pin gniazda, sigs: [nazwy sygnałów] }
+  let hasMap = false;
+  contacts.forEach(c => {
+    const rp = String(c.relay_pin || c.pin || '').trim().toUpperCase();
+    if (c.relay_pin) hasMap = true;
+    if (!STD.includes(rp)) return;
+    if (!pos[rp]) pos[rp] = { sock: c.pin, sigs: [] };
+    if (c.signal && !pos[rp].sigs.includes(c.signal)) pos[rp].sigs.push(c.signal);
+  });
+  const allStd = contacts.every(c => STD.includes(String(c.pin || '').trim().toUpperCase()));
+  if (!hasMap && !allStd) return '';   // styczniki/aparaty o nietypowej obsadzie — bez rysunku
+
+  let slots = '';
+  RELAY_SOCKET_LAYOUT.forEach(([rp, cx, cy]) => {
+    const d = pos[rp];
+    const conn = !!d;
+    slots += `
+      <rect x="${cx - 19}" y="${cy - 12}" width="38" height="24" rx="5"
+            fill="${conn ? 'rgba(139,92,246,0.14)' : 'transparent'}"
+            stroke="${conn ? '#8b5cf6' : 'var(--border)'}" stroke-width="1.4"${conn ? '' : ' stroke-dasharray="4 3"'}/>
+      <text x="${cx}" y="${cy + 4}" text-anchor="middle" font-size="11" font-weight="800"
+            fill="${conn ? '#7c3aed' : 'var(--text-muted)'}">${rp}</text>
+      <text x="${cx}" y="${cy + 22}" text-anchor="middle" font-size="8.5" fill="var(--text-muted)">${conn ? 'gn. ' + escapeHtml(d.sock) : '—'}</text>
+      ${conn && d.sigs.length ? `<text x="${cx}" y="${cy + 32}" text-anchor="middle" font-size="8" fill="var(--text-muted)">${escapeHtml(d.sigs.slice(0, 2).join(' + '))}</text>` : ''}`;
+  });
+
+  return `
+    <div style="flex:0 0 auto; text-align:center;">
+      <svg viewBox="0 0 220 158" style="width:200px; max-width:100%;">
+        <rect x="26" y="8" width="168" height="142" rx="12" fill="var(--bg-card-subtle)" stroke="var(--border)" stroke-width="1.2"/>
+        <line x1="110" y1="78" x2="66" y2="46" stroke="var(--border)" stroke-width="1" stroke-dasharray="3 3"/>
+        <line x1="110" y1="78" x2="154" y2="46" stroke="var(--border)" stroke-width="1" stroke-dasharray="3 3"/>
+        <line x1="62" y1="116" x2="158" y2="116" stroke="var(--border)" stroke-width="1" stroke-dasharray="3 3"/>
+        ${slots}
+      </svg>
+      <div style="font-size:10px; color:var(--text-muted); margin-top:2px;">${t('ui.zuken.relaySocketCaption')}</div>
+    </div>`;
+}
+
 async function loadZukenRelaysList() {
   const ps = ZUKEN_SUMM_STATE.currentPs;
   const container = document.getElementById('zuken-relays-container');
@@ -7643,23 +7707,33 @@ async function loadZukenRelaysList() {
     items.forEach(item => {
       const contacts = item.contacts || [];
 
+      const isPl = (typeof CURRENT_LANG === 'undefined' || CURRENT_LANG === 'pl');
+      const sysDesc = isPl ? (item.system_desc || item.system_desc_en) : (item.system_desc_en || item.system_desc);
+      const locDesc = isPl ? (item.location_desc || item.location_desc_en) : (item.location_desc_en || item.location_desc);
+
       html += `
         <div class="detail-section-card" style="margin:0; padding:14px 16px; border:1px solid var(--border); border-radius:var(--radius-md); background:var(--bg-card); box-shadow:var(--shadow-xs);">
-          <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:8px;">
+          <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:4px;">
             <span style="font-size:15px; font-weight:800; font-family:var(--font-mono, monospace); color:var(--text-main);">${escapeHtml(item.device_code)}</span>
             <span class="badge" style="font-size:12px; font-weight:700; background:linear-gradient(135deg, #8b5cf6, #7c3aed); color:#fff; padding:2px 10px; border-radius:12px;">${escapeHtml(item.function || t('ui.zuken.relayFuncDefault'))}</span>
+          </div>
+          <div style="font-size:12px; color:var(--text-muted); margin-bottom:8px;">
+            📍 ${escapeHtml(item.system || '')} ${escapeHtml(item.location || '')}${(sysDesc || locDesc) ? ' — ' + escapeHtml([sysDesc, locDesc].filter(Boolean).join(' → ')) : ''}
           </div>
 
           <!-- Tabela styków przekaźnika (zdeduplikowane połączenia; pin gniazda + styk przekaźnika) -->
           ${contacts.length > 0 ? `
-            <div style="overflow-x:auto; border:1px solid var(--border); border-radius:var(--radius-sm);">
+          <div style="display:flex; gap:14px; align-items:flex-start; flex-wrap:wrap;">
+            <div style="overflow-x:auto; border:1px solid var(--border); border-radius:var(--radius-sm); flex:1; min-width:300px;">
               <table class="data-table" style="width:100%; margin:0; font-size:12px;">
                 <thead>
                   <tr style="background:var(--bg-card-subtle);">
                     <th style="width:60px; text-align:center;">${t('ui.zuken.relayColPin')}</th>
-                    <th style="width:130px;">${t('ui.zuken.relayColRole')}</th>
-                    <th style="width:170px;">${t('ui.zuken.relayColSignal')}</th>
-                    <th style="width:160px;">${t('ui.zuken.relayColWire')}</th>
+                    <th style="width:120px;">${t('ui.zuken.relayColRole')}</th>
+                    <th style="width:150px;">${t('ui.zuken.relayColSignal')}</th>
+                    <th style="width:150px;">${t('ui.zuken.relayColWire')}</th>
+                    <th style="width:85px;">${t('ui.zuken.relayColCross')}</th>
+                    <th style="width:90px;">${t('ui.zuken.relayColLength')}</th>
                     <th>${t('ui.zuken.relayColTarget')}</th>
                   </tr>
                 </thead>
@@ -7670,12 +7744,16 @@ async function loadZukenRelaysList() {
                       <td style="font-weight:600; font-size:11.5px; color:var(--text-muted);">${escapeHtml(relayPinRole(c.relay_pin || c.pin) || c.role || t('ui.zuken.relayRoleWorking'))}</td>
                       <td style="font-weight:700; color:var(--text-main);">${escapeHtml(c.signal || '—')}</td>
                       <td><span style="font-family:var(--font-mono, monospace);">${escapeHtml(c.wire_number || '—')}</span> ${getWireColorBadge(c.wire_color)}</td>
-                      <td style="font-weight:600; font-family:var(--font-mono, monospace); color:#0284c7;">${escapeHtml(c.target_device || '')}${c.target_pin ? ':' + escapeHtml(c.target_pin) : ''}</td>
+                      <td style="font-family:var(--font-mono, monospace); font-size:11.5px; color:var(--text-muted);">${escapeHtml(fmtWireCross(c.cross_section))}</td>
+                      <td style="font-family:var(--font-mono, monospace); font-size:11.5px; color:var(--text-muted);">${escapeHtml(fmtWireLength(c.length))}</td>
+                      <td style="font-weight:600; font-family:var(--font-mono, monospace); color:#0284c7;">${escapeHtml(c.target_device || '')}${c.target_pin ? ':' + escapeHtml(c.target_pin) : ''}${c.target_desc ? `<div style="font-weight:400; font-size:10.5px; color:var(--text-muted); font-family:inherit;">${escapeHtml(c.target_desc)}</div>` : ''}</td>
                     </tr>
                   `).join('')}
                 </tbody>
               </table>
             </div>
+            ${relaySocketDiagram(item)}
+          </div>
           ` : `<div style="font-size:12px; color:var(--text-muted); font-style:italic; padding:6px 0;">${t('ui.zuken.relayNoContacts')}</div>`}
         </div>
       `;
