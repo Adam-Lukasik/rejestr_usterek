@@ -23,11 +23,191 @@ try:
 except ImportError:
     pypdf = None
 
+try:
+    from PIL import Image
+except ImportError:
+    Image = None
+
+import subprocess
+import threading
+import time
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 BAZA_WIEDZY_DIR = os.path.join(BASE_DIR, "Baza wiedzy")
 BOM_IMAGES_DIR = os.path.join(BAZA_WIEDZY_DIR, "zdjecia_komponentow")
 os.makedirs(BOM_IMAGES_DIR, exist_ok=True)
 DB_PATH = os.path.join(BASE_DIR, "rejestr_usterek.db")
+
+
+# ═══════════════════════════════════════════════════════════════════
+# KOMUNIKATY SERWEROWE (PL / EN / DE) — język przekazywany z route'ów
+# ═══════════════════════════════════════════════════════════════════
+ZS_MSG = {
+    "noArtOrSrc": {"pl": "Brak numeru artykułu lub źródła obrazu.", "en": "Missing article number or image source.", "de": "Artikelnummer oder Bildquelle fehlt."},
+    "dlErr": {"pl": "Błąd pobierania z URL (kod {c}, bajtów: {b}).", "en": "URL download error (code {c}, bytes: {b}).", "de": "URL-Downloadfehler (Code {c}, Bytes: {b})."},
+    "connErr": {"pl": "Błąd połączenia: {e}", "en": "Connection error: {e}", "de": "Verbindungsfehler: {e}"},
+    "b64Err": {"pl": "Błąd dekodowania Base64: {e}", "en": "Base64 decoding error: {e}", "de": "Base64-Dekodierungsfehler: {e}"},
+    "badSrc": {"pl": "Nieobsługiwany format źródła obrazu.", "en": "Unsupported image source format.", "de": "Nicht unterstütztes Bildquellenformat."},
+    "tooShort": {"pl": "Otrzymane dane są zbyt krótkie lub puste.", "en": "Received data is too short or empty.", "de": "Empfangene Daten sind zu kurz oder leer."},
+    "notImage": {"pl": "Plik nie jest poprawnym obrazem ({e}).", "en": "File is not a valid image ({e}).", "de": "Datei ist kein gültiges Bild ({e})."},
+    "noProposals": {"pl": "Nie znaleziono propozycji zdjęć w sieci.", "en": "No photo suggestions found on the web.", "de": "Keine Fotovorschläge im Netz gefunden."},
+    "fetchedFrom": {"pl": "Pomyślnie pobrano zdjęcie z {d}.", "en": "Photo downloaded successfully from {d}.", "de": "Foto erfolgreich von {d} heruntergeladen."},
+    "noneFetched": {"pl": "Żadna ze znalezionych grafik nie mogła zostać pobrana lub przetworzona.", "en": "None of the found images could be downloaded or processed.", "de": "Keines der gefundenen Bilder konnte heruntergeladen oder verarbeitet werden."},
+    "noArt": {"pl": "Brak numeru artykułu.", "en": "Missing article number.", "de": "Artikelnummer fehlt."},
+    "imgDeleted": {"pl": "Zdjęcie zostało pomyślnie usunięte.", "en": "Photo deleted successfully.", "de": "Foto erfolgreich gelöscht."},
+    "alreadyRunning": {"pl": "Zadanie pobierania zdjęć już jest uruchomione.", "en": "The photo download task is already running.", "de": "Die Foto-Download-Aufgabe läuft bereits."},
+    "noItems": {"pl": "Brak artykułów spełniających kryteria do pobrania (wszystkie mają już zdjęcia lub brak pasujących artykułów).", "en": "No articles match the download criteria (all already have photos or no matching articles).", "de": "Keine Artikel erfüllen die Download-Kriterien (alle haben bereits Fotos oder keine passenden Artikel)."},
+    "started": {"pl": "Uruchomiono masowe pobieranie dla {n} artykułów.", "en": "Batch download started for {n} articles.", "de": "Stapel-Download für {n} Artikel gestartet."},
+    "fileEmpty": {"pl": "Plik jest pusty lub niepoprawny.", "en": "File is empty or invalid.", "de": "Datei ist leer oder ungültig."},
+    "importedConns": {"pl": "Zaimportowano {n} połączeń.", "en": "Imported {n} connections.", "de": "{n} Verbindungen importiert."},
+    "bomEmpty": {"pl": "Plik BOM jest pusty lub niepoprawny.", "en": "BOM file is empty or invalid.", "de": "BOM-Datei ist leer oder ungültig."},
+    "importedBom": {"pl": "Zaimportowano {n} artykułów BOM ({m} przypisań aparatów).", "en": "Imported {n} BOM articles ({m} device assignments).", "de": "{n} BOM-Artikel importiert ({m} Gerätezuordnungen)."},
+    "tipTe": {"pl": "Karta produktu TE.com (rysunki 2D/3D, specyfikacja i pinout)", "en": "TE.com product page (2D/3D drawings, spec and pinout)", "de": "TE.com-Produktseite (2D/3D-Zeichnungen, Spezifikation und Pinout)"},
+    "tipMolex": {"pl": "Karta produktu na Molex.com", "en": "Product page on Molex.com", "de": "Produktseite auf Molex.com"},
+    "tipLittelfuse": {"pl": "Szukaj produktu na Littelfuse.com", "en": "Search product on Littelfuse.com", "de": "Produkt auf Littelfuse.com suchen"},
+    "tipAnderson": {"pl": "Szukaj na AndersonPower.com", "en": "Search on AndersonPower.com", "de": "Auf AndersonPower.com suchen"},
+    "tipMta": {"pl": "Szukaj katalogu MTA Automotive", "en": "Search MTA Automotive catalog", "de": "MTA-Automotive-Katalog durchsuchen"},
+    "tipVictron": {"pl": "Katalog Victron Energy", "en": "Victron Energy catalog", "de": "Victron-Energy-Katalog"},
+    "tipTme": {"pl": "Katalog TME.eu (zdjęcia, karty PDF, dostępność)", "en": "TME.eu catalog (photos, PDF datasheets, availability)", "de": "TME.eu-Katalog (Fotos, PDF-Datenblätter, Verfügbarkeit)"},
+    "tipMouser": {"pl": "Mouser Electronics (karty katalogowe komponentów)", "en": "Mouser Electronics (component datasheets)", "de": "Mouser Electronics (Bauteil-Datenblätter)"},
+    "tipGoogle": {"pl": "Otwórz zdjęcia tego artykułu w Google Grafika (możesz skopiować i wkleić Ctrl+V)", "en": "Open images of this article in Google Images (copy & paste with Ctrl+V)", "de": "Bilder dieses Artikels in Google Bilder öffnen (Kopieren & Einfügen mit Strg+V)"},
+    "noArtOrImg": {"pl": "Brak numeru artykułu lub danych obrazu.", "en": "Missing article number or image data.", "de": "Artikelnummer oder Bilddaten fehlen."},
+    "e3sMissing": {"pl": "Plik projektu Zuken {v} nie istnieje.", "en": "Zuken project file {v} does not exist.", "de": "Zuken-Projektdatei {v} existiert nicht."},
+    "sheetN": {"pl": "Arkusz {n}", "en": "Sheet {n}", "de": "Blatt {n}"},
+    "sheetIndicated": {"pl": "Wskazany arkusz", "en": "Indicated sheet", "de": "Angegebenes Blatt"},
+    "openedInMode": {"pl": "Otwarto schemat w {m} [{s}]", "en": "Opened schematic in {m} [{s}]", "de": "Schaltplan in {m} [{s}] geöffnet"},
+    "launchErr": {"pl": "Błąd uruchamiania {m}: {e}", "en": "Failed to launch {m}: {e}", "de": "Fehler beim Starten von {m}: {e}"},
+    "launchFail": {"pl": "Nie udało się uruchomić programu {m}.", "en": "Failed to launch {m}.", "de": "{m} konnte nicht gestartet werden."},
+    "noSumatra": {"pl": "Nie odnaleziono programu SumatraPDF.", "en": "SumatraPDF not found.", "de": "SumatraPDF nicht gefunden."},
+    "fileMissing": {"pl": "Plik {v} nie istnieje.", "en": "File {v} does not exist.", "de": "Datei {v} existiert nicht."},
+    "openedSumatra": {"pl": "Otwarto w SumatraPDF na stronie {n}", "en": "Opened in SumatraPDF on page {n}", "de": "In SumatraPDF auf Seite {n} geöffnet"},
+    "sumatraErr": {"pl": "Błąd uruchamiania SumatraPDF: {e}", "en": "Failed to launch SumatraPDF: {e}", "de": "Fehler beim Starten von SumatraPDF: {e}"},
+    "openedAcrobat": {"pl": "Otwarto w Adobe Acrobat na stronie {n}", "en": "Opened in Adobe Acrobat on page {n}", "de": "In Adobe Acrobat auf Seite {n} geöffnet"},
+    "openedDefault": {"pl": "Otwarto w domyślnej aplikacji systemu Windows", "en": "Opened in the default Windows application", "de": "In der Windows-Standardanwendung geöffnet"},
+    "openedBrowser": {"pl": "Otwarto w domyślnej przeglądarce dokumentów", "en": "Opened in the default document viewer", "de": "Im Standard-Dokumentbetrachter geöffnet"},
+    "pdfReadErr": {"pl": "Błąd odczytu PDF {f}: {e}", "en": "PDF read error {f}: {e}", "de": "PDF-Lesefehler {f}: {e}"},
+    "indexedPdf": {"pl": "Zaindeksowano {p} arkuszy i {s} symboli.", "en": "Indexed {p} sheets and {s} symbols.", "de": "{p} Blätter und {s} Symbole indexiert."},
+    "kbDirMissing": {"pl": "Katalog {v} nie istnieje.", "en": "Directory {v} does not exist.", "de": "Verzeichnis {v} existiert nicht."},
+    "wireLong": {"pl": "wiązka długa / wzdłużna", "en": "long harness / longitudinal", "de": "langer Kabelbaum / längs"},
+    "wireMid": {"pl": "wiązka średnia", "en": "medium harness", "de": "mittlerer Kabelbaum"},
+    "wireLocal": {"pl": "odcinek lokalny", "en": "local segment", "de": "lokales Segment"},
+    "wireShort": {"pl": "krótka zworka / mostek", "en": "short jumper / bridge", "de": "kurze Brücke"},
+    "rTitle": {"pl": "Tytuł: {v}", "en": "Title: {v}", "de": "Titel: {v}"},
+    "rInContent": {"pl": "W treści arkusza: {v}", "en": "In sheet content: {v}", "de": "Im Blattinhalt: {v}"},
+    "rMainCircuit": {"pl": "Główny układ usterki: {v}", "en": "Main defect circuit: {v}", "de": "Hauptfehlerkreis: {v}"},
+    "rRadioSheet": {"pl": "Dedykowany arkusz nagłośnienia radia samochodowego: ENTERTAIMENT RADIO (Arkusz 9)", "en": "Dedicated car radio audio sheet: ENTERTAIMENT RADIO (Sheet 9)", "de": "Dediziertes Blatt für Radio-Beschallung: ENTERTAIMENT RADIO (Blatt 9)"},
+    "rRadioSpeakers": {"pl": "Arkusz zawiera głośniki radia (-304/-305) lub złącza X239/X240", "en": "Sheet contains radio speakers (-304/-305) or connectors X239/X240", "de": "Blatt enthält Radio-Lautsprecher (-304/-305) oder Stecker X239/X240"},
+    "rRadioOem": {"pl": "Złącza OEM radia w kabinie (-QC5..-QC8 / X305)", "en": "OEM radio connectors in the cab (-QC5..-QC8 / X305)", "de": "OEM-Radio-Stecker in der Kabine (-QC5..-QC8 / X305)"},
+    "rIntercomSheet": {"pl": "Dedykowany arkusz instalacji interkomu: INTERCOM (Arkusz 27)", "en": "Dedicated intercom installation sheet: INTERCOM (Sheet 27)", "de": "Dediziertes Interkom-Installationsblatt: INTERCOM (Blatt 27)"},
+    "rIntercomDev": {"pl": "Arkusz zawiera głośniki interkomu (X45/X49) lub centralę -A101", "en": "Sheet contains intercom speakers (X45/X49) or central unit -A101", "de": "Blatt enthält Interkom-Lautsprecher (X45/X49) oder Zentrale -A101"},
+    "rCarnationCab": {"pl": "Dedykowany arkusz głośnika komunikatów Carnation w kabinie: IONV MAP LIGHT SPEAKERS (Arkusz 13 / X244)", "en": "Dedicated Carnation message speaker sheet in cab: IONV MAP LIGHT SPEAKERS (Sheet 13 / X244)", "de": "Dediziertes Blatt für Carnation-Ansagen im Fahrerhaus: IONV MAP LIGHT SPEAKERS (Blatt 13 / X244)"},
+    "rCarnationBox": {"pl": "Dedykowany arkusz głośnika komunikatów Carnation w przedziale pacjenta: PIR | PANIC (Arkusz 30 / X258)", "en": "Dedicated Carnation message speaker sheet in patient compartment: PIR | PANIC (Sheet 30 / X258)", "de": "Dediziertes Blatt für Carnation-Ansagen im Patientenraum: PIR | PANIC (Blatt 30 / X258)"},
+    "rCarnationConn": {"pl": "Arkusz zawiera złącze głośnika Carnation (X244 w kabinie lub X258 w przedziale)", "en": "Sheet contains Carnation speaker connector (X244 in cab or X258 in compartment)", "de": "Blatt enthält Carnation-Lautsprecherstecker (X244 im Fahrerhaus oder X258 im Patientenraum)"},
+    "rAudioSheet": {"pl": "Arkusz obwodów audio: {v}", "en": "Audio circuits sheet: {v}", "de": "Audioschaltkreis-Blatt: {v}"},
+    "rAudioInst": {"pl": "Arkusz zawiera instalacje głośnikowe pojazdu", "en": "Sheet contains vehicle speaker installations", "de": "Blatt enthält Fahrzeug-Lautsprecherinstallationen"},
+    "rSheetTopic": {"pl": "Temat arkusza: {v}", "en": "Sheet topic: {v}", "de": "Blattthema: {v}"},
+    "rKeyConn": {"pl": "Kluczowe złącze wariantu/usterki: {v}", "en": "Key connector of variant/defect: {v}", "de": "Schlüsselstecker der Variante/des Mangels: {v}"},
+    "rCircuitConn": {"pl": "Złącze obwodu: {v}", "en": "Circuit connector: {v}", "de": "Schaltkreis-Stecker: {v}"},
+    "rDevice": {"pl": "Aparat: {v}", "en": "Device: {v}", "de": "Gerät: {v}"},
+    "rSignal": {"pl": "Sygnał: {v}", "en": "Signal: {v}", "de": "Signal: {v}"},
+    "rSchematic": {"pl": "Schemat ideowy obwodu funkcjonalnego", "en": "Functional circuit schematic", "de": "Funktionsschaltplan des Stromkreises"},
+    "rDirectHit": {"pl": "Trafienie bezpośrednie (kluczowe złącze + właściwy obwód roboczy)", "en": "Direct hit (key connector + correct working circuit)", "de": "Direkter Treffer (Schlüsselstecker + richtiger Arbeitskreis)"},
+    "rJoinSheet": {"pl": "Arkusz łączący kluczowe złącza ({n} złączy: {v})", "en": "Sheet connecting key connectors ({n} connectors: {v})", "de": "Blatt verbindet Schlüsselstecker ({n} Stecker: {v})"},
+    "rMultiConn": {"pl": "Wielopunktowe złącza obwodu ({n} aparatów)", "en": "Multi-point circuit connectors ({n} devices)", "de": "Mehrpunkt-Schaltkreisstecker ({n} Geräte)"},
+    "rTopology": {"pl": "Topologia wiązki zawiera złącze: {v}", "en": "Harness topology contains connector: {v}", "de": "Kabelbaum-Topologie enthält Stecker: {v}"},
+    "rConnTable": {"pl": "Tabela złączy wiązki ({n} złączy)", "en": "Harness connector table ({n} connectors)", "de": "Kabelbaum-Steckertabelle ({n} Stecker)"},
+    "batAux": {"pl": "Aux. Bat (Akumulator medyczny)", "en": "Aux. Bat (medical battery)", "de": "Aux. Bat (medizinische Batterie)"},
+    "batChass": {"pl": "Chass. Batt (Akumulator podwozia)", "en": "Chass. Batt (chassis battery)", "de": "Chass. Batt (Fahrgestellbatterie)"},
+    "batComms": {"pl": "Comms. Bat (Akumulator łączności)", "en": "Comms. Bat (comms battery)", "de": "Comms. Bat (Kommunikationsbatterie)"},
+    "cut121": {"pl": "12.1V (ostrzeżenie) / 12.2V (powrót)", "en": "12.1V (warning) / 12.2V (recovery)", "de": "12,1 V (Warnung) / 12,2 V (Wiedereinschaltung)"},
+    "cut120": {"pl": "12.0V (ostrzeżenie) / 12.2V (powrót)", "en": "12.0V (warning) / 12.2V (recovery)", "de": "12,0 V (Warnung) / 12,2 V (Wiedereinschaltung)"},
+    "carnSpk": {"pl": "Głośniki komunikatów Carnation w kabinie (=CAB+MID-X244) oraz w przedziale medycznym (=BOX+WAA-X258) odtwarzają komunikaty głosowe i ostrzeżenia sterownika Carnation Genesis EVPSS (m.in. niezapięte pasy, otwarte drzwi, stan zasilania).", "en": "Carnation message speakers in the cab (=CAB+MID-X244) and patient compartment (=BOX+WAA-X258) play voice messages and warnings from the Carnation Genesis EVPSS controller (incl. unfastened seatbelts, open doors, power status).", "de": "Carnation-Ansagelautsprecher im Fahrerhaus (=CAB+MID-X244) und im Patientenraum (=BOX+WAA-X258) spielen Sprachmeldungen und Warnungen der Carnation-Genesis-EVPSS-Steuerung ab (u. a. nicht angelegte Gurte, offene Türen, Spannungsstatus)."},
+    "carnOuts": {"pl": "Zidentyfikowano wyjścia modułów OPM Carnation: {v}.", "en": "Identified Carnation OPM module outputs: {v}.", "de": "Carnation-OPM-Modulausgänge identifiziert: {v}."},
+    "carnIns": {"pl": "Sygnały wejściowe z pojazdu bazowego: {v}.", "en": "Input signals from the base vehicle: {v}.", "de": "Eingangssignale vom Basisfahrzeug: {v}."},
+    "carnRules": {"pl": "Układ sterowany automatyką EVPSS: reguły {v}.", "en": "Circuit controlled by EVPSS automation: rules {v}.", "de": "Schaltung durch EVPSS-Automatik gesteuert: Regeln {v}."},
+    "carnLoadShed": {"pl": "Aktywny system 3-stopniowego odcinania odbiorników (Load Shedding 1/2/3 po spadku napięcia Aux < 12.1V).", "en": "Active 3-stage load shedding system (Load Shedding 1/2/3 when Aux voltage drops < 12.1V).", "de": "Aktives 3-stufiges Lastabwurfsystem (Load Shedding 1/2/3 bei Aux-Spannung < 12,1 V)."},
+    "carnFull": {"pl": "Zarejestrowano pełną konfigurację sterownika Carnation Genesis EVPSS (v{v}): 3 moduły wyjściowe ({o} wyjść O1.1-O3.16), {i} wejść cyfrowych auta bazowego, {r} reguł automatyki i {n} komunikatów.", "en": "Full Carnation Genesis EVPSS controller configuration registered (v{v}): 3 output modules ({o} outputs O1.1-O3.16), {i} digital inputs from the base vehicle, {r} automation rules and {n} messages.", "de": "Vollständige Konfiguration der Carnation-Genesis-EVPSS-Steuerung erfasst (v{v}): 3 Ausgangsmodule ({o} Ausgänge O1.1-O3.16), {i} digitale Eingänge des Basisfahrzeugs, {r} Automatikregeln und {n} Meldungen."},
+    "revWarnTitle": {"pl": "Zmiana wiązki w trakcie serii (Poprawka drzwi)", "en": "Mid-series harness change (Door fix)", "de": "Kabelbaumänderung mitten in der Serie (Türkorrektur)"},
+    "revWarnText": {"pl": "W projekcie {p} wprowadzono rewizję instalacji drzwi ({r}). Nowe złącza wiązki to m.in. =BOX+DPR-X121. Upewnij się, który numer seryjny/datę produkcji ma sprawdzany ambulans.", "en": "Project {p} introduced a door wiring revision ({r}). New harness connectors include =BOX+DPR-X121. Verify the serial number/production date of the ambulance being checked.", "de": "Im Projekt {p} wurde eine Türverdrahtungs-Revision ({r}) eingeführt. Neue Kabelbaumstecker sind u. a. =BOX+DPR-X121. Prüfen Sie die Seriennummer/das Produktionsdatum des zu prüfenden Krankenwagens."},
+    "revInfoTitle": {"pl": "Dostępne rewizje wiązki dla tego projektu", "en": "Available harness revisions for this project", "de": "Verfügbare Kabelbaum-Revisionen für dieses Projekt"},
+    "revInfoText": {"pl": "W bazie zarejestrowano wersję bazową ({b}) oraz nowszą rewizję ({n}).", "en": "The database contains the base version ({b}) and a newer revision ({n}).", "de": "In der Datenbank sind die Basisversion ({b}) und eine neuere Revision ({n}) registriert."},
+    "sigUnnamed": {"pl": "ZASILANIE / SYGNAŁ BEZ NAZWY", "en": "POWER / UNNAMED SIGNAL", "de": "VERSORGUNG / UNBENANNTES SIGNAL"},
+    "carnationRec": {"pl": "🧠 Logika sterownika Carnation Genesis (EVPSS): {v}", "en": "🧠 Carnation Genesis controller logic (EVPSS): {v}", "de": "🧠 Carnation-Genesis-Steuerungslogik (EVPSS): {v}"},
+    "recFocusVariant": {"pl": "Ukierunkowano na Wariant {n}: {t}. Sprawdź dedykowane arkusze schematu i złącza poniżej.", "en": "Focused on Variant {n}: {t}. Check the dedicated schematic sheets and connectors below.", "de": "Fokus auf Variante {n}: {t}. Prüfen Sie die zugehörigen Schaltplanblätter und Stecker unten."},
+    "recVariants": {"pl": "Uwzględniono {n} warianty naprawy dla tej usterki{h}. Poniżej rekomendowane arkusze powiązanych obwodów.", "en": "Considered {n} repair variants for this defect{h}. Recommended sheets of related circuits are below.", "de": "{n} Reparaturvarianten für diesen Mangel berücksichtigt{h}. Empfohlene Blätter der zugehörigen Stromkreise siehe unten."},
+    "recHistory": {"pl": "Znaleziono w bazie wiedzy {n} sprawdzone warianty naprawy dla tej usterki{h}. Sprawdź szczegółowy opis i dołączone arkusze.", "en": "Found {n} proven repair variants for this defect in the knowledge base{h}. Check the detailed description and attached sheets.", "de": "{n} bewährte Reparaturvarianten für diesen Mangel in der Wissensdatenbank gefunden{h}. Detaillierte Beschreibung und angehängte Blätter prüfen."},
+    "recCheckPower": {"pl": "Sprawdź obecność napięcia zasilania i masy na punktach początkowych i końcowych zidentyfikowanego obwodu.", "en": "Check supply voltage and ground at the start and end points of the identified circuit.", "de": "Versorgungsspannung und Masse an Anfangs- und Endpunkten des identifizierten Stromkreises prüfen."},
+    "recCheckContinuity": {"pl": "Sprawdź ciągłość przewodów pomiędzy złączami pośrednimi (zwróć uwagę na kolory i numery żył).", "en": "Check wire continuity between intermediate connectors (note wire colors and core numbers).", "de": "Leitungsdurchgang zwischen Zwischensteckern prüfen (Aderfarben und -nummern beachten)."},
+    "recCheckPlugs": {"pl": "Upewnij się, że wszystkie wtyczki wiązki są poprawnie zatrzaśnięte (brak wysuniętych pinów).", "en": "Ensure all harness plugs are properly latched (no backed-out pins).", "de": "Sicherstellen, dass alle Kabelbaumstecker korrekt eingerastet sind (keine zurückgedrückten Pins)."},
+    "recBom": {"pl": "Zidentyfikowano {n} komponentów i złączek w BOM dla tego obwodu. Sprawdź numery katalogowe, zdjęcia oraz karty produktów dostawców poniżej.", "en": "Identified {n} components and connectors in the BOM for this circuit. Check part numbers, photos and supplier product pages below.", "de": "{n} Komponenten und Stecker in der Stückliste für diesen Stromkreis identifiziert. Artikelnummern, Fotos und Lieferanten-Produktseiten siehe unten."},
+    "recPdfQ": {"pl": "Odnaleziono {n} arkuszy w schemacie PDF powiązanych z zapytaniem. Możesz otworzyć je bezpośrednio poniżej.", "en": "Found {n} sheets in the PDF schematic related to the query. You can open them directly below.", "de": "{n} Blätter im PDF-Schaltplan gefunden, die zur Abfrage passen. Sie können sie unten direkt öffnen."},
+    "recPdfDev": {"pl": "Odnaleziono {n} arkuszy w schemacie PDF odpowiadających szukanemu aparatowi/przewodowi. Zobacz szczegóły w sekcji lokalizacji arkuszy.", "en": "Found {n} sheets in the PDF schematic matching the searched device/wire. See details in the sheet location section.", "de": "{n} Blätter im PDF-Schaltplan gefunden, die zum gesuchten Gerät/Leitung passen. Details im Abschnitt Blattlokalisierung."},
+    "recNoMatch": {"pl": "Brak bezpośredniego dopasowania w schemacie Zuken dla tego hasła. Sprawdź oznaczenie złącza lub bezpiecznika bezpośrednio na schemacie PDF.", "en": "No direct match in the Zuken schematic for this term. Check the connector or fuse designation directly on the PDF schematic.", "de": "Kein direkter Treffer im Zuken-Schaltplan für diesen Begriff. Stecker- oder Sicherungsbezeichnung direkt im PDF-Schaltplan prüfen."},
+    "psMissing": {"pl": "Nie podano numeru PS.", "en": "No PS number provided.", "de": "Keine PS-Nummer angegeben."},
+    "wireN": {"pl": "Przewód {v}", "en": "Wire {v}", "de": "Leitung {v}"},
+    "installCircuit": {"pl": "Obwód instalacji", "en": "Installation circuit", "de": "Installationsstromkreis"},
+    "relayCtrl": {"pl": "Przekaźnik sterujący", "en": "Control relay", "de": "Steuerrelais"},
+    "projectN": {"pl": "Projekt {v}", "en": "Project {v}", "de": "Projekt {v}"},
+    "specialClient": {"pl": "Klient specjalny", "en": "Special client", "de": "Sonderkunde"},
+    "alreadyIndexed": {"pl": "Schemat {v} jest już zaindeksowany (bez zmian).", "en": "Schematic {v} is already indexed (unchanged).", "de": "Schaltplan {v} ist bereits indexiert (unverändert)."},
+}
+
+ZS_CSV_HEADERS = {
+    "connectors": {
+        "pl": ["Projekt PS", "Kod aparatu złącza", "Kod skrócony", "System", "Lokalizacja",
+               "Opis lokalizacji", "Kod artykułu BOM", "Dostawca / Producent", "Opis katalogowy złącza",
+               "Liczba pinów", "Pin", "Nazwa sygnału", "Numer przewodu", "Kolor",
+               "Przekrój (mm2)", "Typ przewodu", "Urządzenie docelowe", "Pin docelowy", "Opis urządzenia docelowego"],
+        "en": ["PS Project", "Connector device code", "Short code", "System", "Location",
+               "Location description", "BOM article code", "Supplier / Manufacturer", "Connector catalog description",
+               "Pin count", "Pin", "Signal name", "Wire number", "Color",
+               "Cross-section (mm2)", "Wire type", "Target device", "Target pin", "Target device description"],
+        "de": ["PS-Projekt", "Stecker-Gerätecode", "Kurzcode", "System", "Ort",
+               "Ortsbeschreibung", "BOM-Artikelcode", "Lieferant / Hersteller", "Stecker-Katalogbeschreibung",
+               "Pin-Anzahl", "Pin", "Signalname", "Leitungsnummer", "Farbe",
+               "Querschnitt (mm2)", "Leitungstyp", "Zielgerät", "Ziel-Pin", "Zielgerät-Beschreibung"],
+    },
+    "fuses": {
+        "pl": ["Projekt PS", "Bezpiecznik (Aparat)", "Kod skrócony", "Prąd znamionowy (A)", "Typ bezpiecznika",
+               "Oprawka (-FH)", "Skrzynka / Blok", "System", "Lokalizacja", "Chronione sygnały i obwody",
+               "Kod artykułu BOM", "Dostawca", "Opis katalogowy"],
+        "en": ["PS Project", "Fuse (Device)", "Short code", "Rated current (A)", "Fuse type",
+               "Holder (-FH)", "Box / Block", "System", "Location", "Protected signals and circuits",
+               "BOM article code", "Supplier", "Catalog description"],
+        "de": ["PS-Projekt", "Sicherung (Gerät)", "Kurzcode", "Nennstrom (A)", "Sicherungstyp",
+               "Fassung (-FH)", "Kasten / Block", "System", "Ort", "Geschützte Signale und Stromkreise",
+               "BOM-Artikelcode", "Lieferant", "Katalogbeschreibung"],
+    },
+    "relays": {
+        "pl": ["Projekt PS", "Przekaźnik (Aparat)", "Kod skrócony", "Funkcja przekaźnika", "Typ / Model",
+               "Dostawca", "Gniazdo / Podstawa", "System", "Lokalizacja", "Lokalizacja (opis)", "Pin / Rola",
+               "Sygnał", "Numer przewodu", "Kolor", "Przekrój (mm2)", "Długość (mm)",
+               "Aparat docelowy", "Pin docelowy", "Opis celu"],
+        "en": ["PS Project", "Relay (Device)", "Short code", "Relay function", "Type / Model",
+               "Supplier", "Socket / Base", "System", "Location", "Location (desc)", "Pin / Role",
+               "Signal", "Wire number", "Color", "Cross-section (mm2)", "Length (mm)",
+               "Target device", "Target pin", "Target description"],
+        "de": ["PS-Projekt", "Relais (Gerät)", "Kurzcode", "Relaisfunktion", "Typ / Modell",
+               "Lieferant", "Fassung / Sockel", "System", "Ort", "Ort (Beschr.)", "Pin / Rolle",
+               "Signal", "Leitungsnummer", "Farbe", "Querschnitt (mm2)", "Länge (mm)",
+               "Zielgerät", "Ziel-Pin", "Zielbeschreibung"],
+    },
+}
+
+def zshdr(summary_type, lang="pl"):
+    """Nagłówki CSV zestawienia w podanym języku (domyślnie PL)."""
+    table = ZS_CSV_HEADERS.get(summary_type) or {}
+    return table.get(lang) or table["pl"]
+
+def zsmsg(key, lang="pl", **kw):
+    """Komunikat w podanym języku (pl/en/de), domyślnie PL."""
+    if lang not in ("pl", "en", "de"):
+        lang = "pl"
+    entry = ZS_MSG.get(key)
+    if not entry:
+        return key
+    txt = entry.get(lang) or entry["pl"]
+    return txt.format(**kw) if kw else txt
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -477,12 +657,12 @@ def extract_project_info_from_filename(filename, raw_rows):
     }
 
 
-def import_zuken_xlsx(filepath, ps_code=None):
+def import_zuken_xlsx(filepath, ps_code=None, lang="pl"):
     """Importuje plik XLSX z listy połączeń Zuken E3 do bazy SQLite."""
     filename = os.path.basename(filepath)
     raw_rows = parse_xlsx_fast(filepath)
     if not raw_rows:
-        return 0, "Plik jest pusty lub niepoprawny."
+        return 0, zsmsg("fileEmpty", lang)
 
     meta = extract_project_info_from_filename(filename, raw_rows)
     if ps_code:
@@ -608,7 +788,7 @@ def import_zuken_xlsx(filepath, ps_code=None):
     conn.commit()
     conn.close()
 
-    return len(connections_to_insert), f"Zaimportowano {len(connections_to_insert)} połączeń."
+    return len(connections_to_insert), zsmsg("importedConns", lang, n=len(connections_to_insert))
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -700,7 +880,7 @@ def find_local_component_image(article_number):
     return None
 
 
-def get_supplier_links(article_number, supplier=""):
+def get_supplier_links(article_number, supplier="", lang="pl"):
     """
     Generuje bezpośrednie odnośniki do kart produktów u dostawców i dystrybutorów.
     """
@@ -717,7 +897,7 @@ def get_supplier_links(article_number, supplier=""):
             "type": "manufacturer",
             "icon": "🏭",
             "url": f"https://www.te.com/usa-en/product-{code}.html",
-            "tooltip": "Karta produktu TE.com (rysunki 2D/3D, specyfikacja i pinout)"
+            "tooltip": zsmsg("tipTe", lang)
         })
     elif "MOLEX" in sup_upper:
         links.append({
@@ -725,7 +905,7 @@ def get_supplier_links(article_number, supplier=""):
             "type": "manufacturer",
             "icon": "🏭",
             "url": f"https://www.molex.com/en-us/search?q={urllib.parse.quote_plus(code)}",
-            "tooltip": "Karta produktu na Molex.com"
+            "tooltip": zsmsg("tipMolex", lang)
         })
     elif "LITTELFUSE" in sup_upper:
         links.append({
@@ -733,7 +913,7 @@ def get_supplier_links(article_number, supplier=""):
             "type": "manufacturer",
             "icon": "🏭",
             "url": f"https://www.littelfuse.com/search-results.aspx?q={urllib.parse.quote_plus(code)}",
-            "tooltip": "Szukaj produktu na Littelfuse.com"
+            "tooltip": zsmsg("tipLittelfuse", lang)
         })
     elif "ANDERSON" in sup_upper:
         links.append({
@@ -741,7 +921,7 @@ def get_supplier_links(article_number, supplier=""):
             "type": "manufacturer",
             "icon": "🏭",
             "url": f"https://www.andersonpower.com/us/en/search.html?q={urllib.parse.quote_plus(code)}",
-            "tooltip": "Szukaj na AndersonPower.com"
+            "tooltip": zsmsg("tipAnderson", lang)
         })
     elif "MTA" in sup_upper:
         links.append({
@@ -749,7 +929,7 @@ def get_supplier_links(article_number, supplier=""):
             "type": "manufacturer",
             "icon": "🏭",
             "url": f"https://www.google.com/search?q=MTA+automotive+{urllib.parse.quote_plus(code)}",
-            "tooltip": "Szukaj katalogu MTA Automotive"
+            "tooltip": zsmsg("tipMta", lang)
         })
     elif "VICTRON" in sup_upper:
         links.append({
@@ -757,7 +937,7 @@ def get_supplier_links(article_number, supplier=""):
             "type": "manufacturer",
             "icon": "🏭",
             "url": f"https://www.victronenergy.pl/search?q={urllib.parse.quote_plus(code)}",
-            "tooltip": "Katalog Victron Energy"
+            "tooltip": zsmsg("tipVictron", lang)
         })
 
     # 2. Dystrybutorzy z natychmiastowym podglądem kart PDF, zdjęć i magazynu (Polska/Europa)
@@ -766,14 +946,14 @@ def get_supplier_links(article_number, supplier=""):
         "type": "distributor",
         "icon": "🛒",
         "url": f"https://www.tme.eu/pl/katalog/?search={urllib.parse.quote_plus(code)}",
-        "tooltip": "Katalog TME.eu (zdjęcia, karty PDF, dostępność)"
+        "tooltip": zsmsg("tipTme", lang)
     })
     links.append({
         "name": "Mouser",
         "type": "distributor",
         "icon": "🔍",
         "url": f"https://www.mouser.pl/c/?q={urllib.parse.quote_plus(code)}",
-        "tooltip": "Mouser Electronics (karty katalogowe komponentów)"
+        "tooltip": zsmsg("tipMouser", lang)
     })
 
     # 3. Google Grafika 1-kliknięciem
@@ -784,13 +964,13 @@ def get_supplier_links(article_number, supplier=""):
         "type": "images",
         "icon": "🖼️",
         "url": f"https://www.google.com/search?tbm=isch&q={search_enc}",
-        "tooltip": "Otwórz zdjęcia tego artykułu w Google Grafika (możesz skopiować i wkleić Ctrl+V)"
+        "tooltip": zsmsg("tipGoogle", lang)
     })
 
     return links
 
 
-def import_zuken_bom_xlsx(filepath, ps_code=None):
+def import_zuken_bom_xlsx(filepath, ps_code=None, lang="pl"):
     """
     Importuje zestawienie materiałowe BOM (Device-/Quantity-Bill of material) z Zukena do bazy SQLite.
     Zapisuje artykuły, dostawców, ilości oraz powiązania z aparatami (=BOX+... / -X...).
@@ -798,7 +978,7 @@ def import_zuken_bom_xlsx(filepath, ps_code=None):
     filename = os.path.basename(filepath)
     raw_rows = parse_xlsx_fast(filepath)
     if not raw_rows:
-        return 0, 0, "Plik BOM jest pusty lub niepoprawny."
+        return 0, 0, zsmsg("bomEmpty", lang)
 
     meta = extract_project_info_from_filename(filename, raw_rows)
     if ps_code:
@@ -912,10 +1092,10 @@ def import_zuken_bom_xlsx(filepath, ps_code=None):
     conn.commit()
     conn.close()
 
-    return len(parsed_articles), total_devices, f"Zaimportowano {len(parsed_articles)} artykułów BOM ({total_devices} przypisań aparatów)."
+    return len(parsed_articles), total_devices, zsmsg("importedBom", lang, n=len(parsed_articles), m=total_devices)
 
 
-def find_bom_components_for_devices(device_codes, ps_code=None):
+def find_bom_components_for_devices(device_codes, ps_code=None, lang="pl"):
     """
     Dla podanej listy kodów aparatów (np. ['=BOX+TWL-X52', '-X434', '=BOX+TWR-FH49'])
     odnajduje powiązane artykuły z BOM wraz z dostawcami, linkami i zdjęciami.
@@ -970,7 +1150,7 @@ def find_bom_components_for_devices(device_codes, ps_code=None):
                 "category": r["category"],
                 "image_url": img_url,
                 "has_image": bool(img_url),
-                "supplier_links": get_supplier_links(art_num, supplier),
+                "supplier_links": get_supplier_links(art_num, supplier, lang=lang),
                 "matched_devices": [],
                 "project_rev": r["revision_name"]
             }
@@ -1002,7 +1182,7 @@ def find_bom_components_for_devices(device_codes, ps_code=None):
                             "supplier": tr["supplier"],
                             "description": tr["description"],
                             "image_url": find_local_component_image(t_num),
-                            "supplier_links": get_supplier_links(t_num, tr["supplier"])
+                            "supplier_links": get_supplier_links(t_num, tr["supplier"], lang=lang)
                         })
                     break
             item["related_terminals"] = conn_terms
@@ -1011,7 +1191,7 @@ def find_bom_components_for_devices(device_codes, ps_code=None):
     return result_list
 
 
-def get_bom_catalog(query="", supplier="", category="", ps_code="", limit=100, offset=0):
+def get_bom_catalog(query="", supplier="", category="", ps_code="", has_image="", limit=100, offset=0, lang="pl"):
     """Zwraca listę artykułów z BOM z filtrowaniem i paginacją."""
     conn = get_db()
     cur = conn.cursor()
@@ -1034,6 +1214,11 @@ def get_bom_catalog(query="", supplier="", category="", ps_code="", limit=100, o
     if category:
         conditions.append("i.category = ?")
         params.append(category.strip())
+
+    if has_image == "missing":
+        conditions.append("(i.local_image IS NULL OR i.local_image = '')")
+    elif has_image == "has":
+        conditions.append("(i.local_image IS NOT NULL AND i.local_image != '')")
 
     where_clause = "WHERE " + " AND ".join(conditions) if conditions else ""
 
@@ -1069,7 +1254,7 @@ def get_bom_catalog(query="", supplier="", category="", ps_code="", limit=100, o
             "category": r["category"],
             "image_url": img_url,
             "has_image": bool(img_url),
-            "supplier_links": get_supplier_links(art_num, sup),
+            "supplier_links": get_supplier_links(art_num, sup, lang=lang),
             "devices": devs,
             "project_name": r["project_name"],
             "revision_name": r["revision_name"]
@@ -1114,25 +1299,68 @@ def get_bom_categories():
     return rows
 
 
-def save_component_image(article_number, image_bytes, ext="png"):
+def optimize_image_bytes(raw_bytes, max_size=800, quality=88):
     """
-    Zapisuje plik zdjęcia złączki/artykułu w Baza wiedzy/zdjecia_komponentow/
-    i aktualizuje referencję w tabeli zuken_bom_items.
+    Sprawdza poprawność obrazu za pomocą PIL, zamienia ewentualną przezroczystość
+    (alfa) na estetyczne białe tło, skaluje z zachowaniem proporcji do max_size x max_size
+    i kompresuje jako JPEG.
+    Zwraca (zoptymalizowane_bajty, rozszerzenie).
+    """
+    if Image is None:
+        return raw_bytes, "jpg"
+
+    try:
+        img = Image.open(io.BytesIO(raw_bytes))
+    except Exception as e:
+        raise ValueError(f"Niepoprawne dane obrazu: {e}")
+
+    if img.width < 40 or img.height < 40:
+        raise ValueError("Obraz jest zbyt mały (< 40px).")
+
+    # Obsługa kanału alfa / przezroczystości (RGBA, LA, P z paletą przezroczystości)
+    if img.mode in ("RGBA", "LA") or (img.mode == "P" and "transparency" in img.info):
+        bg = Image.new("RGB", img.size, (255, 255, 255))
+        alpha_img = img.convert("RGBA")
+        bg.paste(alpha_img, mask=alpha_img.split()[3])
+        img = bg
+    else:
+        img = img.convert("RGB")
+
+    # Skalowanie jeśli którykolwiek wymiar przekracza max_size
+    if max(img.width, img.height) > max_size:
+        img.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
+
+    out = io.BytesIO()
+    img.save(out, format="JPEG", quality=quality, optimize=True)
+    return out.getvalue(), "jpg"
+
+
+def save_component_image(article_number, image_bytes, ext="jpg", lang="pl"):
+    """
+    Zapisuje plik zdjęcia złączki/artykułu w Baza wiedzy/zdjecia_komponentow/,
+    optymalizuje grafikę i aktualizuje referencje w tabelach zuken_bom_items oraz zuken_ps_connectors.
     """
     if not article_number or not image_bytes:
-        return False, "Brak numeru artykułu lub danych obrazu."
+        return False, zsmsg("noArtOrImg", lang)
 
     os.makedirs(BOM_IMAGES_DIR, exist_ok=True)
     sanitized = sanitize_article_code(article_number)
-    clean_ext = ext.lstrip(".").lower()
-    if clean_ext not in ["png", "jpg", "jpeg", "webp"]:
-        clean_ext = "png"
+
+    try:
+        opt_bytes, clean_ext = optimize_image_bytes(image_bytes, max_size=800, quality=88)
+    except Exception:
+        clean_ext = ext.lstrip(".").lower()
+        if clean_ext not in ["png", "jpg", "jpeg", "webp"]:
+            clean_ext = "jpg"
+        opt_bytes = image_bytes
 
     filename = f"{sanitized}.{clean_ext}"
     target_path = os.path.join(BOM_IMAGES_DIR, filename)
 
     with open(target_path, "wb") as f:
-        f.write(image_bytes)
+        f.write(opt_bytes)
+
+    local_url = f"/api/zuken/bom/image/{filename}"
 
     conn = get_db()
     cur = conn.cursor()
@@ -1141,17 +1369,592 @@ def save_component_image(article_number, image_bytes, ext="png"):
         SET local_image = ?
         WHERE article_number = ?;
     """, (filename, article_number))
+    cur.execute("""
+        UPDATE zuken_ps_connectors
+        SET image_url = ?
+        WHERE article_number = ?;
+    """, (local_url, article_number))
     conn.commit()
     conn.close()
 
-    return True, f"/api/zuken/bom/image/{filename}"
+    return True, local_url
+
+
+def _fetch_candidates_from_engines(query_text, art_label, max_needed, seen, candidates):
+    """Pomocnicza funkcja przeszukująca Yandex i Bing dla zadanego zapytania tekstowego."""
+    if not query_text or len(candidates) >= max_needed:
+        return
+
+    # 1. Yandex
+    enc_y = urllib.parse.quote_plus(query_text)
+    cmd_y = [
+        "curl.exe", "-s", "-L", "--compressed", "--max-time", "6",
+        "-H", "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+        "-H", "Accept-Language: en-US,en;q=0.9",
+        f"https://yandex.com/images/search?text={enc_y}"
+    ]
+    try:
+        res_y = subprocess.run(cmd_y, capture_output=True, text=True, encoding='utf-8', errors='ignore')
+        matches_y = re.findall(r'img_url=(https%3A%2F%2F[^&"]+)', res_y.stdout or "")
+        for m in matches_y:
+            clean_u = urllib.parse.unquote(m).strip()
+            if not clean_u or clean_u in seen:
+                continue
+            low = clean_u.lower()
+            if any(bad in low for bad in [".svg", ".gif", "favicon", "logo", "avatar", "blank", "profile-cover", "pressebox"]):
+                continue
+            seen.add(clean_u)
+            parsed = urllib.parse.urlparse(clean_u)
+            domain = parsed.netloc
+            candidates.append({
+                "url": clean_u,
+                "thumb": clean_u,
+                "domain": domain,
+                "title": f"{art_label} ({domain})",
+                "engine": "yandex"
+            })
+            if len(candidates) >= max_needed:
+                return
+    except Exception as e:
+        print(f"[ZUKEN] Błąd wyszukiwania Yandex dla '{query_text}': {e}")
+
+    # 2. Bing
+    if len(candidates) < max_needed:
+        enc_b = urllib.parse.quote_plus(query_text)
+        cmd_b = [
+            "curl.exe", "-s", "-L", "--compressed", "--max-time", "6",
+            "-H", "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+            "-H", "Accept-Language: pl-PL,pl;q=0.9,en-US;q=0.8,en;q=0.7",
+            f"https://www.bing.com/images/search?q={enc_b}&form=HDRSC2"
+        ]
+        try:
+            res_b = subprocess.run(cmd_b, capture_output=True, text=True, encoding='utf-8', errors='ignore')
+            html_b = res_b.stdout or ""
+            murls = re.findall(r'murl&quot;:&quot;(http[^&]+)&quot;', html_b)
+            turls = re.findall(r'turl&quot;:&quot;(http[^&]+)&quot;', html_b)
+
+            for i, u in enumerate(murls):
+                clean_u = u.replace("\\/", "/").strip()
+                if not clean_u or clean_u in seen:
+                    continue
+                low = clean_u.lower()
+                if any(bad in low for bad in [".svg", ".gif", "favicon", "logo", "avatar", "blank", "profile-cover", "pressebox"]):
+                    continue
+                seen.add(clean_u)
+                thumb = turls[i].replace("\\/", "/").strip() if i < len(turls) else clean_u
+                parsed = urllib.parse.urlparse(clean_u)
+                domain = parsed.netloc
+                candidates.append({
+                    "url": clean_u,
+                    "thumb": thumb or clean_u,
+                    "domain": domain,
+                    "title": f"{art_label} ({domain})",
+                    "engine": "bing"
+                })
+                if len(candidates) >= max_needed:
+                    return
+        except Exception as e:
+            print(f"[ZUKEN] Błąd wyszukiwania Bing dla '{query_text}': {e}")
+
+
+def search_component_image_candidates(article_number, supplier="", category="", desc="", max_results=10, custom_query=""):
+    """
+    Wyszukuje w sieci propozycje zdjęć dla artykułu BOM z wykorzystaniem wielu silników (Yandex + Bing).
+    Automatycznie normalizuje dystrybutorów (Conrad, Farnell, TME itp.) na faktycznych producentów (MTA, TE, Littelfuse).
+    Dla przekaźników / gniazd przekaźnikowych (np. 8JA 003 526-002, 241 500 006) automatycznie wyszukuje kompatybilny
+    przekaźnik samochodowy (np. Mini ISO 12V Hella 4RA lub Micro ISO 12V), a podstawy gniazd dodaje jako opcje uzupełniające.
+    Zwraca listę słowników: [{"url": ..., "thumb": ..., "domain": ..., "title": ..., "engine": ...}]
+    """
+    art = (article_number or "").strip()
+    c_query = (custom_query or "").strip()
+    if not art and not c_query:
+        return []
+
+    sup = (supplier or "").strip()
+    cat = (category or "").strip()
+    desc_clean = (desc or "").strip()
+    desc_upper = desc_clean.upper()
+    art_upper = art.upper()
+    cat_upper = cat.upper()
+
+    # 1. Sprawdź czy to przekaźnik lub gniazdo przekaźnika w wiązce
+    is_relay_context = any(r in cat_upper for r in ["PRZEKA", "RELAY", "RELAIS"])
+    is_relay_socket = False
+    if is_relay_context:
+        if any(w in desc_upper for w in ["SOCKET", "PODSTAWA", "GNIAZDO", "FASSUNG", "HALTER", "CARRIER"]) or \
+           "8JA 003 526" in art_upper or "241 500" in art_upper or "8JA" in art_upper:
+            is_relay_socket = True
+    elif any(w in desc_upper for w in ["RELAY SOCKET", "PODSTAWA PRZEKAZNIK", "PODSTAWA PRZEKAŹNIK", "GNIAZDO PRZEKAŹNIK", "GNIAZDO PRZEKAZNIK"]) or \
+         "8JA 003 526" in art_upper or "241 500 006" in art_upper:
+        is_relay_socket = True
+
+    search_queries = []
+    if c_query:
+        search_queries.append(c_query)
+    elif is_relay_socket:
+        # W projektach wiązek w BOM znajduje się gniazdo/podstawa (np. 8JA 003 526-002, 241 500 006).
+        # Użytkownik w widoku przekaźników chce widzieć faktyczny przekaźnik samochodowy pasujący do tego gniazda.
+        if "MICRO" in desc_upper or "241 500" in art_upper:
+            search_queries.append("przekaźnik samochodowy Micro ISO 12V")
+            search_queries.append(f"{art} podstawa przekaźnika")
+        else:
+            search_queries.append("Hella 4RA przekaźnik samochodowy 12V")
+            search_queries.append("przekaźnik samochodowy Mini ISO 12V")
+            search_queries.append(f"{art} Relay Socket")
+    else:
+        # Normalizacja producenta vs dystrybutora
+        KNOWN_DISTRIBUTORS = [
+            "CONRAD", "CONRAD ELECTRONIC", "CONRAD ELECTRONIC SE", "FARNELL", "TME", 
+            "RS COMPONENTS", "RS-COMPONENTS", "MOUSER", "DIGIKEY", "DIGI-KEY", "ARROW", "AVNET", "SOS ELECTRONIC"
+        ]
+        KNOWN_MANUFACTURERS = [
+            "MTA", "LITTELFUSE", "TE CONNECTIVITY", "TE", "DEUTSCH", "HELLA", "BOSCH", 
+            "DELPHI", "APTIV", "MOLEX", "NTE ELECTRONICS", "NTE", "LUMBERG", "AMPHENOL", "YAZAKI", "SUMITOMO"
+        ]
+
+        found_mfg = None
+        for km in KNOWN_MANUFACTURERS:
+            if re.search(r'\b' + re.escape(km) + r'\b', desc_upper):
+                found_mfg = km
+                break
+
+        mfg = sup
+        if any(d in (sup or "").upper() for d in KNOWN_DISTRIBUTORS) or not sup or sup.upper() in ["NIEZNANY", "GENERIC", "ZŁĄCZE"]:
+            mfg = found_mfg or ""
+        elif found_mfg and len(found_mfg) > len(mfg):
+            mfg = found_mfg
+
+        # Wyciągnij typowe słowa kluczowe (amperaż, typ obudowy/bezpiecznika)
+        extra_keywords = []
+        amp_match = re.search(r'(\d+[\.,]?\d*)\s*A\b', desc_clean, re.IGNORECASE)
+        if amp_match:
+            extra_keywords.append(f"{amp_match.group(1).replace(',', '.')}A")
+
+        for kw in ["UNI", "UNIVAL", "MIDI", "MIDIVAL", "MEGA", "MEGAVAL", "MAXI", "MAXIVAL", "MINI", "MINIVAL"]:
+            if re.search(r'\b' + kw + r'\b', desc_upper):
+                extra_keywords.append(kw)
+                break
+
+        if "HOLDER" in desc_upper or "OPRAWKA" in desc_upper:
+            extra_keywords.append("holder")
+        elif "FUSE" in desc_upper or "BEZPIECZNIK" in cat_upper:
+            extra_keywords.append("fuse")
+        elif is_relay_context or "CONTACTOR" in desc_upper:
+            extra_keywords.append("relay")
+        elif "CONNECTOR" in desc_upper or "ZŁĄCZE" in cat_upper or "STECKER" in desc_upper:
+            extra_keywords.append("connector")
+
+        parts = [art]
+        if mfg:
+            parts.append(mfg)
+        parts.extend(extra_keywords[:2])
+        search_queries.append(" ".join(parts))
+
+    candidates = []
+    seen = set()
+
+    for q_item in search_queries:
+        if len(candidates) >= max_results:
+            break
+        _fetch_candidates_from_engines(q_item, art or q_item, max_results, seen, candidates)
+
+    return candidates
+
+
+def download_and_optimize_component_image(article_number, image_source, lang="pl"):
+    """
+    Pobiera zdjęcie (z URL http/https, base64 lub surowych bajtów), optymalizuje i zapisuje
+    w Baza wiedzy/zdjecia_komponentow/<sanitized>.jpg oraz aktualizuje SQLite.
+    Zwraca (sukces: bool, url_lub_komunikat: str, nazwa_pliku: str).
+    """
+    if not article_number or not image_source:
+        return False, zsmsg("noArtOrSrc", lang), None
+
+    raw_bytes = None
+
+    # 1. Źródło to URL (http/https)
+    if isinstance(image_source, str) and image_source.startswith("http"):
+        cmd = [
+            "curl.exe", "-s", "-L", "--max-time", "12",
+            "-H", "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+            "-H", "Accept: image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
+            image_source
+        ]
+        try:
+            res = subprocess.run(cmd, capture_output=True)
+            if res.returncode == 0 and len(res.stdout) > 800:
+                raw_bytes = res.stdout
+            else:
+                return False, zsmsg("dlErr", lang, c=res.returncode, b=len(res.stdout)), None
+        except Exception as e:
+            return False, zsmsg("connErr", lang, e=e), None
+
+    # 2. Źródło to Base64
+    elif isinstance(image_source, str) and ("base64," in image_source or len(image_source) > 200):
+        import base64
+        b64_str = image_source.split("base64,", 1)[1] if "base64," in image_source else image_source
+        try:
+            raw_bytes = base64.b64decode(b64_str)
+        except Exception as e:
+            return False, zsmsg("b64Err", lang, e=e), None
+
+    # 3. Źródło to już bajty
+    elif isinstance(image_source, bytes):
+        raw_bytes = image_source
+    else:
+        return False, zsmsg("badSrc", lang), None
+
+    if not raw_bytes or len(raw_bytes) < 400:
+        return False, zsmsg("tooShort", lang), None
+
+    # Optymalizacja przez PIL
+    try:
+        opt_bytes, ext = optimize_image_bytes(raw_bytes, max_size=800, quality=88)
+    except Exception as e:
+        return False, zsmsg("notImage", lang, e=e), None
+
+    # Zapisz plik
+    os.makedirs(BOM_IMAGES_DIR, exist_ok=True)
+    sanitized = sanitize_article_code(article_number)
+    filename = f"{sanitized}.{ext}"
+    target_path = os.path.join(BOM_IMAGES_DIR, filename)
+
+    with open(target_path, "wb") as f:
+        f.write(opt_bytes)
+
+    local_url = f"/api/zuken/bom/image/{filename}"
+
+    # Aktualizacja bazy SQLite
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("""
+        UPDATE zuken_bom_items
+        SET local_image = ?
+        WHERE article_number = ?;
+    """, (filename, article_number))
+
+    cur.execute("""
+        UPDATE zuken_ps_connectors
+        SET image_url = ?
+        WHERE article_number = ?;
+    """, (local_url, article_number))
+
+    conn.commit()
+    conn.close()
+
+    return True, local_url, filename
+
+
+def auto_fetch_single_component_image(article_number, supplier="", category="", desc="", custom_query="", lang="pl"):
+    """
+    Automatycznie wyszukuje propozycje zdjęć i pobiera najlepsze poprawne zdjęcie.
+    """
+    candidates = search_component_image_candidates(article_number, supplier, category, desc, max_results=6, custom_query=custom_query)
+    if not candidates:
+        return False, None, zsmsg("noProposals", lang)
+
+    for cand in candidates:
+        url = cand["url"]
+        ok, res_or_err, filename = download_and_optimize_component_image(article_number, url, lang=lang)
+        if ok:
+            return True, res_or_err, zsmsg("fetchedFrom", lang, d=cand["domain"])
+
+    return False, None, zsmsg("noneFetched", lang)
+
+
+def delete_component_image(article_number, lang="pl"):
+    """
+    Usuwa lokalne zdjęcie komponentu z Bazy wiedzy oraz czyści wpisy w SQLite.
+    """
+    if not article_number:
+        return False, zsmsg("noArt", lang)
+
+    sanitized = sanitize_article_code(article_number)
+    removed_any = False
+
+    if os.path.isdir(BOM_IMAGES_DIR):
+        for fname in os.listdir(BOM_IMAGES_DIR):
+            name_no_ext, _ = os.path.splitext(fname)
+            if name_no_ext.lower() == sanitized.lower():
+                try:
+                    os.remove(os.path.join(BOM_IMAGES_DIR, fname))
+                    removed_any = True
+                except Exception as e:
+                    print(f"[ZUKEN] Błąd usuwania pliku {fname}: {e}")
+
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("""
+        UPDATE zuken_bom_items
+        SET local_image = NULL
+        WHERE article_number = ?;
+    """, (article_number,))
+    cur.execute("""
+        UPDATE zuken_ps_connectors
+        SET image_url = ''
+        WHERE article_number = ?;
+    """, (article_number,))
+    conn.commit()
+    conn.close()
+
+    return True, zsmsg("imgDeleted", lang)
+
+
+# ═══════════════════════════════════════════════════════════════════
+# MENEDŻER MASOWEGO POBIERANIA ZDJĘĆ W TLE (BATCH DOWNLOADER)
+# ═══════════════════════════════════════════════════════════════════
+
+BATCH_IMAGE_STATE = {
+    "is_running": False,
+    "should_stop": False,
+    "total": 0,
+    "processed": 0,
+    "success": 0,
+    "failed": 0,
+    "skipped": 0,
+    "current_article": "",
+    "current_supplier": "",
+    "status_message": "Bezczynny",
+    "status_key": "batchIdle",
+    "status_params": {},
+    "start_time": None,
+    "end_time": None,
+    "recent_results": []  # max 20 elementów
+}
+_batch_lock = threading.Lock()
+
+
+def get_batch_image_download_status():
+    """Zwraca kopię aktualnego stanu masowego pobierania zdjęć."""
+    with _batch_lock:
+        st = dict(BATCH_IMAGE_STATE)
+        st["recent_results"] = list(BATCH_IMAGE_STATE["recent_results"])
+        return st
+
+
+def stop_batch_image_download():
+    """Wysyła sygnał zatrzymania masowego pobierania."""
+    with _batch_lock:
+        if BATCH_IMAGE_STATE["is_running"]:
+            BATCH_IMAGE_STATE["should_stop"] = True
+            BATCH_IMAGE_STATE["status_message"] = "Zatrzymywanie..."
+            BATCH_IMAGE_STATE["status_key"] = "batchStopping"
+            BATCH_IMAGE_STATE["status_params"] = {}
+            return True, "Wysłano sygnał zatrzymania zadania."
+        return False, "Żadne zadanie masowe nie jest obecnie uruchomione."
+
+
+def _batch_download_worker(items, delay_sec=1.0):
+    global BATCH_IMAGE_STATE
+    try:
+        for idx, it in enumerate(items):
+            with _batch_lock:
+                if BATCH_IMAGE_STATE["should_stop"]:
+                    BATCH_IMAGE_STATE["status_message"] = "Zatrzymano przez użytkownika."
+                    BATCH_IMAGE_STATE["status_key"] = "batchStopped"
+                    BATCH_IMAGE_STATE["status_params"] = {}
+                    break
+                BATCH_IMAGE_STATE["processed"] = idx + 1
+                BATCH_IMAGE_STATE["current_article"] = it["article_number"]
+                BATCH_IMAGE_STATE["current_supplier"] = it.get("supplier") or ""
+                BATCH_IMAGE_STATE["status_message"] = f"Pobieranie {idx+1}/{len(items)}: {it['article_number']}"
+                BATCH_IMAGE_STATE["status_key"] = "batchFetching"
+                BATCH_IMAGE_STATE["status_params"] = {"n": idx + 1, "m": len(items), "a": it["article_number"]}
+
+            art = it["article_number"]
+            sup = it.get("supplier") or ""
+            cat = it.get("category") or ""
+            desc = it.get("description") or ""
+
+            # Sprawdź czy artykuł ma już zdjęcie
+            if find_local_component_image(art):
+                with _batch_lock:
+                    BATCH_IMAGE_STATE["skipped"] += 1
+                continue
+
+            ok, img_url, msg = auto_fetch_single_component_image(art, sup, cat, desc)
+
+            with _batch_lock:
+                if ok:
+                    BATCH_IMAGE_STATE["success"] += 1
+                    BATCH_IMAGE_STATE["recent_results"].insert(0, {
+                        "article_number": art,
+                        "supplier": sup,
+                        "success": True,
+                        "image_url": img_url,
+                        "time": datetime.now().strftime("%H:%M:%S")
+                    })
+                else:
+                    BATCH_IMAGE_STATE["failed"] += 1
+                    BATCH_IMAGE_STATE["recent_results"].insert(0, {
+                        "article_number": art,
+                        "supplier": sup,
+                        "success": False,
+                        "message": msg,
+                        "time": datetime.now().strftime("%H:%M:%S")
+                    })
+                if len(BATCH_IMAGE_STATE["recent_results"]) > 20:
+                    BATCH_IMAGE_STATE["recent_results"].pop()
+
+            time.sleep(delay_sec)
+
+        with _batch_lock:
+            if not BATCH_IMAGE_STATE["should_stop"]:
+                BATCH_IMAGE_STATE["status_message"] = f"Zakończono. Pobrano pomyślnie: {BATCH_IMAGE_STATE['success']} zdjęć."
+                BATCH_IMAGE_STATE["status_key"] = "batchDone"
+                BATCH_IMAGE_STATE["status_params"] = {"n": BATCH_IMAGE_STATE["success"]}
+            BATCH_IMAGE_STATE["is_running"] = False
+            BATCH_IMAGE_STATE["end_time"] = datetime.now().isoformat()
+    except Exception as e:
+        with _batch_lock:
+            BATCH_IMAGE_STATE["is_running"] = False
+            BATCH_IMAGE_STATE["status_message"] = f"Wystąpił błąd zadania: {e}"
+            BATCH_IMAGE_STATE["status_key"] = "batchError"
+            BATCH_IMAGE_STATE["status_params"] = {"e": str(e)}
+
+
+def get_batch_target_items(scope="all", ps_code=None, category=None, only_missing=True):
+    """
+    Zwraca zdeduplikowaną listę unikalnych komponentów do pobrania zdjęć dla danego zakresu.
+    Obsługuje zakresy: 'current_ps', 'fuses_relays', 'connectors', 'all'.
+    """
+    conn = get_db()
+    cur = conn.cursor()
+
+    items = []
+    seen = set()
+
+    eff_scope = scope or "all"
+    if ps_code and (eff_scope == "all" or eff_scope == "current_ps"):
+        eff_scope = "current_ps"
+    elif category:
+        if "BEZPIECZNIK" in category.upper() or "PRZEKAŹNIK" in category.upper():
+            eff_scope = "fuses_relays"
+        elif "ZŁĄCZE" in category.upper():
+            eff_scope = "connectors"
+
+    if eff_scope == "current_ps" and ps_code:
+        sql = """
+            SELECT DISTINCT article_number, supplier, 'Złącze' as category, description
+            FROM zuken_ps_connectors WHERE ps_code = ? AND article_number IS NOT NULL AND TRIM(article_number) != ''
+            UNION
+            SELECT DISTINCT article_number, supplier, 'Bezpiecznik' as category, description
+            FROM zuken_ps_fuses WHERE ps_code = ? AND article_number IS NOT NULL AND TRIM(article_number) != ''
+            UNION
+            SELECT DISTINCT article_number, supplier, 'Przekaźnik' as category, description
+            FROM zuken_ps_relays WHERE ps_code = ? AND article_number IS NOT NULL AND TRIM(article_number) != ''
+        """
+        cur.execute(sql, (ps_code, ps_code, ps_code))
+        raw = [dict(r) for r in cur.fetchall()]
+
+    elif eff_scope == "fuses_relays":
+        sql = """
+            SELECT DISTINCT article_number, supplier, category, description
+            FROM zuken_bom_items
+            WHERE article_number IS NOT NULL AND TRIM(article_number) != ''
+              AND (
+                  category IN ('Bezpiecznik', 'Gniazdo / Skrzynka bezpieczników', 'Przekaźnik')
+                  OR description LIKE '%Fuse%'
+                  OR description LIKE '%Relay%'
+                  OR description LIKE '%Bezpiecznik%'
+                  OR description LIKE '%Przekaźnik%'
+              )
+            UNION
+            SELECT DISTINCT article_number, supplier, 'Bezpiecznik' as category, description
+            FROM zuken_ps_fuses WHERE article_number IS NOT NULL AND TRIM(article_number) != ''
+            UNION
+            SELECT DISTINCT article_number, supplier, 'Przekaźnik' as category, description
+            FROM zuken_ps_relays WHERE article_number IS NOT NULL AND TRIM(article_number) != ''
+        """
+        cur.execute(sql)
+        raw = [dict(r) for r in cur.fetchall()]
+
+    elif eff_scope == "connectors":
+        sql = """
+            SELECT DISTINCT article_number, supplier, category, description
+            FROM zuken_bom_items
+            WHERE article_number IS NOT NULL AND TRIM(article_number) != ''
+              AND (category LIKE '%Złącze%' OR category LIKE '%Obudowa%' OR description LIKE '%Stecker%' OR description LIKE '%Connector%')
+            UNION
+            SELECT DISTINCT article_number, supplier, 'Złącze' as category, description
+            FROM zuken_ps_connectors WHERE article_number IS NOT NULL AND TRIM(article_number) != ''
+        """
+        cur.execute(sql)
+        raw = [dict(r) for r in cur.fetchall()]
+
+    else:
+        sql = """
+            SELECT DISTINCT article_number, supplier, category, description
+            FROM zuken_bom_items
+            WHERE article_number IS NOT NULL AND TRIM(article_number) != ''
+            UNION
+            SELECT DISTINCT article_number, supplier, 'Złącze' as category, description
+            FROM zuken_ps_connectors WHERE article_number IS NOT NULL AND TRIM(article_number) != ''
+            UNION
+            SELECT DISTINCT article_number, supplier, 'Bezpiecznik' as category, description
+            FROM zuken_ps_fuses WHERE article_number IS NOT NULL AND TRIM(article_number) != ''
+            UNION
+            SELECT DISTINCT article_number, supplier, 'Przekaźnik' as category, description
+            FROM zuken_ps_relays WHERE article_number IS NOT NULL AND TRIM(article_number) != ''
+        """
+        cur.execute(sql)
+        raw = [dict(r) for r in cur.fetchall()]
+
+    conn.close()
+
+    for it in raw:
+        art = (it.get("article_number") or "").strip()
+        if art and art not in seen:
+            seen.add(art)
+            if only_missing and find_local_component_image(art):
+                continue
+            items.append(it)
+
+    return items
+
+
+def start_batch_image_download(ps_code=None, category=None, scope=None, only_missing=True, delay_sec=1.0, lang="pl"):
+    """
+    Uruchamia masowe pobieranie brakujących zdjęć w osobnym wątku.
+    """
+    global BATCH_IMAGE_STATE
+    with _batch_lock:
+        if BATCH_IMAGE_STATE["is_running"]:
+            return False, zsmsg("alreadyRunning", lang)
+
+    final_items = get_batch_target_items(scope=scope or "all", ps_code=ps_code, category=category, only_missing=only_missing)
+
+    if not final_items:
+        return False, zsmsg("noItems", lang)
+
+    with _batch_lock:
+        BATCH_IMAGE_STATE["is_running"] = True
+        BATCH_IMAGE_STATE["should_stop"] = False
+        BATCH_IMAGE_STATE["total"] = len(final_items)
+        BATCH_IMAGE_STATE["processed"] = 0
+        BATCH_IMAGE_STATE["success"] = 0
+        BATCH_IMAGE_STATE["failed"] = 0
+        BATCH_IMAGE_STATE["skipped"] = 0
+        BATCH_IMAGE_STATE["current_article"] = ""
+        BATCH_IMAGE_STATE["current_supplier"] = ""
+        BATCH_IMAGE_STATE["status_message"] = f"Rozpoczynanie pobierania dla {len(final_items)} artykułów..."
+        BATCH_IMAGE_STATE["status_key"] = "batchStarting"
+        BATCH_IMAGE_STATE["status_params"] = {"n": len(final_items)}
+        BATCH_IMAGE_STATE["start_time"] = datetime.now().isoformat()
+        BATCH_IMAGE_STATE["end_time"] = None
+        BATCH_IMAGE_STATE["recent_results"] = []
+
+    t = threading.Thread(target=_batch_download_worker, args=(final_items, delay_sec), daemon=True)
+    t.start()
+
+    return True, zsmsg("started", lang, n=len(final_items))
 
 
 # ═══════════════════════════════════════════════════════════════════
 # INDEKSOWANIE SCHEMATÓW PDF Z ZUKEN E3
 # ═══════════════════════════════════════════════════════════════════
 
-def index_zuken_pdf(filepath, ps_code=None):
+def index_zuken_pdf(filepath, ps_code=None, lang="pl"):
     """
     Indeksuje wektorowy plik PDF ze schematem wyeksportowanym z Zuken E3.
     Wyciąga spisy arkuszy, numery stron oraz symbole aparatów i przewodów.
@@ -1159,9 +1962,9 @@ def index_zuken_pdf(filepath, ps_code=None):
     """
     if pypdf is None:
         return None, 0, "Biblioteka pypdf nie jest zainstalowana."
-    
+
     if not os.path.exists(filepath):
-        return None, 0, f"Plik {filepath} nie istnieje."
+        return None, 0, zsmsg("fileMissing", lang, v=filepath)
 
     filename = os.path.basename(filepath)
     file_size = os.path.getsize(filepath)
@@ -1178,7 +1981,7 @@ def index_zuken_pdf(filepath, ps_code=None):
     cached = cur.fetchone()
     if cached:
         conn.close()
-        return cached["id"], 0, f"Schemat {filename} jest już zaindeksowany (bez zmian)."
+        return cached["id"], 0, zsmsg("alreadyIndexed", lang, v=filename)
 
     # Jeśli podano lub wykryto z katalogu nadrzędnego PS code
     if not ps_code:
@@ -1195,7 +1998,7 @@ def index_zuken_pdf(filepath, ps_code=None):
         total_pages = len(reader.pages)
     except Exception as e:
         conn.close()
-        return None, 0, f"Błąd odczytu PDF {filename}: {e}"
+        return None, 0, zsmsg("pdfReadErr", lang, f=filename, e=e)
 
     # Wyciągnij strukturę zakładek
     outline_map = {}
@@ -1328,7 +2131,7 @@ def index_zuken_pdf(filepath, ps_code=None):
 
     conn.commit()
     conn.close()
-    return schematic_id, total_symbols_count, f"Zaindeksowano {total_pages} arkuszy i {total_symbols_count} symboli."
+    return schematic_id, total_symbols_count, zsmsg("indexedPdf", lang, p=total_pages, s=total_symbols_count)
 
 
 def get_pdf_schematics():
@@ -1599,7 +2402,7 @@ def detect_zuken_edition():
     return True, "Zuken E3.view (Viewer)"
 
 
-def open_in_zuken(e3s_filepath, sheet_number=None, sheet_title=None):
+def open_in_zuken(e3s_filepath, sheet_number=None, sheet_title=None, lang="pl"):
     """
     Otwiera projekt .e3s w programie Zuken E3.
     Automatycznie dostosowuje tryb do stanowiska:
@@ -1607,11 +2410,11 @@ def open_in_zuken(e3s_filepath, sheet_number=None, sheet_title=None):
     - Przeglądarka (warsztat/serwis): uruchamia w trybie Zuken E3.view z licencją viewer
     """
     if not os.path.exists(e3s_filepath):
-        return False, f"Plik projektu Zuken {e3s_filepath} nie istnieje."
+        return False, zsmsg("e3sMissing", lang, v=e3s_filepath)
 
     is_viewer, mode_label = detect_zuken_edition()
 
-    sheet_info = f"Arkusz {sheet_number}" if sheet_number else "Wskazany arkusz"
+    sheet_info = zsmsg("sheetN", lang, n=sheet_number) if sheet_number else zsmsg("sheetIndicated", lang)
     if sheet_title:
         sheet_info += f" ({sheet_title})"
 
@@ -1621,7 +2424,7 @@ def open_in_zuken(e3s_filepath, sheet_number=None, sheet_title=None):
     try:
         if hasattr(os, "startfile"):
             os.startfile(e3s_filepath)
-            return True, f"Otwarto schemat w {mode_label} [{sheet_info}]"
+            return True, zsmsg("openedInMode", lang, m=mode_label, s=sheet_info)
     except Exception:
         pass
 
@@ -1634,7 +2437,7 @@ def open_in_zuken(e3s_filepath, sheet_number=None, sheet_title=None):
             args = f'/view /plus "{e3s_filepath}"' if is_viewer else f'/plus "{e3s_filepath}"'
             ret = ctypes.windll.shell32.ShellExecuteW(None, "open", zuken_exe, args, None, 1)
             if ret > 32:
-                return True, f"Otwarto schemat w {mode_label} [{sheet_info}]"
+                return True, zsmsg("openedInMode", lang, m=mode_label, s=sheet_info)
         except Exception:
             pass
 
@@ -1643,21 +2446,21 @@ def open_in_zuken(e3s_filepath, sheet_number=None, sheet_title=None):
             flags = 0x00000008 | 0x00000200 # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
             cmd_args = [zuken_exe, "/view", "/plus", e3s_filepath] if is_viewer else [zuken_exe, "/plus", e3s_filepath]
             subprocess.Popen(cmd_args, creationflags=flags)
-            return True, f"Otwarto schemat w {mode_label} [{sheet_info}]"
+            return True, zsmsg("openedInMode", lang, m=mode_label, s=sheet_info)
         except Exception as e:
-            return False, f"Błąd uruchamiania {mode_label}: {e}"
+            return False, zsmsg("launchErr", lang, m=mode_label, e=e)
 
-    return False, f"Nie udało się uruchomić programu {mode_label}."
+    return False, zsmsg("launchFail", lang, m=mode_label)
 
 
-def open_in_sumatra(pdf_filepath, page_number=1):
+def open_in_sumatra(pdf_filepath, page_number=1, lang="pl"):
     """Otwiera plik PDF w programie SumatraPDF na określonej stronie."""
     sumatra_exe = find_sumatra_executable()
     if not sumatra_exe or not os.path.exists(sumatra_exe):
-        return False, "Nie odnaleziono programu SumatraPDF."
+        return False, zsmsg("noSumatra", lang)
 
     if not os.path.exists(pdf_filepath):
-        return False, f"Plik {pdf_filepath} nie istnieje."
+        return False, zsmsg("fileMissing", lang, v=pdf_filepath)
 
     page_arg = int(page_number) if page_number and int(page_number) > 0 else 1
 
@@ -1666,7 +2469,7 @@ def open_in_sumatra(pdf_filepath, page_number=1):
         args = f'-reuse-instance -page {page_arg} "{pdf_filepath}"'
         ret = ctypes.windll.shell32.ShellExecuteW(None, "open", sumatra_exe, args, None, 1)
         if ret > 32:
-            return True, f"Otwarto w SumatraPDF na stronie {page_arg}"
+            return True, zsmsg("openedSumatra", lang, n=page_arg)
     except Exception:
         pass
 
@@ -1674,12 +2477,12 @@ def open_in_sumatra(pdf_filepath, page_number=1):
         import subprocess
         flags = 0x00000008 | 0x00000200
         subprocess.Popen([sumatra_exe, "-reuse-instance", "-page", str(page_arg), pdf_filepath], creationflags=flags)
-        return True, f"Otwarto w SumatraPDF na stronie {page_arg}"
+        return True, zsmsg("openedSumatra", lang, n=page_arg)
     except Exception as e:
-        return False, f"Błąd uruchamiania SumatraPDF: {e}"
+        return False, zsmsg("sumatraErr", lang, e=e)
 
 
-def open_schematic_in_system(filepath, page_number=1, sheet_number=None, sheet_title=None):
+def open_schematic_in_system(filepath, page_number=1, sheet_number=None, sheet_title=None, lang="pl"):
     """
     Inteligentne otwieranie schematu z zachowaniem priorytetów:
     1. Zuken E3.series (jeśli program jest zainstalowany i istnieje plik .e3s)
@@ -1701,21 +2504,21 @@ def open_schematic_in_system(filepath, page_number=1, sheet_number=None, sheet_t
             except Exception:
                 pass
         else:
-            return False, f"Plik {filepath} nie istnieje."
+            return False, zsmsg("fileMissing", lang, v=filepath)
 
     # PRIORYTET 1: Zuken E3.series + plik .e3s
     zuken_exe = find_zuken_executable()
     if zuken_exe:
         e3s_file = find_e3s_counterpart(filepath)
         if e3s_file and os.path.exists(e3s_file):
-            ok, msg = open_in_zuken(e3s_file, sheet_number=sheet_number, sheet_title=sheet_title)
+            ok, msg = open_in_zuken(e3s_file, sheet_number=sheet_number, sheet_title=sheet_title, lang=lang)
             if ok:
                 return True, msg
 
     # PRIORYTET 2: SumatraPDF na wskazanym arkuszu
     sumatra_exe = find_sumatra_executable()
     if sumatra_exe:
-        ok, msg = open_in_sumatra(filepath, page_number=page_number)
+        ok, msg = open_in_sumatra(filepath, page_number=page_number, lang=lang)
         if ok:
             return True, msg
 
@@ -1727,7 +2530,7 @@ def open_schematic_in_system(filepath, page_number=1, sheet_number=None, sheet_t
             args = f'/A "page={page_number}" "{filepath}"' if page_number and int(page_number) > 0 else f'"{filepath}"'
             ret = ctypes.windll.shell32.ShellExecuteW(None, "open", acro, args, None, 1)
             if ret > 32:
-                return True, f"Otwarto w Adobe Acrobat na stronie {page_number}"
+                return True, zsmsg("openedAcrobat", lang, n=page_number)
         except Exception:
             pass
 
@@ -1738,7 +2541,7 @@ def open_schematic_in_system(filepath, page_number=1, sheet_number=None, sheet_t
                 subprocess.Popen([acro, "/A", f"page={page_number}", filepath], creationflags=flags)
             else:
                 subprocess.Popen([acro, filepath], creationflags=flags)
-            return True, f"Otwarto w Adobe Acrobat na stronie {page_number}"
+            return True, zsmsg("openedAcrobat", lang, n=page_number)
         except Exception:
             pass
 
@@ -1746,16 +2549,16 @@ def open_schematic_in_system(filepath, page_number=1, sheet_number=None, sheet_t
     try:
         if hasattr(os, "startfile"):
             os.startfile(filepath)
-            return True, "Otwarto w domyślnej aplikacji systemu Windows"
+            return True, zsmsg("openedDefault", lang)
         else:
             import subprocess
             subprocess.Popen(["xdg-open", filepath])
-            return True, "Otwarto w domyślnej przeglądarce dokumentów"
+            return True, zsmsg("openedBrowser", lang)
     except Exception as e:
         return False, str(e)
 
 
-def open_pdf_in_system(filepath, page_number=1):
+def open_pdf_in_system(filepath, page_number=1, lang="pl"):
     """
     Otwiera plik PDF w natywnej aplikacji Windows (SumatraPDF na wskazanym arkuszu,
     Adobe Acrobat lub programie domyślnym).
@@ -1763,7 +2566,7 @@ def open_pdf_in_system(filepath, page_number=1):
     # 1. SumatraPDF
     sumatra_exe = find_sumatra_executable()
     if sumatra_exe:
-        ok, msg = open_in_sumatra(filepath, page_number=page_number)
+        ok, msg = open_in_sumatra(filepath, page_number=page_number, lang=lang)
         if ok:
             return True, msg
 
@@ -1775,7 +2578,7 @@ def open_pdf_in_system(filepath, page_number=1):
             args = f'/A "page={page_number}" "{filepath}"' if page_number and int(page_number) > 0 else f'"{filepath}"'
             ret = ctypes.windll.shell32.ShellExecuteW(None, "open", acro, args, None, 1)
             if ret > 32:
-                return True, f"Otwarto w Adobe Acrobat na arkuszu {page_number}"
+                return True, zsmsg("openedAcrobat", lang, n=page_number)
         except Exception:
             pass
         try:
@@ -1785,7 +2588,7 @@ def open_pdf_in_system(filepath, page_number=1):
                 subprocess.Popen([acro, "/A", f"page={page_number}", filepath], creationflags=flags)
             else:
                 subprocess.Popen([acro, filepath], creationflags=flags)
-            return True, f"Otwarto w Adobe Acrobat na arkuszu {page_number}"
+            return True, zsmsg("openedAcrobat", lang, n=page_number)
         except Exception:
             pass
 
@@ -1793,11 +2596,11 @@ def open_pdf_in_system(filepath, page_number=1):
     try:
         if hasattr(os, "startfile"):
             os.startfile(filepath)
-            return True, "Otwarto w domyślnej aplikacji PDF systemu Windows"
+            return True, zsmsg("openedDefault", lang)
         else:
             import subprocess
             subprocess.Popen(["xdg-open", filepath])
-            return True, "Otwarto w domyślnej przeglądarce PDF"
+            return True, zsmsg("openedBrowser", lang)
     except Exception as e:
         return False, str(e)
 
@@ -1992,7 +2795,7 @@ def extract_query_phrases_and_tokens(query, extra_tokens=None):
     return compound_phrases, specific_tokens, generic_tokens, has_specific
 
 
-def find_pdf_sheets_for_query(query, ps_code=None, limit=25, extra_tokens=None, explicit_sheet_numbers=None, circuit_devices=None, circuit_signals=None, primary_symbols=None, category=None):
+def find_pdf_sheets_for_query(query, ps_code=None, limit=25, extra_tokens=None, explicit_sheet_numbers=None, circuit_devices=None, circuit_signals=None, primary_symbols=None, category=None, lang="pl"):
     """
     Przeszukuje zaindeksowane arkusze PDF z inteligentnym scoringiem relewancji:
     - Pełnotekstowe przeszukiwanie treści arkuszy PDF (raw_text) dla precyzyjnych fraz (np. '12V SOCKET 3', 'MARKER LIGHT').
@@ -2130,10 +2933,10 @@ def find_pdf_sheets_for_query(query, ps_code=None, limit=25, extra_tokens=None, 
         for cp in compound_phrases:
             if cp in title_upper:
                 score += 350 if not is_overview else 100
-                reasons.append(f"Tytuł: {sh['sheet_title']}")
+                reasons.append(zsmsg("rTitle", lang, v=sh["sheet_title"]))
             elif cp in raw_upper:
                 score += 120 if not is_overview else 40
-                reasons.append(f"W treści arkusza: {cp}")
+                reasons.append(zsmsg("rInContent", lang, v=cp))
 
         # 3. Zgodność z kategorią usterki lub głównym układem problemu
         is_primary_system_match = False
@@ -2152,7 +2955,7 @@ def find_pdf_sheets_for_query(query, ps_code=None, limit=25, extra_tokens=None, 
 
         if is_primary_system_match:
             score += 2800 if not is_overview else 100
-            reasons.append(f"Główny układ usterki: {sh['sheet_title']}")
+            reasons.append(zsmsg("rMainCircuit", lang, v=sh["sheet_title"]))
 
         # 3b. Dedykowane dopasowanie obwodów audio i głośników (rozróżnienie Radio vs Interkom vs Carnation)
         is_radio_intent = any(k in query_upper for k in ["RADIO", "RADIA", "RADIOW", "LEWY", "PRAWY", "LEFT", "RIGHT", "ENTERTAINMENT", "ENTERTAIMENT", "BALANS"])
@@ -2163,44 +2966,44 @@ def find_pdf_sheets_for_query(query, ps_code=None, limit=25, extra_tokens=None, 
             if is_radio_intent:
                 if 'ENTERTAIMENT RADIO' in title_upper or str(sh.get('sheet_number')) == '9':
                     score += 6500
-                    reasons.append("Dedykowany arkusz nagłośnienia radia samochodowego: ENTERTAIMENT RADIO (Arkusz 9)")
+                    reasons.append(zsmsg("rRadioSheet", lang))
                 elif any(k in raw_upper for k in ['SPEAKER LEFT', 'SPEAKER RIGHT', 'X239', 'X240', '-304', '-305']):
                     score += 4200
-                    reasons.append("Arkusz zawiera głośniki radia (-304/-305) lub złącza X239/X240")
+                    reasons.append(zsmsg("rRadioSpeakers", lang))
                 elif 'CAB' in title_upper and is_overview and any(k in raw_upper for k in ['QC5', 'QC6', 'QC7', 'QC8', 'X305']):
                     score += 2500
-                    reasons.append("Złącza OEM radia w kabinie (-QC5..-QC8 / X305)")
+                    reasons.append(zsmsg("rRadioOem", lang))
             elif is_intercom_intent:
                 if 'INTERCOM' in title_upper or str(sh.get('sheet_number')) == '27':
                     score += 6500
-                    reasons.append("Dedykowany arkusz instalacji interkomu: INTERCOM (Arkusz 27)")
+                    reasons.append(zsmsg("rIntercomSheet", lang))
                 elif any(k in raw_upper for k in ['SPEAKER INTERCOM', 'X45', 'X49', '-A101', 'LS PR', 'LS FH']):
                     score += 4200
-                    reasons.append("Arkusz zawiera głośniki interkomu (X45/X49) lub centralę -A101")
+                    reasons.append(zsmsg("rIntercomDev", lang))
             elif is_carnation_intent:
                 if 'IONV MAP LIGHT SPEAKERS' in title_upper or str(sh.get('sheet_number')) == '13':
                     score += 6500
-                    reasons.append("Dedykowany arkusz głośnika komunikatów Carnation w kabinie: IONV MAP LIGHT SPEAKERS (Arkusz 13 / X244)")
+                    reasons.append(zsmsg("rCarnationCab", lang))
                 elif 'PIR | PANIC' in title_upper or str(sh.get('sheet_number')) == '30':
                     score += 6000
-                    reasons.append("Dedykowany arkusz głośnika komunikatów Carnation w przedziale pacjenta: PIR | PANIC (Arkusz 30 / X258)")
+                    reasons.append(zsmsg("rCarnationBox", lang))
                 elif any(k in raw_upper for k in ['SPEAKER CARNATION', '+MID-X244', '+WAA-X258', 'LT-CAB', 'LT SALOON']):
                     score += 4500
-                    reasons.append("Arkusz zawiera złącze głośnika Carnation (X244 w kabinie lub X258 w przedziale)")
+                    reasons.append(zsmsg("rCarnationConn", lang))
             else:
                 # Ogólne zapytanie o głośniki (bez sprecyzowania systemu)
                 if any(k in title_upper for k in ['SPEAKER', 'SPEAKERS', 'IONV MAP LIGHT SPEAKERS', 'INTERCOM', 'ENTERTAIMENT RADIO']):
                     score += 4000
-                    reasons.append(f"Arkusz obwodów audio: {sh['sheet_title']}")
+                    reasons.append(zsmsg("rAudioSheet", lang, v=sh["sheet_title"]))
                 elif any(k in raw_upper for k in ['SPEAKER CARNATION', 'SPEAKER INTERCOM', 'SPEAKER LEFT', 'SPEAKER RIGHT']):
                     score += 3000
-                    reasons.append("Arkusz zawiera instalacje głośnikowe pojazdu")
+                    reasons.append(zsmsg("rAudioInst", lang))
 
         # 4. Dopasowanie tematu/tytułu arkusza (np. 'OUTLETS', 'HVAC', 'MARKER', 'SPEAKERS')
         for st in specific_tokens:
             if len(st) >= 3 and st in title_upper:
                 score += 200 if not is_overview else 50
-                reasons.append(f"Temat arkusza: {sh['sheet_title']}")
+                reasons.append(zsmsg("rSheetTopic", lang, v=sh["sheet_title"]))
                 break
 
         # 5. Aparaty i złącza z obwodu lub zapytania
@@ -2239,19 +3042,19 @@ def find_pdf_sheets_for_query(query, ps_code=None, limit=25, extra_tokens=None, 
                 if root_code not in matched_primary_devices:
                     score += 500 if not is_overview else 150
                     matched_primary_devices.add(root_code)
-                    reasons.append(f"Kluczowe złącze wariantu/usterki: {sn}")
+                    reasons.append(zsmsg("rKeyConn", lang, v=sn))
                 matched_circuit_devs.add(root_code)
             elif is_circuit:
                 score += 80 if not is_overview else 30
-                reasons.append(f"Złącze obwodu: {sn}")
+                reasons.append(zsmsg("rCircuitConn", lang, v=sn))
                 matched_circuit_devs.add(root_code)
             elif sc in specific_tokens or sn.upper() in specific_tokens:
                 score += 40 if not is_overview else 15
-                reasons.append(f"Aparat: {sn}")
+                reasons.append(zsmsg("rDevice", lang, v=sn))
                 matched_circuit_devs.add(root_code)
             elif not has_specific and sc in generic_tokens:
                 score += 10
-                reasons.append(f"Sygnał: {sn}")
+                reasons.append(zsmsg("rSignal", lang, v=sn))
 
         # Trafienie bezpośrednie (arkusz zawiera kluczowe złącze ORAZ właściwy temat/kategorię układu)
         has_topic_match = (
@@ -2265,32 +3068,32 @@ def find_pdf_sheets_for_query(query, ps_code=None, limit=25, extra_tokens=None, 
             # Schemat ideowy obwodu funkcjonalnego
             if len(matched_primary_devices) > 0:
                 score += 4000
-                reasons.append("Schemat ideowy obwodu funkcjonalnego")
+                reasons.append(zsmsg("rSchematic", lang))
 
                 if has_topic_match:
                     score += 2000
-                    reasons.append("Trafienie bezpośrednie (kluczowe złącze + właściwy obwód roboczy)")
+                    reasons.append(zsmsg("rDirectHit", lang))
 
             # Jeśli arkusz funkcjonalny zawiera WIĘCEJ NIŻ JEDNO UNIKALNE kluczowe złącze
             if len(matched_primary_devices) >= 2:
                 score += 2500 * (len(matched_primary_devices) - 1)
-                reasons.append(f"Arkusz łączący kluczowe złącza ({len(matched_primary_devices)} złączy: {', '.join(sorted(matched_primary_devices))})")
+                reasons.append(zsmsg("rJoinSheet", lang, n=len(matched_primary_devices), v=", ".join(sorted(matched_primary_devices))))
 
             # Premia synergii wielopunktowej (tylko gdy arkusz ma powiązanie tematyczne)
             if len(matched_circuit_devs) >= 2 and has_topic_match:
                 score += 120 * min(len(matched_circuit_devs) - 1, 10)
-                reasons.append(f"Wielopunktowe złącza obwodu ({len(matched_circuit_devs)} aparatów)")
+                reasons.append(zsmsg("rMultiConn", lang, n=len(matched_circuit_devs)))
 
         else:
             # Arkusze zestawienia / topologii wiązki (np. =BOX, =CAB)
             # Zawierają złącza z natury spisu wiązki, więc otrzymują umiarkowaną punktację i NIE dostają bonusu synergii
             if len(matched_primary_devices) > 0:
                 score += 300
-                reasons.append(f"Topologia wiązki zawiera złącze: {', '.join(sorted(matched_primary_devices))}")
+                reasons.append(zsmsg("rTopology", lang, v=", ".join(sorted(matched_primary_devices))))
 
             if len(matched_primary_devices) >= 2:
                 score += 400
-                reasons.append(f"Tabela złączy wiązki ({len(matched_primary_devices)} złączy)")
+                reasons.append(zsmsg("rConnTable", lang, n=len(matched_primary_devices)))
 
             if len(matched_circuit_devs) >= 2:
                 score += min(20 * len(matched_circuit_devs), 150)
@@ -2340,11 +3143,11 @@ def find_pdf_sheets_for_query(query, ps_code=None, limit=25, extra_tokens=None, 
     return scored_results[:limit]
 
 
-def sync_all_knowledge_base():
+def sync_all_knowledge_base(lang="pl"):
     """Skanuje katalog Baza wiedzy (wraz z podfolderami) i importuje pliki XLSX oraz PDF."""
     init_zuken_tables()
     if not os.path.exists(BAZA_WIEDZY_DIR):
-        return {"status": "error", "message": f"Katalog {BAZA_WIEDZY_DIR} nie istnieje."}
+        return {"status": "error", "message": zsmsg("kbDirMissing", lang, v=BAZA_WIEDZY_DIR)}
 
     results = []
     for root, dirs, files in os.walk(BAZA_WIEDZY_DIR):
@@ -2356,13 +3159,13 @@ def sync_all_knowledge_base():
             if f.endswith(".xlsx") and not f.startswith("~$"):
                 f_lower = f.lower()
                 if f_lower.startswith("bom") or "bom" in f_lower:
-                    items_cnt, devs_cnt, msg = import_zuken_bom_xlsx(full_path, ps_code=ps_code_hint)
+                    items_cnt, devs_cnt, msg = import_zuken_bom_xlsx(full_path, ps_code=ps_code_hint, lang=lang)
                     results.append({"type": "bom_xlsx", "file": f, "articles": items_cnt, "devices": devs_cnt, "message": msg})
                 else:
-                    count, msg = import_zuken_xlsx(full_path)
+                    count, msg = import_zuken_xlsx(full_path, lang=lang)
                     results.append({"type": "xlsx", "file": f, "connections": count, "message": msg})
             elif f.endswith(".pdf") and not f.startswith("~$"):
-                sch_id, sym_count, msg = index_zuken_pdf(full_path, ps_code=ps_code_hint)
+                sch_id, sym_count, msg = index_zuken_pdf(full_path, ps_code=ps_code_hint, lang=lang)
                 results.append({"type": "pdf", "file": f, "schematic_id": sch_id, "symbols": sym_count, "message": msg})
 
     return {"status": "success", "results": results}
@@ -2381,7 +3184,7 @@ def get_glossary_dict():
     return {r["prefix"]: dict(r) for r in rows}
 
 
-def explain_device_code(code, glossary_map=None):
+def explain_device_code(code, glossary_map=None, lang="pl"):
     """
     Rozbija kod aparatu/złącza (np. '=BOX+TWL-X346') na czytelny opis.
     Zwraca słownik z opisem systemu, lokalizacji i typu aparatu.
@@ -2391,16 +3194,17 @@ def explain_device_code(code, glossary_map=None):
     if glossary_map is None:
         glossary_map = get_glossary_dict()
 
+    desc_key = "desc_pl" if lang == "pl" else "desc_en"
     parts = []
     # Sprawdź system (=)
     m_sys = re.search(r"(=[A-Za-z0-9_]+)", code)
     if m_sys and m_sys.group(1) in glossary_map:
-        parts.append(glossary_map[m_sys.group(1)]["desc_pl"])
+        parts.append(glossary_map[m_sys.group(1)][desc_key])
 
     # Sprawdź lokalizację (+)
     m_loc = re.search(r"(\+[A-Za-z0-9_]+)", code)
     if m_loc and m_loc.group(1) in glossary_map:
-        parts.append(glossary_map[m_loc.group(1)]["desc_pl"])
+        parts.append(glossary_map[m_loc.group(1)][desc_key])
 
     # Sprawdź typ aparatu (-)
     m_dev = re.search(r"(-[A-Za-z]+)", code)
@@ -2410,7 +3214,7 @@ def explain_device_code(code, glossary_map=None):
         found_desc = None
         for k in sorted(glossary_map.keys(), key=lambda x: -len(x)):
             if dev_prefix.startswith(k):
-                found_desc = glossary_map[k]["desc_pl"]
+                found_desc = glossary_map[k][desc_key]
                 break
         if found_desc:
             parts.append(found_desc)
@@ -2516,7 +3320,7 @@ def parse_carnation_html(file_path):
         return None
 
 
-def get_carnation_diagnostic_info(ps_code=None, query_text=""):
+def get_carnation_diagnostic_info(ps_code=None, query_text="", lang="pl"):
     """
     Odnajduje plik konfiguracyjny Carnation Genesis w Bazie wiedzy
     i wyciąga z niego kontekstowe informacje dla podanego zapytania diagnostycznego.
@@ -2809,9 +3613,9 @@ def get_carnation_diagnostic_info(ps_code=None, query_text=""):
     is_battery_query = any(k in q_upper for k in ["AKUMULATOR", "BATERIA", "BATTERY", "NAPIĘCIE", "NAPIECIE", "LOAD SHED", "ODCIĘCIE"])
     if is_battery_query:
         result["battery_thresholds"] = [
-            {"name": "Aux. Bat (Akumulator medyczny)", "cutoff": "12.1V (ostrzeżenie) / 12.2V (powrót)"},
-            {"name": "Chass. Batt (Akumulator podwozia)", "cutoff": "12.0V (ostrzeżenie) / 12.2V (powrót)"},
-            {"name": "Comms. Bat (Akumulator łączności)", "cutoff": "12.1V (ostrzeżenie) / 12.2V (powrót)"}
+            {"name": zsmsg("batAux", lang), "cutoff": zsmsg("cut121", lang)},
+            {"name": zsmsg("batChass", lang), "cutoff": zsmsg("cut120", lang)},
+            {"name": zsmsg("batComms", lang), "cutoff": zsmsg("cut121", lang)}
         ]
 
     # ═══════════════════════════════════════════════════════════════
@@ -2819,31 +3623,27 @@ def get_carnation_diagnostic_info(ps_code=None, query_text=""):
     # ═══════════════════════════════════════════════════════════════
     summary_parts = []
     if is_carnation_speaker and not any(k in q_upper for k in ["INTERCOM", "INTERKOM", "RADIO", "RADIA"]):
-        summary_parts.append(
-            "Głośniki komunikatów Carnation w kabinie (=CAB+MID-X244) oraz w przedziale medycznym (=BOX+WAA-X258) "
-            "odtwarzają komunikaty głosowe i ostrzeżenia sterownika Carnation Genesis EVPSS (m.in. niezapięte pasy, otwarte drzwi, stan zasilania)."
-        )
+        summary_parts.append(zsmsg("carnSpk", lang))
 
     if result["relevant_outputs"]:
         outs_desc = ", ".join(f"{o['code']} ({o['function']}, {o['max_current']})" for o in result["relevant_outputs"][:4])
-        summary_parts.append(f"Zidentyfikowano wyjścia modułów OPM Carnation: {outs_desc}.")
+        summary_parts.append(zsmsg("carnOuts", lang, v=outs_desc))
 
     if result["relevant_inputs"]:
         ins_desc = ", ".join(f"{i['code']} ({i['function']})" for i in result["relevant_inputs"][:4])
-        summary_parts.append(f"Sygnały wejściowe z pojazdu bazowego: {ins_desc}.")
+        summary_parts.append(zsmsg("carnIns", lang, v=ins_desc))
 
     if result["controlling_rules"]:
         rules_desc = ", ".join(r["rule"].split(":")[0] for r in result["controlling_rules"][:3])
-        summary_parts.append(f"Układ sterowany automatyką EVPSS: reguły {rules_desc}.")
+        summary_parts.append(zsmsg("carnRules", lang, v=rules_desc))
 
     if is_battery_query:
-        summary_parts.append("Aktywny system 3-stopniowego odcinania odbiorników (Load Shedding 1/2/3 po spadku napięcia Aux < 12.1V).")
+        summary_parts.append(zsmsg("carnLoadShed", lang))
 
     if not summary_parts:
         summary_parts.append(
-            f"Zarejestrowano pełną konfigurację sterownika Carnation Genesis EVPSS (v{parsed.get('version', '1.81a')}): "
-            f"3 moduły wyjściowe ({len(parsed['outputs'])} wyjść O1.1-O3.16), {len(parsed['inputs'])} wejść cyfrowych auta bazowego, "
-            f"{len(parsed['rules'])} reguł automatyki i {len(parsed['notifications'])} komunikatów."
+            zsmsg("carnFull", lang, v=parsed.get("version", "1.81a"), o=len(parsed["outputs"]),
+                  i=len(parsed["inputs"]), r=len(parsed["rules"]), n=len(parsed["notifications"]))
         )
 
     result["diagnostic_summary"] = " ".join(summary_parts)
@@ -2886,7 +3686,7 @@ def find_matching_projects(ps_code=None, client=None):
     return matched if matched else all_projs
 
 
-def format_wire_length(val):
+def format_wire_length(val, lang="pl"):
     """
     Formatuje długość przewodu w mm do czytelnego formatu (m i mm/cm)
     wraz z podpowiedzią lokalizacyjną (np. krótka zworka vs wiązka wzdłużna pojazdu).
@@ -2901,20 +3701,20 @@ def format_wire_length(val):
         if num >= 1000:
             meters = num / 1000.0
             mm_int = int(round(num))
-            hint = "wiązka długa / wzdłużna" if meters >= 3.0 else "wiązka średnia"
+            hint = zsmsg("wireLong", lang) if meters >= 3.0 else zsmsg("wireMid", lang)
             return f"{meters:.2f} m ({mm_int} mm) • {hint}"
         elif num >= 100:
             cm = num / 10.0
             mm_int = int(round(num))
-            return f"{cm:.0f} cm ({mm_int} mm) • odcinek lokalny"
+            return f"{cm:.0f} cm ({mm_int} mm) • " + zsmsg("wireLocal", lang)
         else:
             mm_int = int(round(num))
-            return f"{mm_int} mm • krótka zworka / mostek"
+            return f"{mm_int} mm • " + zsmsg("wireShort", lang)
     except Exception:
         return str(val)
 
 
-def diagnose_defect(element="", typ="", opisProblem="", ps_code=None, client=None, vin=None, record_id=None, solution_id=None):
+def diagnose_defect(element="", typ="", opisProblem="", ps_code=None, client=None, vin=None, record_id=None, solution_id=None, lang="pl"):
     """
     Główna funkcja diagnostyczna:
     - Analizuje opis usterki oraz powiązane warianty naprawy (solutions),
@@ -2938,7 +3738,7 @@ def diagnose_defect(element="", typ="", opisProblem="", ps_code=None, client=Non
 
     if record_id:
         cur.execute("""
-            SELECT id, record_id, numer, tytul, opis, created_by, created, tytul_en, opis_en
+            SELECT id, record_id, numer, tytul, opis, created_by, created, tytul_en, opis_en, tytul_de, opis_de
             FROM solutions
             WHERE record_id = ?
             ORDER BY numer ASC;
@@ -2967,7 +3767,7 @@ def diagnose_defect(element="", typ="", opisProblem="", ps_code=None, client=Non
     candidate_projects = find_matching_projects(ps_code, client)
     if not candidate_projects:
         # Uruchom synchronizację jeśli pusto
-        sync_all_knowledge_base()
+        sync_all_knowledge_base(lang=lang)
         candidate_projects = find_matching_projects(ps_code, client)
 
     # Ekstrakcja słów kluczowych do zapytań (z uwzględnieniem wariantu)
@@ -3294,14 +4094,14 @@ def diagnose_defect(element="", typ="", opisProblem="", ps_code=None, client=Non
         if any(k in search_text.upper() for k in ["DRZWI", "DOOR", "DPR", "DPL", "PRZESUW", "KRAŃCÓW", "KRANCOW"]):
             revision_notes.append({
                 "type": "warning",
-                "title": "Zmiana wiązki w trakcie serii (Poprawka drzwi)",
-                "text": f"W projekcie {p_new['project_name']} wprowadzono rewizję instalacji drzwi ({p_new['revision_name']}). Nowe złącza wiązki to m.in. =BOX+DPR-X121. Upewnij się, który numer seryjny/datę produkcji ma sprawdzany ambulans."
+                "title": zsmsg("revWarnTitle", lang),
+                "text": zsmsg("revWarnText", lang, p=p_new["project_name"], r=p_new["revision_name"])
             })
         else:
             revision_notes.append({
                 "type": "info",
-                "title": "Dostępne rewizje wiązki dla tego projektu",
-                "text": f"W bazie zarejestrowano wersję bazową ({p_base['revision_name']}) oraz nowszą rewizję ({p_new['revision_name']})."
+                "title": zsmsg("revInfoTitle", lang),
+                "text": zsmsg("revInfoText", lang, b=p_base["revision_name"], n=p_new["revision_name"])
             })
 
     # ═══════════════════════════════════════════════════════════════
@@ -3325,7 +4125,8 @@ def diagnose_defect(element="", typ="", opisProblem="", ps_code=None, client=Non
         circuit_devices=list(all_circuit_devices),
         circuit_signals=list(candidate_circuit_signals),
         primary_symbols=list(primary_key_symbols),
-        category=typ
+        category=typ,
+        lang=lang
     )
 
     # ═══════════════════════════════════════════════════════════════
@@ -3336,12 +4137,12 @@ def diagnose_defect(element="", typ="", opisProblem="", ps_code=None, client=Non
     involved_devices = set()
 
     for c in matched_connections[:25]:
-        sig = c["signal"] or "ZASILANIE / SYGNAŁ BEZ NAZWY"
+        sig = c["signal"] or zsmsg("sigUnnamed", lang)
         if sig not in circuits_grouped:
             circuits_grouped[sig] = []
 
-        from_desc = explain_device_code(c["from_device"], glossary_map)
-        to_desc = explain_device_code(c["to_device"], glossary_map)
+        from_desc = explain_device_code(c["from_device"], glossary_map, lang=lang)
+        to_desc = explain_device_code(c["to_device"], glossary_map, lang=lang)
 
         # Znajdź arkusze w aktywnym schemacie PDF powiązane z tym połączeniem
         link_sheets = []
@@ -3356,7 +4157,7 @@ def diagnose_defect(element="", typ="", opisProblem="", ps_code=None, client=Non
                 if m_dev:
                     item_tokens.append(m_dev.group(1))
                     item_tokens.append(m_dev.group(1).lstrip("-"))
-        if sig and sig != "ZASILANIE / SYGNAŁ BEZ NAZWY":
+        if sig and sig != zsmsg("sigUnnamed", lang):
             item_tokens.append(sig)
         if c.get("wire_number"):
             item_tokens.append(c["wire_number"])
@@ -3403,7 +4204,7 @@ def diagnose_defect(element="", typ="", opisProblem="", ps_code=None, client=Non
             "cross_section": c["cross_section"],
             "wire_number": c["wire_number"],
             "length": c.get("length", ""),
-            "length_formatted": format_wire_length(c.get("length", "")),
+            "length_formatted": format_wire_length(c.get("length", ""), lang=lang),
             "project_rev": c["revision_name"],
             "sheets": link_sheets
         })
@@ -3440,39 +4241,39 @@ def diagnose_defect(element="", typ="", opisProblem="", ps_code=None, client=Non
         if clean_vs:
             bom_dev_codes.add(clean_vs)
 
-    bom_components = find_bom_components_for_devices(list(bom_dev_codes), ps_code=ps_code)
+    bom_components = find_bom_components_for_devices(list(bom_dev_codes), ps_code=ps_code, lang=lang)
 
     # Informacje logiczne z kontrolera Carnation Genesis EVPSS (jeśli dostępne)
-    carnation_logic = get_carnation_diagnostic_info(ps_code=ps_code, query_text=search_text)
+    carnation_logic = get_carnation_diagnostic_info(ps_code=ps_code, query_text=search_text, lang=lang)
 
     # Podsumowanie i wygenerowanie zaleceń krok po kroku
     recommendations = []
     if carnation_logic and carnation_logic.get("diagnostic_summary"):
-        recommendations.append(f"🧠 Logika sterownika Carnation Genesis (EVPSS): {carnation_logic['diagnostic_summary']}")
+        recommendations.append(zsmsg("carnationRec", lang, v=carnation_logic["diagnostic_summary"]))
 
     if focused_solution:
-        recommendations.append(f"Ukierunkowano na Wariant {focused_solution.get('numer', '')}: {focused_solution.get('tytul', '')}. Sprawdź dedykowane arkusze schematu i złącza poniżej.")
+        recommendations.append(zsmsg("recFocusVariant", lang, n=focused_solution.get("numer", ""), t=focused_solution.get("tytul", "")))
     elif current_record_solutions:
         top_sol = current_record_solutions[0]
         sol_hint = f" ({top_sol.get('tytul')})" if top_sol.get("tytul") else ""
-        recommendations.append(f"Uwzględniono {len(current_record_solutions)} warianty naprawy dla tej usterki{sol_hint}. Poniżej rekomendowane arkusze powiązanych obwodów.")
+        recommendations.append(zsmsg("recVariants", lang, n=len(current_record_solutions), h=sol_hint))
     elif history_solutions:
         top_sol = history_solutions[0]
         sol_hint = f" ({top_sol.get('tytul')})" if top_sol.get("tytul") else ""
-        recommendations.append(f"Znaleziono w bazie wiedzy {len(history_solutions)} sprawdzone warianty naprawy dla tej usterki{sol_hint}. Sprawdź szczegółowy opis i dołączone arkusze.")
+        recommendations.append(zsmsg("recHistory", lang, n=len(history_solutions), h=sol_hint))
 
     if circuits_grouped:
-        recommendations.append("Sprawdź obecność napięcia zasilania i masy na punktach początkowych i końcowych zidentyfikowanego obwodu.")
-        recommendations.append("Sprawdź ciągłość przewodów pomiędzy złączami pośrednimi (zwróć uwagę na kolory i numery żył).")
-        recommendations.append("Upewnij się, że wszystkie wtyczki wiązki są poprawnie zatrzaśnięte (brak wysuniętych pinów).")
+        recommendations.append(zsmsg("recCheckPower", lang))
+        recommendations.append(zsmsg("recCheckContinuity", lang))
+        recommendations.append(zsmsg("recCheckPlugs", lang))
         if bom_components:
-            recommendations.append(f"Zidentyfikowano {len(bom_components)} komponentów i złączek w BOM dla tego obwodu. Sprawdź numery katalogowe, zdjęcia oraz karty produktów dostawców poniżej.")
+            recommendations.append(zsmsg("recBom", lang, n=len(bom_components)))
         if pdf_sheet_matches:
-            recommendations.append(f"Odnaleziono {len(pdf_sheet_matches)} arkuszy w schemacie PDF powiązanych z zapytaniem. Możesz otworzyć je bezpośrednio poniżej.")
+            recommendations.append(zsmsg("recPdfQ", lang, n=len(pdf_sheet_matches)))
     elif pdf_sheet_matches:
-        recommendations.append(f"Odnaleziono {len(pdf_sheet_matches)} arkuszy w schemacie PDF odpowiadających szukanemu aparatowi/przewodowi. Zobacz szczegóły w sekcji lokalizacji arkuszy.")
+        recommendations.append(zsmsg("recPdfDev", lang, n=len(pdf_sheet_matches)))
     else:
-        recommendations.append("Brak bezpośredniego dopasowania w schemacie Zuken dla tego hasła. Sprawdź oznaczenie złącza lub bezpiecznika bezpośrednio na schemacie PDF.")
+        recommendations.append(zsmsg("recNoMatch", lang))
 
     return {
         "status": "success",
@@ -3509,7 +4310,7 @@ def _natural_sort_key(s):
     return (1, 0, p.lower())
 
 
-def get_available_ps_projects():
+def get_available_ps_projects(lang="pl"):
     """
     Zwraca listę projektów PS wykrytych w katalogu Baza wiedzy oraz w bazie danych SQLite.
     Dla każdego projektu zwraca status dostępnych plików (BOM, Connection, PDF, E3S)
@@ -3588,8 +4389,8 @@ def get_available_ps_projects():
 
         result.append({
             "ps_code": ps,
-            "project_name": summ_info.get("project_name") or db_info.get("project_name") or f"Projekt {ps}",
-            "client": summ_info.get("client") or db_info.get("client") or ("EOE Ambulance" if "EOE" in ps or ps == "PS011871" else "Pojazd specjalny"),
+            "project_name": summ_info.get("project_name") or db_info.get("project_name") or zsmsg("projectN", lang, v=ps),
+            "client": summ_info.get("client") or db_info.get("client") or ("EOE Ambulance" if "EOE" in ps or ps == "PS011871" else zsmsg("specialClient", lang)),
             "folder_name": kb_info["folder_name"],
             "exists_in_kb": os.path.exists(kb_info["folder_path"]),
             "has_bom": kb_info["has_bom"],
@@ -3608,7 +4409,7 @@ def get_available_ps_projects():
     return result
 
 
-def generate_ps_technical_summaries(ps_code):
+def generate_ps_technical_summaries(ps_code, lang="pl"):
     """
     Ekstrahuje i generuje do bazy SQLite zestawienia dla wybranego projektu PS:
     1. Złącza z kompletnym pinoutem (Device, kody artykułów BOM, piny, sygnały, przewody, cele)
@@ -3616,7 +4417,8 @@ def generate_ps_technical_summaries(ps_code):
     3. Przekaźniki (kod aparatu, funkcja, typ, oprawka, rozpiska styków)
     """
     if not ps_code:
-        return {"status": "error", "message": "Nie podano numeru PS."}
+        return {"status": "error", "message": zsmsg("psMissing", lang),
+                "message_key": "psMissing", "message_params": {}}
 
     ps_code = str(ps_code).strip().upper()
     init_zuken_tables()
@@ -3630,11 +4432,11 @@ def generate_ps_technical_summaries(ps_code):
                 if f.endswith(".xlsx") and not f.startswith("~$"):
                     f_lower = f.lower()
                     if f_lower.startswith("bom") or "bom" in f_lower:
-                        import_zuken_bom_xlsx(full_path, ps_code=ps_code)
+                        import_zuken_bom_xlsx(full_path, ps_code=ps_code, lang=lang)
                     else:
-                        import_zuken_xlsx(full_path, ps_code=ps_code)
+                        import_zuken_xlsx(full_path, ps_code=ps_code, lang=lang)
                 elif f.endswith(".pdf") and not f.startswith("~$"):
-                    index_zuken_pdf(full_path, ps_code=ps_code)
+                    index_zuken_pdf(full_path, ps_code=ps_code, lang=lang)
         except Exception as ex:
             print(f"[ZUKEN IMPORT WARNING] Błąd skanowania katalogu {kb_ps_dir}: {ex}")
 
@@ -3660,7 +4462,8 @@ def generate_ps_technical_summaries(ps_code):
 
     if not conn_proj_ids and not bom_proj_ids:
         conn.close()
-        return {"status": "error", "message": f"Brak zaimportowanych projektów Zuken dla {ps_code}."}
+        return {"status": "error", "message": f"Brak zaimportowanych projektów Zuken dla {ps_code}.",
+                "message_key": "noZukenProjects", "message_params": {"ps": ps_code}}
 
     # Wykryj format każdego projektu połączeń:
     # - format "CON" (*_CON.xlsx): kolumna wire_number wypełniona, signal = nazwa sygnału
@@ -3765,7 +4568,7 @@ def generate_ps_technical_summaries(ps_code):
                     "wire_type": w_type,
                     "target_device": target_dev,
                     "target_pin": target_pin,
-                    "target_desc": explain_device_code(target_dev, glossary) if target_dev else ""
+                    "target_desc": explain_device_code(target_dev, glossary, lang=lang) if target_dev else ""
                 }
                 existing = connectors_map[dev]["pins"][pin]
                 dup = next((e for e in existing
@@ -3914,7 +4717,7 @@ def generate_ps_technical_summaries(ps_code):
                         if dkey not in details_seen:
                             details_seen[dkey] = {
                                 "target": target,
-                                "target_desc": explain_device_code(target, glossary),
+                                "target_desc": explain_device_code(target, glossary, lang=lang),
                                 "signal": s,
                                 "wire": wn
                             }
@@ -3926,9 +4729,9 @@ def generate_ps_technical_summaries(ps_code):
                     if s_val and not s_val.isdigit():
                         circuits_found.add(s_val)
                     elif ckey:
-                        circuits_found.add(f"Przewód {ckey}")
+                        circuits_found.add(zsmsg("wireN", lang, v=ckey))
 
-            circuits_str = ", ".join(sorted(circuits_found)) if circuits_found else (fr["function"] or "Obwód instalacji")
+            circuits_str = ", ".join(sorted(circuits_found)) if circuits_found else (fr["function"] or zsmsg("installCircuit", lang))
 
             fuses_map[d_code] = {
                 "device_code": d_code,
@@ -4111,7 +4914,7 @@ def generate_ps_technical_summaries(ps_code):
                         "length": rc["length"],
                         "target_device": rc["target"],
                         "target_pin": rc["target_pin"],
-                        "target_desc": explain_device_code(rc["target"], glossary) if rc["target"] else ""
+                        "target_desc": explain_device_code(rc["target"], glossary, lang=lang) if rc["target"] else ""
                     }
                     seen_contacts[key] = entry
                     contacts.append(entry)
@@ -4127,7 +4930,7 @@ def generate_ps_technical_summaries(ps_code):
             relays_map[d_code] = {
                 "device_code": d_code,
                 "device_clean": clean_device_code(d_code),
-                "function": func or "Przekaźnik sterujący",
+                "function": func or zsmsg("relayCtrl", lang),
                 "relay_type": relay_type_name,
                 "article_number": art,
                 "supplier": sup,
@@ -4167,8 +4970,8 @@ def generate_ps_technical_summaries(ps_code):
     # ═══════════════════════════════════════════════════════════════
     # 4. ZAPIS W ZUKEN_PS_SUMMARIES
     # ═══════════════════════════════════════════════════════════════
-    proj_name = projects[0]["project_name"] if projects else f"Projekt {ps_code}"
-    client_name = projects[0]["client"] if projects else "Klient specjalny"
+    proj_name = projects[0]["project_name"] if projects else zsmsg("projectN", lang, v=ps_code)
+    client_name = projects[0]["client"] if projects else zsmsg("specialClient", lang)
     source_files_list = ", ".join([p["filename"] for p in projects[:4]])
 
     cur.execute("""
@@ -4204,7 +5007,9 @@ def generate_ps_technical_summaries(ps_code):
         "connectors_count": len(conn_inserts),
         "fuses_count": len(fuse_inserts),
         "relays_count": len(relay_inserts),
-        "message": f"Wygenerowano zestawienia dla {ps_code}: {len(conn_inserts)} złączy, {len(fuse_inserts)} bezpieczników, {len(relay_inserts)} przekaźników."
+        "message": f"Wygenerowano zestawienia dla {ps_code}: {len(conn_inserts)} złączy, {len(fuse_inserts)} bezpieczników, {len(relay_inserts)} przekaźników.",
+        "message_key": "bomGenSummary",
+        "message_params": {"ps": ps_code, "c": len(conn_inserts), "f": len(fuse_inserts), "r": len(relay_inserts)}
     }
 
 
@@ -4356,7 +5161,7 @@ def _wire_hop(fdev, fpin, tdev, tpin, row):
     }
 
 
-def _annotate_wire_far_end(entry, dev, pin, adj, glossary, dev_funcs):
+def _annotate_wire_far_end(entry, dev, pin, adj, glossary, dev_funcs, lang="pl"):
     """Dopisuje do wpisu przewodu 'far_ends' — końcowe urządzenia za złączami,
     oraz uzupełnia 'length' z wiersza krawędzi grafu, gdy brak."""
     td = (entry.get("target_device") or "").strip()
@@ -4389,14 +5194,14 @@ def _annotate_wire_far_end(entry, dev, pin, adj, glossary, dev_funcs):
             "pin": ep,
             "clean": clean,
             "function": dev_funcs.get(ed) or dev_funcs.get(clean) or "",
-            "desc": explain_device_code(ed, glossary) or "",
+            "desc": explain_device_code(ed, glossary, lang=lang) or "",
             "path": hops
         })
     if out:
         entry["far_ends"] = out[:8]
 
 
-def trace_signal_net(ps_code, query):
+def trace_signal_net(ps_code, query, lang="pl"):
     """Śledzenie sygnału dla asystenta: zapytanie 'X429', 'X429:3',
     'X429 pin 3', 'RT94', '=BOX+TWR-RT94:1' -> pełne sieci połączeń
     z końcami i ścieżkami (hopy z numerem/kolorem/przekrojem/długością)."""
@@ -4446,7 +5251,7 @@ def trace_signal_net(ps_code, query):
         return {
             "device": ed, "pin": ep, "clean": clean,
             "function": dev_funcs.get(ed) or dev_funcs.get(clean) or "",
-            "desc": explain_device_code(ed, glossary) or "",
+            "desc": explain_device_code(ed, glossary, lang=lang) or "",
             "path": hops
         }
 
@@ -4473,7 +5278,7 @@ def trace_signal_net(ps_code, query):
             nets.append({
                 "start_device": ndev, "start_pin": npin, "start_clean": clean,
                 "start_function": dev_funcs.get(ndev) or dev_funcs.get(clean) or "",
-                "start_desc": explain_device_code(ndev, glossary) or "",
+                "start_desc": explain_device_code(ndev, glossary, lang=lang) or "",
                 "ends": end_list
             })
         if len(nets) >= 24:
@@ -4481,7 +5286,7 @@ def trace_signal_net(ps_code, query):
     return {"ok": True, "device": dev_q, "pin": pin_q, "nets": nets}
 
 
-def get_ps_connectors(ps_code, search="", system_filter="", limit=100, offset=0):
+def get_ps_connectors(ps_code, search="", system_filter="", limit=100, offset=0, lang="pl"):
     """Pobiera listę złączy z pinoutem dla projektu PS z filtrowaniem i paginacją."""
     if not ps_code:
         return {"items": [], "total": 0}
@@ -4497,7 +5302,7 @@ def get_ps_connectors(ps_code, search="", system_filter="", limit=100, offset=0)
     if cnt == 0:
         # Automatyczne wygenerowanie przy pierwszym odczycie
         conn.close()
-        generate_ps_technical_summaries(ps_code)
+        generate_ps_technical_summaries(ps_code, lang=lang)
         conn = get_db()
         cur = conn.cursor()
 
@@ -4533,6 +5338,8 @@ def get_ps_connectors(ps_code, search="", system_filter="", limit=100, offset=0)
     for r in rows:
         d = dict(r)
         d["pins"] = json.loads(d.get("pins_json") or "[]")
+        if not d.get("image_url") and d.get("article_number"):
+            d["image_url"] = find_local_component_image(d.get("article_number")) or ""
         items.append(d)
 
     # "Drugi koniec przewodu" — przejdź grafem połączeń przez złącza/rozgałęźniki
@@ -4546,7 +5353,7 @@ def get_ps_connectors(ps_code, search="", system_filter="", limit=100, offset=0)
             dev = d.get("device_code") or ""
             for pin in d.get("pins") or []:
                 for c in pin.get("connections") or []:
-                    _annotate_wire_far_end(c, dev, pin.get("pin"), adj, glossary, dev_funcs)
+                    _annotate_wire_far_end(c, dev, pin.get("pin"), adj, glossary, dev_funcs, lang=lang)
 
     conn.close()
     return {
@@ -4674,7 +5481,7 @@ def _pdf_page_label_positions(schem_id, filepath, page_num, file_mtime=None):
     return items
 
 
-def get_ps_fuses(ps_code, search="", limit=100, offset=0):
+def get_ps_fuses(ps_code, search="", limit=100, offset=0, lang="pl"):
     """Pobiera zestaw bezpieczników dla projektu PS z filtrowaniem."""
     if not ps_code:
         return {"items": [], "total": 0}
@@ -4688,7 +5495,7 @@ def get_ps_fuses(ps_code, search="", limit=100, offset=0):
     cnt = cur.fetchone()[0]
     if cnt == 0:
         conn.close()
-        generate_ps_technical_summaries(ps_code)
+        generate_ps_technical_summaries(ps_code, lang=lang)
         conn = get_db()
         cur = conn.cursor()
 
@@ -5064,7 +5871,7 @@ def get_ps_fuses(ps_code, search="", limit=100, offset=0):
                     if not seen[key][fld] and entry[fld]:
                         seen[key][fld] = entry[fld]
                 continue
-            entry["target_desc"] = explain_device_code(target, glossary) if target else ""
+            entry["target_desc"] = explain_device_code(target, glossary, lang=lang) if target else ""
             ext = _external_harness(target)
             if ext:
                 entry["external"] = ext
@@ -5171,7 +5978,7 @@ def get_ps_fuses(ps_code, search="", limit=100, offset=0):
         if not holder_used and d.get("holder_code") in known_devs:
             holder_used = d["holder_code"]
         for w in wires:
-            _annotate_wire_far_end(w, d.get("device_code"), w.get("pin"), adj, glossary, dev_funcs)
+            _annotate_wire_far_end(w, d.get("device_code"), w.get("pin"), adj, glossary, dev_funcs, lang=lang)
         d["wires"] = wires
         d["holder_real"] = holder_used
         d["holder_real_clean"] = clean_device_code(holder_used)
@@ -5251,7 +6058,7 @@ def get_ps_fuses(ps_code, search="", limit=100, offset=0):
     return result
 
 
-def get_ps_relays(ps_code, search="", limit=100, offset=0):
+def get_ps_relays(ps_code, search="", limit=100, offset=0, lang="pl"):
     """Pobiera zestaw przekaźników dla projektu PS z filtrowaniem."""
     if not ps_code:
         return {"items": [], "total": 0}
@@ -5265,7 +6072,7 @@ def get_ps_relays(ps_code, search="", limit=100, offset=0):
     cnt = cur.fetchone()[0]
     if cnt == 0:
         conn.close()
-        generate_ps_technical_summaries(ps_code)
+        generate_ps_technical_summaries(ps_code, lang=lang)
         conn = get_db()
         cur = conn.cursor()
 
@@ -5306,6 +6113,8 @@ def get_ps_relays(ps_code, search="", limit=100, offset=0):
     for r in rows:
         d = dict(r)
         d["contacts"] = json.loads(d.get("contacts_json") or "[]")
+        if not d.get("image_url") and d.get("article_number"):
+            d["image_url"] = find_local_component_image(d.get("article_number")) or ""
         d["system_desc"] = _gdesc(d.get("system"))
         d["location_desc"] = _gdesc(d.get("location"))
         d["system_desc_en"] = _gdesc(d.get("system"), "desc_en")
@@ -5319,7 +6128,7 @@ def get_ps_relays(ps_code, search="", limit=100, offset=0):
         dev_funcs = _device_function_map(cur, bom_ids)
         for d in items:
             for c in d.get("contacts") or []:
-                _annotate_wire_far_end(c, d.get("device_code"), c.get("pin"), adj, glossary, dev_funcs)
+                _annotate_wire_far_end(c, d.get("device_code"), c.get("pin"), adj, glossary, dev_funcs, lang=lang)
 
     conn.close()
     return {
@@ -5331,7 +6140,7 @@ def get_ps_relays(ps_code, search="", limit=100, offset=0):
     }
 
 
-def export_ps_summary_csv(ps_code, summary_type="connectors"):
+def export_ps_summary_csv(ps_code, summary_type="connectors", lang="pl"):
     """
     Generuje plik CSV z zestawieniem (złącza z pinoutem, bezpieczniki lub przekaźniki).
     Zawiera znacznik BOM UTF-8 (\ufeff) dla bezproblemowego otwierania w polskim MS Excel.
@@ -5345,12 +6154,7 @@ def export_ps_summary_csv(ps_code, summary_type="connectors"):
     writer = csv.writer(output, delimiter=";", quoting=csv.QUOTE_MINIMAL)
 
     if summary_type == "connectors":
-        writer.writerow([
-            "Projekt PS", "Kod aparatu złącza", "Kod skrócony", "System", "Lokalizacja",
-            "Opis lokalizacji", "Kod artykułu BOM", "Dostawca / Producent", "Opis katalogowy złącza",
-            "Liczba pinów", "Pin", "Nazwa sygnału", "Numer przewodu", "Kolor",
-            "Przekrój (mm2)", "Typ przewodu", "Urządzenie docelowe", "Pin docelowy", "Opis urządzenia docelowego"
-        ])
+        writer.writerow(zshdr("connectors", lang))
         data = get_ps_connectors(ps_code, limit=5000)
         for item in data.get("items", []):
             pins = item.get("pins", [])
@@ -5374,11 +6178,7 @@ def export_ps_summary_csv(ps_code, summary_type="connectors"):
                         ])
 
     elif summary_type == "fuses":
-        writer.writerow([
-            "Projekt PS", "Bezpiecznik (Aparat)", "Kod skrócony", "Prąd znamionowy (A)", "Typ bezpiecznika",
-            "Oprawka (-FH)", "Skrzynka / Blok", "System", "Lokalizacja", "Chronione sygnały i obwody",
-            "Kod artykułu BOM", "Dostawca", "Opis katalogowy"
-        ])
+        writer.writerow(zshdr("fuses", lang))
         data = get_ps_fuses(ps_code, limit=2000)
         for item in data.get("items", []):
             writer.writerow([
@@ -5388,12 +6188,7 @@ def export_ps_summary_csv(ps_code, summary_type="connectors"):
             ])
 
     elif summary_type == "relays":
-        writer.writerow([
-            "Projekt PS", "Przekaźnik (Aparat)", "Kod skrócony", "Funkcja przekaźnika", "Typ / Model",
-            "Dostawca", "Gniazdo / Podstawa", "System", "Lokalizacja", "Lokalizacja (opis)", "Pin / Rola",
-            "Sygnał", "Numer przewodu", "Kolor", "Przekrój (mm2)", "Długość (mm)",
-            "Aparat docelowy", "Pin docelowy", "Opis celu"
-        ])
+        writer.writerow(zshdr("relays", lang))
         data = get_ps_relays(ps_code, limit=2000)
         for item in data.get("items", []):
             loc_desc = item.get("location_desc") or ""
