@@ -2485,6 +2485,9 @@
       <button type="button" class="btn-primary-action" style="padding:9px 18px; font-size:13px; background:linear-gradient(135deg, #0284c7 0%, #2563eb 100%); border:none; display:inline-flex; align-items:center; gap:6px;" onclick="runAiDiagnosisSearch()">
         🔍 <span data-i18n="zuken.btnSearch">Analizuj obwód</span>
       </button>
+      <button type="button" class="btn-secondary-action" style="padding:9px 12px; font-size:12.5px; display:inline-flex; align-items:center; gap:5px;" onclick="runCircuitTrace()" title="Tor zasilania + masa + rozgałęzienia dla wpisanego obwodu" data-i18n-title="js.zuken.btnCircuitTitle">
+        🔌 <span data-i18n="zuken.btnCircuit">Pokaż obwód</span>
+      </button>
       <button type="button" class="btn-secondary-action" style="padding:9px 12px; font-size:12.5px; display:inline-flex; align-items:center; gap:5px;" onclick="syncZukenKnowledgeBase()" title="Przeskanuj katalog Baza wiedzy w poszukiwaniu nowych plików XLSX i schematów PDF" data-i18n-title="js.zuken.btnSyncTitle">
         🔄 <span data-i18n="zuken.btnSync">Skanuj bazę</span>
       </button>
@@ -6364,15 +6367,24 @@ async function runAiDiagnosisSearch() {
     const pathPromise = (looksLikeDev && psForPath)
       ? apiCall(`/api/zuken/signal-path?ps=${encodeURIComponent(psForPath)}&q=${encodeURIComponent(query)}`).catch(() => null)
       : Promise.resolve(null);
+    const circuitPromise = query
+      ? apiCall(`/api/zuken/circuit-path?ps=${encodeURIComponent(psForPath)}&q=${encodeURIComponent(query)}`).catch(() => null)
+      : Promise.resolve(null);
 
     const res = await apiCall('/api/ai/diagnose', 'POST', payload);
     ZUKEN_STATE.lastResults = res;
     renderDiagnosisResults(res);
 
     try {
-      const sp = await pathPromise;
-      const card = signalPathCardHtml(sp, query);
-      if (card) resBody.insertAdjacentHTML('afterbegin', card);
+      const cp = await circuitPromise;
+      const ccard = (cp && cp.ok) ? circuitCardHtml(cp, query) : '';
+      if (ccard) {
+        resBody.insertAdjacentHTML('afterbegin', ccard);
+      } else {
+        const sp = await pathPromise;
+        const card = signalPathCardHtml(sp, query);
+        if (card) resBody.insertAdjacentHTML('afterbegin', card);
+      }
     } catch (e) { /* ścieżka to dodatek — nie blokuj wyników diagnostyki */ }
   } catch (err) {
     resBody.innerHTML = `
@@ -8583,6 +8595,325 @@ function signalPathCardHtml(sp, query) {
     <div style="font-size:11.5px; font-weight:700; color:#16a34a; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:8px;">⇒ ${escapeHtml(t('ui.zuken.wirePathTitle'))}: ${escapeHtml(query)}</div>
     ${netsHtml}
   </div>`;
+}
+
+// ═══ Śledzenie pełnego obwodu: tor +, masa, rozgałęzienia ═══
+const CIRCUIT_ROLE_META = {
+  source:   { icon: '⚡', key: 'roleSource',   color: '#2563eb' },
+  terminal: { icon: '⊟', key: 'roleTerminal', color: '#7c3aed' },
+  fuse:     { icon: '⏛', key: 'roleFuse',     color: '#d97706' },
+  relay:    { icon: '🔁', key: 'roleRelay',    color: '#0891b2' },
+  gnd:      { icon: '⏚', key: 'roleGnd',      color: '#1e293b' },
+  load:     { icon: '⑂', key: 'roleBranch',   color: '#16a34a' },
+};
+const CIRCUIT_ROLE_RANK = { source: 0, terminal: 1, fuse: 2, relay: 3, gnd: 4, load: 5 };
+
+function circuitWireStroke(colorText) {
+  const c = String(colorText || '').toLowerCase();
+  if (c.includes('czerw') || c.includes('red')) return '#ef4444';
+  if (c.includes('czarn') || c.includes('black')) return '#1e293b';
+  if (c.includes('nieb') || c.includes('blue')) return '#3b82f6';
+  if (c.includes('brąz') || c.includes('braz') || c.includes('brown')) return '#92400e';
+  if (c.includes('biał') || c.includes('bial') || c.includes('white')) return '#94a3b8';
+  if (c.includes('żółt') || c.includes('zolt') || c.includes('yellow')) return '#eab308';
+  if (c.includes('ziel') || c.includes('green')) return '#10b981';
+  if (c.includes('fiolet') || c.includes('violet')) return '#8b5cf6';
+  if (c.includes('róż') || c.includes('roz') || c.includes('pink')) return '#ec4899';
+  if (c.includes('pomar') || c.includes('orange')) return '#f97316';
+  return '#64748b';
+}
+
+function circuitHopInline(h) {
+  const nodeA = escapeHtml(h.from_clean) + (h.from_pin ? ':' + escapeHtml(h.from_pin) : '');
+  if (h.internal === 'fuse' || h.internal === 'relay') {
+    const lbl = h.internal === 'fuse' ? t('js.zuken.viaFuse') : t('js.zuken.viaRelay');
+    return `${nodeA} <span style="color:#d97706;">—[⚡ ${escapeHtml(lbl)} ${escapeHtml(h.internal_label || '')}]→</span>`;
+  }
+  const wlabel = h.wire_number || h.signal || '';
+  const cs = (h.cross_section || '').replace(/\s*mm²?$/i, '');
+  const attrs = [wlabel, h.wire_color, cs ? cs + ' mm²' : '',
+    (h.length && h.length !== '0') ? fmtWireLength(h.length) : ''].filter(Boolean).join(' · ');
+  return `${nodeA} <span style="color:var(--text-muted);">—[${escapeHtml(attrs)}]→</span>`;
+}
+
+function circuitSegDesc(h) {
+  if (!h) return '';
+  if (h.internal === 'fuse') return `⚠️ ${escapeHtml(h.internal_label || '')} — ${escapeHtml(t('js.zuken.checkFuseHere'))}`;
+  if (h.internal === 'relay') return `⚠️ ${escapeHtml(h.internal_label || '')} — ${escapeHtml(t('js.zuken.relayContactNote'))}`;
+  const cs = (h.cross_section || '').replace(/\s*mm²?$/i, '');
+  const w = [h.wire_number || h.signal || '', h.wire_color || '', cs ? cs + ' mm²' : '',
+    (h.length && h.length !== '0') ? fmtWireLength(h.length) : ''].filter(Boolean).join(' · ');
+  return escapeHtml(w);
+}
+
+function circuitEndHtml(e) {
+  const rm = CIRCUIT_ROLE_META[e.role] || CIRCUIT_ROLE_META.load;
+  const endL = (e.clean || e.device) + (e.pin ? ':' + e.pin : '');
+  const hopsTxt = (e.path || []).map(circuitHopInline).join(' ');
+  const metaBits = [];
+  if (e.function || e.desc) metaBits.push(escapeHtml(e.function || e.desc));
+  if (e.role === 'gnd' && e.shared > 0) metaBits.push(escapeHtml(t('js.zuken.sharedGnd', { n: e.shared })));
+  const fe = { path: e.path || [], clean: e.clean, device: e.device, pin: e.pin, function: e.function || '' };
+  return `<div data-fe="${escapeHtml(JSON.stringify(fe))}" onclick="showWirePath(this)" style="margin:4px 0 4px 14px; padding:6px 10px; background:var(--bg-card); border:1px solid var(--border); border-left:3px solid ${rm.color}; border-radius:6px; cursor:pointer;" title="${escapeHtml(endL)}">
+    <div style="font-weight:700; color:${rm.color}; font-size:12px; font-family:var(--font-mono, monospace);">${rm.icon} ${escapeHtml(t('js.zuken.' + rm.key))} ⇒ ${escapeHtml(endL)}${metaBits.length ? ` <span style="color:var(--text-muted); font-weight:400; font-size:11px;">— ${metaBits.join(' · ')}</span>` : ''}</div>
+    <div style="font-size:11px; color:var(--text-muted); margin-top:2px; font-family:var(--font-mono, monospace); line-height:1.6;">${hopsTxt}</div>
+  </div>`;
+}
+
+function circuitCardHtml(cp, query) {
+  if (!cp || !cp.ok || !(cp.loads || []).length) return '';
+  ZUKEN_STATE.lastCircuit = cp;
+  const ev = cp.evpss;
+  const evHtml = ev ? ` <span style="display:inline-block; padding:1px 8px; border-radius:10px; background:rgba(37,99,235,0.12); color:#2563eb; font-size:11px; font-weight:700; vertical-align:1px;">⚡ ${escapeHtml(ev.code || '')}${ev.function ? ' · ' + escapeHtml(ev.function) : ''}${ev.max_current ? ' · ' + escapeHtml(ev.max_current) : ''}</span>` : '';
+  const rulesHtml = ((ev && ev.rules) || []).map(r =>
+    ` <span title="${escapeHtml((r.actions || []).join('  |  '))}" style="display:inline-block; padding:1px 7px; border-radius:9px; background:rgba(217,119,6,0.12); color:#b45306; font-size:10.5px; font-weight:700; vertical-align:1px;">${escapeHtml((r.rule || '').split(':')[0])}</span>`).join('');
+  const moreHtml = (cp.more_signals || []).map(s =>
+    ` <button class="tag-project" style="cursor:pointer; border:none;" data-sig="${escapeHtml(s)}" onclick="applyZukenQuickTag(this.dataset.sig)">${escapeHtml(s)}</button>`).join('');
+
+  const pinSecMeta = {
+    feed:  { icon: '⚡', label: t('js.zuken.feedPath'),  color: '#b45309', bg: 'rgba(217,119,6,0.06)',   border: '#d97706' },
+    gnd:   { icon: '⏚', label: t('js.zuken.gndPath'),   color: '#334155', bg: 'rgba(51,65,85,0.05)',    border: '#475569' },
+    other: { icon: '🔌', label: t('js.zuken.otherConn'), color: '#64748b', bg: 'rgba(100,116,139,0.05)', border: '#94a3b8' },
+  };
+
+  const loadsHtml = cp.loads.map(ld => {
+    const pinsHtml = (ld.pins || []).map(p => {
+      const sm = pinSecMeta[p.role] || pinSecMeta.other;
+      const ends = [...(p.ends || [])].sort((a, b) =>
+        (CIRCUIT_ROLE_RANK[a.role] ?? 9) - (CIRCUIT_ROLE_RANK[b.role] ?? 9));
+      return `<div style="margin:6px 0 6px 12px; padding:7px 10px; background:${sm.bg}; border-left:3px solid ${sm.border}; border-radius:6px;">
+        <div style="font-size:11px; font-weight:800; color:${sm.color}; letter-spacing:0.4px;">${sm.icon} ${escapeHtml(sm.label)} — ${escapeHtml(t('js.zuken.pinLabel'))} ${escapeHtml(p.pin)}</div>
+        ${ends.map(circuitEndHtml).join('')}
+      </div>`;
+    }).join('');
+    return `<div style="margin-bottom:10px;">
+      <div style="font-weight:800; font-size:13px; color:var(--text-main); font-family:var(--font-mono, monospace);">🔌 ${escapeHtml(ld.clean)}${(ld.function || ld.desc) ? ` <span style="font-family:inherit; font-weight:600; font-size:11.5px; color:var(--text-muted);">— ${escapeHtml(ld.function || ld.desc)}</span>` : ''}</div>
+      ${pinsHtml}
+    </div>`;
+  }).join('');
+
+  return `<div style="padding:12px 16px; background:linear-gradient(135deg, rgba(2,132,199,0.08), rgba(22,163,74,0.06)); border:1px solid rgba(2,132,199,0.35); border-radius:var(--radius-md);">
+    <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; margin-bottom:8px;">
+      <div style="font-size:12px; font-weight:800; color:#0284c7; text-transform:uppercase; letter-spacing:0.5px;">⚡ ${escapeHtml(t('js.zuken.circuitTitle'))}: ${escapeHtml((cp.resolved && cp.resolved.label) || query)}${evHtml}${rulesHtml}</div>
+      <div style="display:flex; gap:6px;">
+        <button type="button" onclick="showCircuitChecklist()" style="padding:5px 11px; font-size:11.5px; font-weight:700; border:1px solid var(--border); border-radius:8px; background:var(--bg-card); color:var(--text-main); cursor:pointer;">📋 ${escapeHtml(t('js.zuken.checklistBtn'))}</button>
+        <button type="button" onclick="showCircuitDiagram()" style="padding:5px 11px; font-size:11.5px; font-weight:700; border:1px solid var(--border); border-radius:8px; background:var(--bg-card); color:var(--text-main); cursor:pointer;">📊 ${escapeHtml(t('js.zuken.diagramBtn'))}</button>
+      </div>
+    </div>
+    ${moreHtml ? `<div style="margin-bottom:6px; font-size:11px; color:var(--text-muted);">${escapeHtml(t('js.zuken.moreSignals'))}:${moreHtml}</div>` : ''}
+    ${loadsHtml}
+  </div>`;
+}
+
+function closeCircuitOverlay() {
+  const ov = document.getElementById('circuit-overlay');
+  if (ov) ov.remove();
+}
+
+function circuitOverlay(title, bodyHtml, wide) {
+  closeCircuitOverlay();
+  const overlay = document.createElement('div');
+  overlay.id = 'circuit-overlay';
+  overlay.style.cssText = 'position:fixed; inset:0; background:rgba(0,0,0,0.45); z-index:9999; display:flex; align-items:center; justify-content:center; padding:20px;';
+  overlay.onclick = (ev) => { if (ev.target === overlay) closeCircuitOverlay(); };
+  overlay.innerHTML = `
+    <div style="background:var(--bg-card, #fff); border-radius:12px; max-width:${wide ? '900px' : '740px'}; width:100%; max-height:85vh; display:flex; flex-direction:column; box-shadow:0 20px 50px rgba(0,0,0,0.3); border:1px solid var(--border);">
+      <div style="padding:14px 18px; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; gap:10px;">
+        <div style="font-weight:800; font-size:14px; color:var(--text-main);">${escapeHtml(title)}</div>
+        <button onclick="closeCircuitOverlay()" style="background:none; border:none; font-size:18px; cursor:pointer; color:var(--text-muted); line-height:1;">✕</button>
+      </div>
+      <div style="padding:10px 18px; overflow-y:auto;">${bodyHtml}</div>
+      <div style="padding:12px 18px; border-top:1px solid var(--border); display:flex; justify-content:flex-end;">
+        <button class="btn" onclick="closeCircuitOverlay()" style="padding:7px 14px; font-size:12px; font-weight:700; border:1px solid var(--border); border-radius:8px; background:var(--bg-card-subtle); color:var(--text-main); cursor:pointer;">${escapeHtml(t('ui.zuken.wirePathClose'))}</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+}
+
+function showCircuitChecklist() {
+  const cp = ZUKEN_STATE.lastCircuit;
+  if (!cp || !(cp.loads || []).length) return;
+  closeWirePath();
+  let n = 0;
+  const numBadge = () => `<span style="display:inline-flex; align-items:center; justify-content:center; min-width:20px; height:20px; border-radius:50%; background:rgba(2,132,199,0.15); color:#0284c7; font-size:11px; font-weight:800; flex-shrink:0;">${n}</span>`;
+  const sections = [];
+  cp.loads.forEach(ld => {
+    (ld.pins || []).forEach(p => {
+      if (p.role === 'feed') {
+        const ends = p.ends || [];
+        const src = ends.find(e => e.role === 'source' || e.role === 'terminal') || ends[0];
+        if (!src) return;
+        const nodes = [{ label: ld.clean + ':' + p.pin, dev: ld.clean, seg: null, isEnd: false }];
+        (src.path || []).forEach((h, i) => nodes.push({
+          label: h.to_clean + (h.to_pin ? ':' + h.to_pin : ''), dev: h.to_clean,
+          seg: h, isEnd: i === src.path.length - 1
+        }));
+        const stepsHtml = nodes.map(s => {
+          n++;
+          const segTxt = s.seg ? circuitSegDesc(s.seg) : '';
+          const roleTxt = s.isEnd ? t('js.zuken.roleSource') : t('js.zuken.expectedVoltage');
+          return `<div style="display:flex; gap:9px; align-items:flex-start; padding:5px 0; border-bottom:1px dashed var(--border);">
+            ${numBadge()}
+            <div style="flex:1; min-width:0;">
+              <span style="font-family:var(--font-mono, monospace); font-weight:700; font-size:12.5px;">${escapeHtml(s.label)}</span>
+              <button type="button" data-dev="${escapeHtml(s.dev)}" onclick="jumpToWireDevice(this.dataset.dev)" title="${escapeHtml(t('ui.zuken.wirePathJump'))}" style="background:none; border:none; cursor:pointer; color:#0284c7; font-size:12px; padding:0 4px;">⇲</button>
+              <div style="font-size:11px; color:var(--text-muted); margin-top:1px;">${escapeHtml(roleTxt)}${segTxt ? ' · ' + segTxt : ''}</div>
+            </div>
+          </div>`;
+        }).join('');
+        const branches = ends.filter(e => e !== src && e.role === 'load');
+        const brHtml = branches.length ? `<div style="margin:4px 0 0 29px; font-size:11px; color:var(--text-muted);">${escapeHtml(t('js.zuken.branchesLabel'))}: ${branches.map(e =>
+          `<span style="font-family:var(--font-mono,monospace); font-weight:600;">${escapeHtml(e.clean)}:${escapeHtml(e.pin)}</span>${(e.function || e.desc) ? ` <span style="font-family:inherit;">(${escapeHtml(e.function || e.desc)})</span>` : ''}`).join(' · ')}</div>` : '';
+        sections.push(`<div style="margin-bottom:12px;">
+          <div style="font-size:11.5px; font-weight:800; color:#b45309; margin-bottom:3px;">⚡ ${escapeHtml(t('js.zuken.feedPath'))}: ${escapeHtml(ld.clean)}:${escapeHtml(p.pin)} → ${escapeHtml(src.clean)}:${escapeHtml(src.pin)}</div>
+          ${stepsHtml}${brHtml}
+        </div>`);
+      } else if (p.role === 'gnd') {
+        (p.ends || []).filter(e => e.role === 'gnd').forEach(g => {
+          n++;
+          const segs = (g.path || []).map(circuitSegDesc).filter(Boolean).join(' | ');
+          sections.push(`<div style="margin-bottom:12px;">
+            <div style="font-size:11.5px; font-weight:800; color:#334155; margin-bottom:3px;">⏚ ${escapeHtml(t('js.zuken.gndPath'))}: ${escapeHtml(ld.clean)}:${escapeHtml(p.pin)} → ${escapeHtml(g.clean)}:${escapeHtml(g.pin)}</div>
+            <div style="display:flex; gap:9px; align-items:flex-start; padding:5px 0;">
+              ${numBadge()}
+              <div style="flex:1; min-width:0; font-size:11.5px;">
+                ${escapeHtml(t('js.zuken.expectedGnd'))} <span style="font-family:var(--font-mono,monospace); font-weight:700;">${escapeHtml(ld.clean)}:${escapeHtml(p.pin)} ↔ ${escapeHtml(g.clean)}:${escapeHtml(g.pin)}</span>
+                <button type="button" data-dev="${escapeHtml(g.clean)}" onclick="jumpToWireDevice(this.dataset.dev)" title="${escapeHtml(t('ui.zuken.wirePathJump'))}" style="background:none; border:none; cursor:pointer; color:#0284c7; font-size:12px; padding:0 4px;">⇲</button>
+                <div style="color:var(--text-muted); margin-top:1px;">${segs}${g.shared ? ' · ' + escapeHtml(t('js.zuken.sharedGnd', { n: g.shared })) : ''}</div>
+              </div>
+            </div>
+          </div>`);
+        });
+      }
+    });
+  });
+  circuitOverlay(t('js.zuken.checklistTitle'), sections.join('') || `<div style="color:var(--text-muted); font-size:12px;">—</div>`);
+}
+
+function circuitSvgForLoad(ld) {
+  const feedPin = (ld.pins || []).find(p => p.role === 'feed') || (ld.pins || [])[0];
+  const gndPin = (ld.pins || []).find(p => p.role === 'gnd');
+  if (!feedPin) return '';
+  const src = (feedPin.ends || []).find(e => e.role === 'source' || e.role === 'terminal') || (feedPin.ends || [])[0];
+  if (!src) return '';
+
+  const trunk = [{ dev: src.device, pin: src.pin, clean: src.clean, edge: null, role: src.role, info: src.function || src.desc || '' }];
+  [...(src.path || [])].reverse().forEach(h =>
+    trunk.push({ dev: h.from, pin: h.from_pin, clean: h.from_clean, edge: h, role: '', info: '' }));
+  const trunkLast = trunk.length - 1;
+  trunk[trunkLast].role = 'load';
+  trunk[trunkLast].info = ld.function || ld.desc || '';
+
+  const gndChain = [];
+  const g = gndPin ? ((gndPin.ends || []).find(e => e.role === 'gnd') || (gndPin.ends || [])[0]) : null;
+  if (g) {
+    gndChain.push({ dev: ld.device, pin: gndPin.pin, clean: ld.clean, edge: null, role: 'load', info: '' });
+    (g.path || []).forEach((h, i) => gndChain.push({
+      dev: h.to, pin: h.to_pin, clean: h.to_clean, edge: h,
+      role: i === g.path.length - 1 ? g.role : '', info: ''
+    }));
+  }
+
+  const rowOf = {};
+  trunk.forEach((nd, i) => { rowOf[nd.dev + ':' + nd.pin] = i; });
+  gndChain.forEach((nd, j) => { rowOf[nd.dev + ':' + nd.pin] = trunk.length + j; });
+
+  const stubs = [];
+  const addStub = e => {
+    let at = trunkLast;
+    (e.path || []).forEach(h => { const k = h.to + ':' + h.to_pin; if (k in rowOf) at = rowOf[k]; });
+    stubs.push({ e, at });
+  };
+  (feedPin.ends || []).forEach(e => { if (e !== src) addStub(e); });
+  if (gndPin) (gndPin.ends || []).forEach(e => { if (e !== g) addStub(e); });
+
+  const rows = trunk.length + gndChain.length;
+  const rowH = 64, boxW = 210, boxH = 34, cx = 30, stubX = cx + boxW + 130, stubW = 250;
+  const W = stubX + stubW + 20, H = rows * rowH + 46;
+  const nodeY = i => 24 + i * rowH;
+  const roleStyle = {
+    source:   { stroke: '#2563eb', icon: '⚡' },
+    terminal: { stroke: '#7c3aed', icon: '⊟' },
+    gnd:      { stroke: '#1e293b', icon: '⏚' },
+    fuse:     { stroke: '#d97706', icon: '⏛' },
+    relay:    { stroke: '#0891b2', icon: '🔁' },
+    load:     { stroke: '#16a34a', icon: '🔌' },
+    '':       { stroke: '#94a3b8', icon: '' },
+  };
+
+  let svg = '';
+  const allNodes = trunk.concat(gndChain);
+  allNodes.forEach((nd, i) => {
+    const y = nodeY(i), x = cx;
+    if (nd.edge) {
+      const h = nd.edge;
+      const yPrev = nodeY(i - 1) + boxH, yCur = y;
+      const internal = h.internal === 'fuse' || h.internal === 'relay';
+      const stroke = internal ? '#d97706' : circuitWireStroke(h.wire_color);
+      const dash = internal ? ' stroke-dasharray="5 3"' : '';
+      svg += `<line x1="${cx + boxW / 2}" y1="${yPrev}" x2="${cx + boxW / 2}" y2="${yCur}" stroke="${stroke}" stroke-width="${internal ? 1.6 : 2.4}"${dash}/>`;
+      const cs = (h.cross_section || '').replace(/\s*mm²?$/i, '');
+      const lbl = internal
+        ? `⚡ ${h.internal_label || h.internal}`
+        : [h.wire_number || h.signal || '', h.wire_color || '', cs ? cs + ' mm²' : '', (h.length && h.length !== '0') ? fmtWireLength(h.length) : ''].filter(Boolean).join(' · ');
+      if (lbl) svg += `<text x="${cx + boxW / 2 + 8}" y="${(yPrev + yCur) / 2 + 3}" font-size="9.5" fill="${internal ? '#d97706' : 'var(--text-muted, #64748b)'}" font-family="monospace">${escapeHtml(lbl)}</text>`;
+    }
+    const rs = roleStyle[nd.role] || roleStyle[''];
+    const fill = nd.role === 'gnd' ? '#1e293b' : 'var(--bg-card, #fff)';
+    const fg = nd.role === 'gnd' ? '#f8fafc' : 'var(--text-main, #0f172a)';
+    svg += `<rect x="${x}" y="${y}" width="${boxW}" height="${boxH}" rx="7" fill="${fill}" stroke="${rs.stroke}" stroke-width="2"/>`;
+    svg += `<text x="${x + 8}" y="${y + 15}" font-size="11" font-weight="700" fill="${fg}" font-family="monospace">${rs.icon ? rs.icon + ' ' : ''}${escapeHtml(nd.clean)}${nd.pin ? ':' + escapeHtml(nd.pin) : ''}</text>`;
+    if (nd.info) svg += `<text x="${x + 8}" y="${y + 28}" font-size="9" fill="${nd.role === 'gnd' ? '#cbd5e1' : 'var(--text-muted, #64748b)'}">${escapeHtml(String(nd.info).slice(0, 38))}</text>`;
+  });
+
+  stubs.slice(0, 10).forEach(st => {
+    const y = nodeY(st.at) + boxH / 2;
+    const e = st.e;
+    const rm = CIRCUIT_ROLE_META[e.role] || CIRCUIT_ROLE_META.load;
+    let wireLbl = '';
+    const divIdx = (e.path || []).findIndex(h => (h.to + ':' + h.to_pin) && rowOf[h.to + ':' + h.to_pin] === st.at);
+    const segH = (e.path || [])[divIdx + 1] || (e.path || [])[0];
+    if (segH) wireLbl = [segH.wire_number || segH.signal || '', segH.wire_color || ''].filter(Boolean).join(' · ');
+    svg += `<line x1="${cx + boxW}" y1="${y}" x2="${stubX}" y2="${y}" stroke="#94a3b8" stroke-width="1.6" stroke-dasharray="4 3"/>`;
+    svg += `<rect x="${stubX}" y="${y - 15}" width="${stubW}" height="30" rx="6" fill="var(--bg-card, #fff)" stroke="${rm.color}" stroke-width="1.4" stroke-dasharray="3 2"/>`;
+    svg += `<text x="${stubX + 7}" y="${y - 1}" font-size="10" font-weight="700" fill="${rm.color}" font-family="monospace">${rm.icon} ${escapeHtml(e.clean)}${e.pin ? ':' + escapeHtml(e.pin) : ''}</text>`;
+    const sub = [e.function || e.desc || '', wireLbl].filter(Boolean).join(' · ');
+    if (sub) svg += `<text x="${stubX + 7}" y="${y + 11}" font-size="8.5" fill="var(--text-muted, #64748b)">${escapeHtml(sub.slice(0, 44))}</text>`;
+  });
+
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%; max-width:${W}px; display:block; margin:0 auto;" xmlns="http://www.w3.org/2000/svg">${svg}</svg>`;
+}
+
+function showCircuitDiagram() {
+  const cp = ZUKEN_STATE.lastCircuit;
+  if (!cp || !(cp.loads || []).length) return;
+  closeWirePath();
+  const parts = cp.loads.slice(0, 5).map(ld => {
+    const svg = circuitSvgForLoad(ld);
+    if (!svg) return '';
+    return `<div style="margin-bottom:16px;">
+      <div style="font-size:12px; font-weight:800; color:var(--text-main); margin-bottom:4px; font-family:var(--font-mono,monospace);">🔌 ${escapeHtml(ld.clean)}${(ld.function || ld.desc) ? ` <span style="font-weight:500; color:var(--text-muted);">— ${escapeHtml(ld.function || ld.desc)}</span>` : ''}</div>
+      ${svg}
+    </div>`;
+  }).join('');
+  circuitOverlay(t('js.zuken.diagramTitle'), parts || `<div style="color:var(--text-muted); font-size:12px;">—</div>`, true);
+}
+
+async function runCircuitTrace() {
+  const inp = document.getElementById('zuken-search-input');
+  const query = (inp.value || '').trim();
+  const resBody = document.getElementById('zuken-results-body');
+  if (!query) { inp.focus(); return; }
+  resBody.innerHTML = `<div style="text-align:center; padding:40px 20px; color:var(--text-muted);"><div class="spinner" style="width:28px; height:28px; border:3px solid var(--border); border-top-color:var(--primary); border-radius:50%; animation:spin 0.8s linear infinite; margin:0 auto 12px auto;"></div>${escapeHtml(t('js.zuken.analyzing'))}</div>`;
+  const ps = ZUKEN_STATE.currentContext.projekt || (typeof STATE !== 'undefined' ? STATE.lastSelectedPS : '') || '';
+  try {
+    const cp = await apiCall(`/api/zuken/circuit-path?ps=${encodeURIComponent(ps)}&q=${encodeURIComponent(query)}`);
+    ZUKEN_STATE.lastCircuit = cp;
+    const card = circuitCardHtml(cp, query);
+    resBody.innerHTML = card || `<div style="padding:20px; color:var(--text-muted); text-align:center; font-size:13px;">⚠️ ${escapeHtml(t('js.zuken.circuitNotFound'))}: „${escapeHtml(query)}"</div>`;
+  } catch (err) {
+    resBody.innerHTML = `<div style="padding:20px; background:var(--red-bg); color:var(--red-text); border-radius:var(--radius-md); font-size:13px;">⚠️ ${escapeHtml(err.message || String(err))}</div>`;
+  }
 }
 </script>
 </body>

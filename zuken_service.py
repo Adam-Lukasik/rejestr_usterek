@@ -3349,7 +3349,7 @@ def get_carnation_diagnostic_info(ps_code=None, query_text="", lang="pl"):
         return None
 
     q_upper = (query_text or "").upper()
-    tokens = re.findall(r"[A-Za-z0-9_]+", q_upper)
+    tokens = re.findall(r"[A-Za-z0-9_]+(?:\.[0-9]+)?", q_upper)
 
     result = {
         "version": parsed.get("version", ""),
@@ -5065,13 +5065,16 @@ def _wire_adjacency(cur, conn_proj_ids):
 _PASSTHROUGH_DEV_RE = re.compile(r"^(X|SP|XS)\d", re.IGNORECASE)
 
 
-def _wire_net_paths(adj, start_node, banned=(), max_nodes=400, max_ends=24):
+def _wire_net_paths(adj, start_node, banned=(), max_nodes=400, max_ends=24, pass_fn=None):
     """BFS po sieci połączeń od start_node: przechodzi przez złącza (-X) i
     rozgałęźniki (-SP), zatrzymuje się na urządzeniach końcowych i liściach.
     Zwraca [((device, pin), path)] — path to lista krawędzi
-    [(from_node, to_node, wiersz)] od start_node do końca (najkrótsza)."""
+    [(from_node, to_node, wiersz)] od start_node do końca (najkrótsza).
+    pass_fn(node) -> bool pozwala nadpisać regułę urządzeń przechodnich."""
     if start_node not in adj:
         return []
+    is_pass = pass_fn or (
+        lambda nd: bool(_PASSTHROUGH_DEV_RE.match(clean_device_code(nd[0]) or "")))
     visited = set(banned) | {start_node}
     parent = {start_node: None}
     queue = deque([start_node])
@@ -5079,8 +5082,7 @@ def _wire_net_paths(adj, start_node, banned=(), max_nodes=400, max_ends=24):
     while queue and len(visited) <= max_nodes and len(ends) < max_ends:
         node = queue.popleft()
         nbrs = [n for n in adj.get(node, {}) if n not in visited]
-        if node != start_node and not (
-                nbrs and _PASSTHROUGH_DEV_RE.match(clean_device_code(node[0]) or "")):
+        if node != start_node and not (nbrs and is_pass(node)):
             ends.append(node)
             continue
         for n in nbrs:
@@ -5157,7 +5159,9 @@ def _wire_hop(fdev, fpin, tdev, tpin, row):
         "to_clean": clean_device_code(tdev) or (tdev or ""),
         "signal": _g("signal"), "wire_number": _g("wire_number"),
         "wire_color": _g("wire_color"), "cross_section": _g("cross_section"),
-        "wire_type": _g("wire_type"), "length": ln
+        "wire_type": _g("wire_type"), "length": ln,
+        "internal": (row.get("_internal") or "") if isinstance(row, dict) else "",
+        "internal_label": (row.get("_internal_label") or "") if isinstance(row, dict) else "",
     }
 
 
@@ -5284,6 +5288,426 @@ def trace_signal_net(ps_code, query, lang="pl"):
         if len(nets) >= 24:
             break
     return {"ok": True, "device": dev_q, "pin": pin_q, "nets": nets}
+
+
+# ═══════════════════════════════════════════════════════════════
+# ŚLEDZENIE PEŁNEGO OBWODU: tor zasilania (+), tor masy, rozgałęzienia
+# ═══════════════════════════════════════════════════════════════
+
+_CIRCUIT_FUSE_RE = re.compile(r"^FH?\d", re.IGNORECASE)
+_CIRCUIT_MODULE_RE = re.compile(r"^A\d", re.IGNORECASE)
+_CIRCUIT_RELAY_RE = re.compile(r"^K\d", re.IGNORECASE)
+_CIRCUIT_RT_RE = re.compile(r"^RT\d", re.IGNORECASE)
+_CIRCUIT_PASS_RE = re.compile(r"^(X|SP|XS|FH?|F)\d", re.IGNORECASE)
+
+_PL_FOLD = str.maketrans({
+    "Ą": "A", "Ć": "C", "Ę": "E", "Ł": "L", "Ń": "N", "Ó": "O",
+    "Ś": "S", "Ź": "Z", "Ż": "Z",
+    "ą": "a", "ć": "c", "ę": "e", "ł": "l", "ń": "n", "ó": "o",
+    "ś": "s", "ź": "z", "ż": "z",
+})
+
+_CIRCUIT_STOP_TOKENS = {
+    "BRAK", "NIE", "DZIALA", "NAPIECIA", "NAPIECIE", "OBWOD", "OBWODU",
+    "NR", "NO", "PIN", "PINU", "NA", "W", "DO", "Z", "ZA", "I", "ORAZ",
+    "THE", "IS", "AND", "FOR", "AT", "OF", "TO", "DER", "DIE", "DAS",
+}
+
+# Synonimy pojęć w nazwach obwodów (PL <-> EN / skróty z raportów Zuken)
+_CIRCUIT_SYNONYMS = {
+    "GNIAZDO": {"SOCKET", "JACK", "SKT", "OUTLET"},
+    "GNIAZDKO": {"SOCKET", "JACK", "SKT", "OUTLET"},
+    "SOCKET": {"GNIAZDO", "JACK", "SKT", "OUTLET"},
+    "JACK": {"SOCKET", "SKT", "GNIAZDO"},
+    "SKT": {"SOCKET", "JACK", "GNIAZDO"},
+    "MASA": {"GND", "GROUND", "EARTH"},
+    "MASOWA": {"GND", "GROUND"},
+    "GND": {"MASA", "GROUND", "EARTH"},
+    "GROUND": {"GND", "MASA"},
+    "SWIATLA": {"LIGHTS", "LIGHT", "LAMPS"},
+    "SWIATLO": {"LIGHT", "LAMP"},
+    "LAMPA": {"LAMP", "LIGHT"},
+    "LAMPY": {"LAMPS", "LIGHTS"},
+    "LIGHT": {"LAMP", "LAMPA", "SWIATLO"},
+    "LIGHTS": {"SWIATLA", "LAMPY"},
+    "ZASILANIE": {"POWER", "FEED", "SUPPLY"},
+    "POWER": {"ZASILANIE", "FEED", "SUPPLY"},
+    "FEED": {"ZASILANIE", "POWER"},
+    "SYRENA": {"SIREN"}, "SIREN": {"SYRENA"},
+    "INKUBATOR": {"INCUBATOR"}, "INCUBATOR": {"INKUBATOR"},
+    "NOSZE": {"STRETCHER"}, "STRETCHER": {"NOSZE"},
+    "WENTYLATOR": {"FAN", "BLOWER"}, "FAN": {"WENTYLATOR", "BLOWER"},
+    "DRZWI": {"DOOR", "DOORS"}, "DOOR": {"DRZWI"}, "DOORS": {"DRZWI"},
+    "KLIMATYZACJA": {"AC", "CLIMATE", "HVAC"},
+    "HVAC": {"KLIMATYZACJA", "CLIMATE", "AC"},
+    "OGRZEWANIE": {"HEATER", "HEAT"}, "HEATER": {"OGRZEWANIE", "HEAT"},
+    "INTERKOM": {"INTERCOM"}, "INTERCOM": {"INTERKOM"},
+    "POMPA": {"PUMP"}, "PUMP": {"POMPA"},
+    "SILNIK": {"MOTOR"}, "MOTOR": {"SILNIK"},
+    "AKUMULATOR": {"BATTERY"}, "BATTERY": {"AKUMULATOR"},
+    "LADOWARKA": {"CHARGER"}, "CHARGER": {"LADOWARKA"},
+    "TYLNE": {"REAR"}, "REAR": {"TYLNE"},
+    "PRZEDNIE": {"FRONT"}, "FRONT": {"PRZEDNIE"},
+    "NIEBIESKIE": {"BLUES", "BLUE"}, "BLUES": {"NIEBIESKIE", "BLUE"},
+    "CZERWONE": {"REDS", "RED"}, "REDS": {"CZERWONE", "RED"},
+    "ROBOCZE": {"SCENE", "WORK"}, "SCENE": {"ROBOCZE", "WORK"},
+}
+
+
+def _circuit_tokens(text):
+    t = (text or "").translate(_PL_FOLD).upper()
+    return [tk for tk in re.findall(r"[A-Z0-9]+(?:\.[0-9]+)?", t)
+            if tk not in _CIRCUIT_STOP_TOKENS]
+
+
+def _signal_node_map(cur, conn_proj_ids):
+    """signal -> {(device, pin)} dla projektów połączeń."""
+    out = {}
+    if not conn_proj_ids:
+        return out
+    ph = ",".join("?" for _ in conn_proj_ids)
+    for r in cur.execute(f"""
+        SELECT signal, from_device, from_pin, to_device, to_pin
+        FROM zuken_connections
+        WHERE project_id IN ({ph}) AND COALESCE(TRIM(signal), '') != '';
+    """, conn_proj_ids):
+        sig = (r["signal"] or "").strip()
+        if not sig:
+            continue
+        nodes = out.setdefault(sig, set())
+        a = ((r["from_device"] or "").strip(), (r["from_pin"] or "").strip())
+        b = ((r["to_device"] or "").strip(), (r["to_pin"] or "").strip())
+        if a[0]:
+            nodes.add(a)
+        if b[0]:
+            nodes.add(b)
+    return out
+
+
+def _match_signals(query, sig_nodes, limit=6):
+    """Dopasowuje zapytanie do nazw sygnałów: każdy token zapytania musi
+    pasować do tokenu sygnału (dokładnie albo przez synonim).
+    Sortowanie: najmniej nadmiarowych tokenów w sygnale."""
+    q_toks = _circuit_tokens(query)
+    if not q_toks:
+        return []
+    groups = [{tk} | _CIRCUIT_SYNONYMS.get(tk, set()) for tk in q_toks]
+    allv = set().union(*groups)
+    scored = []
+    for sig in sig_nodes:
+        s_toks = set(_circuit_tokens(sig))
+        if not s_toks:
+            continue
+        if all(g & s_toks for g in groups):
+            scored.append((len(s_toks - allv), len(s_toks), sig))
+    scored.sort()
+    return [s for _, _, s in scored[:limit]]
+
+
+def _circuit_evpss_for_signal(signal, carn):
+    """Wyjście EVPSS, którego nazwa funkcji dopasowuje się do sygnału."""
+    outs = (carn or {}).get("relevant_outputs") or []
+    if not outs:
+        return None
+    if not signal:
+        return outs[0] if len(outs) == 1 else None
+    sig_toks = set(_circuit_tokens(signal))
+
+    def _covers(toks_a, toks_b):
+        return all((({tk} | _CIRCUIT_SYNONYMS.get(tk, set())) & toks_b)
+                   for tk in toks_a)
+
+    for out in outs:
+        f_toks = set(_circuit_tokens(out.get("function") or ""))
+        if f_toks and _covers(f_toks, sig_toks):
+            return out
+    for out in outs:
+        f_toks = set(_circuit_tokens(out.get("function") or ""))
+        if f_toks and _covers(sig_toks, f_toks):
+            return out
+    return outs[0] if len(outs) == 1 else None
+
+
+def _circuit_extend_adjacency(cur, adj, ps_code):
+    """Dokłada wirtualne krawędzie wewnętrzne do grafu pinów:
+    - bezpieczniki (FH/F): element topikowy zwiera piny oprawki,
+    - przekaźniki: styk zasilania 30 do styków roboczych 87/87A
+      (wg contacts_json; cewka 85/86 pozostaje osobnym obwodem).
+    Zwraca (adj, internal_devs) — internal_devs to urządzenia, które
+    należy traktować jako przechodnie przy śledzeniu."""
+    internal_devs = set()
+    if not adj:
+        return adj, internal_devs
+
+    dev_pins = {}
+    for (d, p) in adj.keys():
+        dev_pins.setdefault(d, set()).add(p)
+
+    def _mark(kind, label):
+        return {"signal": "", "wire_number": "", "wire_color": "",
+                "cross_section": "", "wire_type": "", "length": "",
+                "_internal": kind, "_internal_label": label}
+
+    def _link(dev, pa, pb, kind, label):
+        a, b = (dev, pa), (dev, pb)
+        if pa == pb or a not in adj or b not in adj or b in adj.get(a, {}):
+            return
+        row = _mark(kind, label)
+        adj.setdefault(a, {})[b] = row
+        adj.setdefault(b, {})[a] = row
+        internal_devs.add(dev)
+
+    for dev, pins in dev_pins.items():
+        c = clean_device_code(dev) or ""
+        if _CIRCUIT_FUSE_RE.match(c) and len(pins) >= 2:
+            ps = sorted(pins, key=_natural_sort_key)
+            for i in range(len(ps)):
+                for j in range(i + 1, len(ps)):
+                    _link(dev, ps[i], ps[j], "fuse", c)
+
+    try:
+        if ps_code:
+            rows = cur.execute(
+                "SELECT device_code, contacts_json FROM zuken_ps_relays WHERE ps_code = ?",
+                (ps_code,)).fetchall()
+        else:
+            rows = cur.execute(
+                "SELECT device_code, contacts_json FROM zuken_ps_relays").fetchall()
+    except Exception:
+        rows = []
+    clean2dev = {}
+    for d in dev_pins:
+        clean2dev.setdefault(clean_device_code(d) or d, d)
+    for r in rows:
+        try:
+            contacts = json.loads(r["contacts_json"] or "[]")
+        except Exception:
+            continue
+        dev = r["device_code"]
+        if dev not in dev_pins:
+            dev = clean2dev.get(clean_device_code(dev) or "", dev)
+        rp_map = {}
+        for ct in contacts:
+            rp = str(ct.get("relay_pin") or "").strip().upper()
+            cp = str(ct.get("pin") or "").strip()
+            if rp and cp:
+                rp_map.setdefault(rp, set()).add(cp)
+        label = clean_device_code(dev) or dev
+        for p30 in rp_map.get("30", ()):
+            for tgt in ("87", "87A"):
+                for p87 in rp_map.get(tgt, ()):
+                    _link(dev, p30, p87, "relay", f"{label} 30\u2192{tgt}")
+    return adj, internal_devs
+
+
+def _circuit_end_role(ed, last_row):
+    """Rola końca sieci patrząc od odbiornika:
+    gnd (punkt masy), source (moduł EVPSS/OPM), terminal (zacisk/stud),
+    fuse, relay, load (inny odbiornik — rozgałęzienie)."""
+    d = (ed or "").upper()
+    c = (clean_device_code(ed) or "").upper()
+    if "+GND" in d:
+        return "gnd"
+    if _CIRCUIT_MODULE_RE.match(c):
+        return "source"
+    if _CIRCUIT_RELAY_RE.match(c):
+        return "relay"
+    if _CIRCUIT_RT_RE.match(c):
+        sig = ""
+        if last_row is not None:
+            try:
+                sig = (last_row["signal"] or "").upper()
+            except Exception:
+                sig = ""
+        return "gnd" if "GND" in sig else "terminal"
+    if _CIRCUIT_FUSE_RE.match(c):
+        return "fuse"
+    return "load"
+
+
+def trace_circuit(ps_code, query, lang="pl"):
+    """Pełna ścieżka obwodu dla zapytania diagnostycznego.
+    q: kod urządzenia ('X63', 'X63:1'), nazwa sygnału/odbiornika
+    ('12V SOCKET 3', 'gniazdo 12v 3', 'rear blues') lub wyjście EVPSS ('O2.12').
+    Zwraca odbiorniki z pinami podzielonymi na tor zasilania i masy,
+    z przeskokami (nr/kolor/przekrój/długość przewodu) i rozgałęzieniami."""
+    init_zuken_tables()
+    q = (query or "").strip()
+    if not q:
+        return {"ok": False, "loads": []}
+
+    conn = get_db()
+    cur = conn.cursor()
+    conn_ids, bom_ids = _ps_project_ids(cur, ps_code)
+    adj = _wire_adjacency(cur, conn_ids)
+    if not adj:
+        conn.close()
+        return {"ok": False, "loads": []}
+    adj, internal_devs = _circuit_extend_adjacency(cur, adj, ps_code)
+    glossary = get_glossary_dict()
+    dev_funcs = _device_function_map(cur, bom_ids)
+    sig_nodes = _signal_node_map(cur, conn_ids)
+    conn.close()
+    carn = get_carnation_diagnostic_info(ps_code, q, lang=lang) or {}
+    pass_fn = lambda nd: bool(  # noqa: E731
+        _CIRCUIT_PASS_RE.match(clean_device_code(nd[0]) or "")) or nd[0] in internal_devs
+
+    # ── 1. Rozpoznanie zapytania ────────────────────────────────
+    dev_q = pin_q = ""
+    mp = re.match(r"^(.+?)\s*(?::|\s+pin\s*|\s+pin|\s+)(\d+[A-Za-z']*)\s*$",
+                  q, re.IGNORECASE)
+    if mp:
+        dev_q, pin_q = mp.group(1).strip(), mp.group(2).strip()
+    else:
+        dev_q = q
+    if "-" in dev_q:
+        dev_q = dev_q.rsplit("-", 1)[-1]
+    dev_q = dev_q.strip().upper()
+
+    dev_nodes = {}
+    if dev_q:
+        for (ndev, npin) in adj.keys():
+            if (clean_device_code(ndev) or "").upper() == dev_q:
+                dev_nodes.setdefault(ndev, set()).add(npin)
+        if not dev_nodes:
+            alt = (dev_q + pin_q).upper() if pin_q else ""
+            for (ndev, npin) in adj.keys():
+                c = (clean_device_code(ndev) or "").upper()
+                if c == dev_q + "'" or (alt and c == alt):
+                    dev_nodes.setdefault(ndev, set()).add(npin)
+            if alt and dev_nodes:
+                pin_q = ""
+
+    resolved = {"kind": "", "label": q}
+    seed_devices = []
+    evpss = None
+    more_signals = []
+
+    if dev_nodes:
+        resolved = {"kind": "device",
+                    "label": dev_q + ((":" + pin_q) if pin_q else "")}
+        for ndev in sorted(dev_nodes, key=_natural_sort_key):
+            pins = sorted(dev_nodes[ndev], key=_natural_sort_key)
+            if pin_q:
+                m = [p for p in pins if p.upper() == pin_q.upper()]
+                if m:
+                    pins = m
+            seed_devices.append((ndev, pins))
+    else:
+        sig_matches = _match_signals(q, sig_nodes)
+        if not sig_matches:
+            for out in carn.get("relevant_outputs") or []:
+                for s in _match_signals(out.get("function") or "", sig_nodes):
+                    if s not in sig_matches:
+                        sig_matches.append(s)
+        if not sig_matches:
+            qu = q.upper()
+            sig_matches = [s for s in sig_nodes if qu in s.upper()][:6]
+        if not sig_matches:
+            return {"ok": True, "query": q, "resolved": resolved,
+                    "loads": [], "candidates": []}
+
+        evpss = _circuit_evpss_for_signal(sig_matches[0], carn)
+        used_sigs, load_devs, all_terms = [], [], []
+        for sig in sig_matches[:4]:
+            nodes = sig_nodes.get(sig) or set()
+            terms = []
+            for nd in nodes:
+                c = clean_device_code(nd[0]) or ""
+                is_pass = bool(_CIRCUIT_PASS_RE.match(c)) or nd[0] in internal_devs
+                if not is_pass or len(adj.get(nd, {})) <= 1:
+                    terms.append(nd)
+            all_terms.extend(terms)
+            loads_here = [nd for nd in terms
+                          if _circuit_end_role(nd[0], None) == "load"]
+            if not loads_here:
+                continue
+            used_sigs.append(sig)
+            for nd in sorted(loads_here,
+                             key=lambda n: (_natural_sort_key(n[0]),
+                                            _natural_sort_key(n[1]))):
+                if all(nd[0] != ld for ld in load_devs):
+                    load_devs.append(nd[0])
+        more_signals = sig_matches[4:]
+        if load_devs:
+            for d in load_devs[:12]:
+                pins = sorted({p for (dd, p) in adj if dd == d},
+                              key=_natural_sort_key)
+                seed_devices.append((d, pins[:16]))
+        else:
+            for nd in sorted(all_terms,
+                             key=lambda n: (_natural_sort_key(n[0]),
+                                            _natural_sort_key(n[1])))[:12]:
+                seed_devices.append((nd[0], [nd[1]]))
+        resolved = {"kind": "signal", "label": ", ".join(used_sigs or sig_matches[:1])}
+
+    # ── 2. Śledzenie pinów ──────────────────────────────────────
+    loads_out = []
+    for ndev, pins in seed_devices[:14]:
+        clean = clean_device_code(ndev) or ndev
+        pins_out = []
+        for npin in pins[:16]:
+            node = (ndev, npin)
+            if not adj.get(node):
+                continue
+            ends = _wire_net_paths(adj, node, max_nodes=800, max_ends=32,
+                                   pass_fn=pass_fn)
+            seen_e = set()
+            ends_out = []
+            roles = set()
+            for (ed, ep), path in ends:
+                if (ed, ep) == node or (ed, ep) in seen_e:
+                    continue
+                seen_e.add((ed, ep))
+                last_row = path[-1][2] if path else None
+                role = _circuit_end_role(ed, last_row)
+                roles.add(role)
+                hops = [_wire_hop(a[0], a[1], b[0], b[1], row)
+                        for (a, b, row) in path]
+                eclean = clean_device_code(ed) or ed
+                ends_out.append({
+                    "device": ed, "pin": ep, "clean": eclean, "role": role,
+                    "function": dev_funcs.get(ed) or dev_funcs.get(eclean) or "",
+                    "desc": explain_device_code(ed, glossary, lang=lang) or "",
+                    "path": hops,
+                    "via_fuse": any(h.get("internal") == "fuse" for h in hops),
+                    "via_relay": any(h.get("internal") == "relay" for h in hops),
+                    "shared": (max(0, len(adj.get((ed, ep), {})) - 1)
+                               if role == "gnd" else 0),
+                })
+            if not ends_out:
+                continue
+            if "gnd" in roles:
+                role = "gnd"
+            elif roles & {"source", "terminal", "fuse", "relay"}:
+                role = "feed"
+            else:
+                role = "other"
+            pins_out.append({"pin": npin, "role": role, "ends": ends_out})
+        if pins_out:
+            loads_out.append({
+                "device": ndev, "clean": clean,
+                "function": dev_funcs.get(ndev) or dev_funcs.get(clean) or "",
+                "desc": explain_device_code(ndev, glossary, lang=lang) or "",
+                "pins": pins_out,
+            })
+
+    evpss_out = None
+    if evpss:
+        code = evpss.get("code") or ""
+        rules = []
+        if code and len(code) > 1:
+            pat = re.compile(r"(?<!\d)0?" + re.escape(code[1:]) + r"(?!\d)")
+            for r in carn.get("controlling_rules") or []:
+                txt = (r.get("rule") or "") + " " + " ".join(r.get("actions") or [])
+                if code in txt or pat.search(txt):
+                    rules.append(r)
+        evpss_out = dict(evpss)
+        evpss_out["rules"] = rules[:4]
+
+    return {"ok": True, "query": q, "resolved": resolved,
+            "evpss": evpss_out, "loads": loads_out,
+            "more_signals": more_signals}
 
 
 def get_ps_connectors(ps_code, search="", system_filter="", limit=100, offset=0, lang="pl"):

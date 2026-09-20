@@ -2620,6 +2620,21 @@ def api_zuken_signal_path():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/zuken/circuit-path", methods=["GET"])
+def api_zuken_circuit_path():
+    """Pełny obwód dla zapytania: tor zasilania (+), tor masy, rozgałęzienia.
+    q: urządzenie ('X63', 'X63:1'), nazwa sygnału/odbiornika
+    ('12V SOCKET 3', 'gniazdo 12v 3') lub wyjście EVPSS ('O2.12')."""
+    try:
+        ps_code = request.args.get("ps", "") or request.args.get("ps_code", "")
+        query = request.args.get("q", "") or request.args.get("query", "")
+        if not query:
+            return jsonify({"error": smsg("psQRequired")}), 400
+        return jsonify(zuken_service.trace_circuit(ps_code, query, lang=_app_lang()))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/api/zuken/summaries/export", methods=["GET"])
 def api_zuken_summaries_export():
     """Eksportuje zestawienie do pliku CSV z kodowaniem UTF-8 BOM dla Excela."""
