@@ -106,7 +106,52 @@ r = cli.put("/api/records/r6", json={"klient": "K", "model": "M", "typ": "T",
 d = r.get_json()
 check("fail keeps old translations", d["opisProblem_de"] == "Fehler Y2" and d["opisProblem"] == "[pl]Fehler Y" and d["opisProblem_en"] == "[en]Fehler Y", str(d))
 
-# 11. Migracja starej bazy: tabela bez _de -> ALTER dodaje kolumny
+# 11. Masowe tłumaczenie (admin): brak tokenu -> 403
+r = cli.post("/api/admin/translate-missing", json={})
+check("batch no auth -> 403", r.status_code == 403)
+
+# Login admina
+r = cli.post("/api/auth/login", json={"username": "admin", "password": "admin123"})
+tok = r.get_json()["token"]
+H = {"Authorization": f"Bearer {tok}", "X-App-Lang": "pl"}
+
+# Rekord z brakiem _de i _en (czyścimy kolumny ręcznie)
+A.translate_text = fake_translate
+import sqlite3 as _sq
+c = _sq.connect(A.DB_PATH)
+c.execute("UPDATE records SET opisProblem_en='', opisProblem_de='' WHERE id='r1'")
+c.execute("UPDATE solutions SET tytul_en='', tytul_de='' WHERE id=?", (sol_id,))
+c.commit(); c.close()
+
+r = cli.post("/api/admin/translate-missing", json={}, headers=H)
+check("batch start", r.status_code == 200 and r.get_json()["status"] in ("started", "running"))
+
+import time as _t
+for _ in range(60):
+    s = cli.get("/api/admin/translate-missing/status", headers=H).get_json()
+    if not s["is_running"]:
+        break
+    _t.sleep(0.3)
+check("batch finished", not s["is_running"], str(s))
+check("batch counts", s["translated"] >= 4, str(s))
+
+c = _sq.connect(A.DB_PATH)
+row = c.execute("SELECT opisProblem_en, opisProblem_de FROM records WHERE id='r1'").fetchone()
+srow = c.execute("SELECT tytul_en, tytul_de FROM solutions WHERE id=?", (sol_id,)).fetchone()
+c.close()
+check("batch filled rec", row[0] == "[en]Pęknięty przewód" and row[1] == "[de]Pęknięty przewód", str(row))
+check("batch filled sol", srow[0] == "[en]Wymiana kabla" and srow[1] == "[de]Wymiana kabla", str(srow))
+
+# Ponowne uruchomienie — nic do zrobienia (total=0)
+r = cli.post("/api/admin/translate-missing", json={}, headers=H)
+for _ in range(60):
+    s = cli.get("/api/admin/translate-missing/status", headers=H).get_json()
+    if not s["is_running"]:
+        break
+    _t.sleep(0.3)
+check("batch idempotent", s["total"] == 0, str(s))
+
+# 12. Migracja starej bazy: tabela bez _de -> ALTER dodaje kolumny
 import sqlite3
 db2 = os.path.join(tmp, "old.db")
 c = sqlite3.connect(db2)

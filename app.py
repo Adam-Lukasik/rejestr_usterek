@@ -13,6 +13,8 @@ from pathlib import Path
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import uuid as _uuid
+import threading
+import time
 from datetime import datetime as _dt, timedelta as _td
 from functools import wraps
 from flask import Flask, send_from_directory, request, jsonify, Response
@@ -324,6 +326,82 @@ SRV_MSG = {
     "batchStopSignal": {"pl": "Wysłano sygnał zatrzymania zadania.", "en": "Stop signal sent to the task.", "de": "Stoppsignal an die Aufgabe gesendet."},
     "noBatchRunning": {"pl": "Żadne zadanie masowe nie jest obecnie uruchomione.", "en": "No batch task is currently running.", "de": "Derzeit läuft keine Stapelaufgabe."},
 }
+
+# ── Masowe tłumaczenie brakujących wariantów językowych (admin) ──────────────
+TRANSLATE_STATE = {
+    "is_running": False, "done": False,
+    "total": 0, "processed": 0, "translated": 0, "failed": 0, "error": ""
+}
+_translate_lock = threading.Lock()
+
+
+def _fill_missing_langs(pl, en, de):
+    """Uzupełnia brakujące warianty EN/DE/PL na bazie pierwszego dostępnego.
+    Zwraca (pl, en, de, made, failed)."""
+    cols = {"pl": (pl or "").strip(), "en": (en or "").strip(), "de": (de or "").strip()}
+    src = next((l for l in ("pl", "en", "de") if cols[l]), None)
+    made = failed = 0
+    if not src:
+        return cols["pl"], cols["en"], cols["de"], 0, 0
+    for tgt in ("pl", "en", "de"):
+        if tgt == src or cols[tgt]:
+            continue
+        tr = translate_text(cols[src], src, tgt)
+        if tr:
+            cols[tgt] = tr
+            made += 1
+        else:
+            failed += 1
+        time.sleep(0.15)
+    return cols["pl"], cols["en"], cols["de"], made, failed
+
+
+def _has_lang_gap(vals):
+    has_any = any(v and str(v).strip() for v in vals)
+    has_gap = any(not v or not str(v).strip() for v in vals)
+    return has_any and has_gap
+
+
+def _translate_missing_worker():
+    conn = get_db_connection()
+    try:
+        tasks = []
+        for r in conn.execute("""
+            SELECT id, opisProblem, opisProblem_en, opisProblem_de,
+                   opisNaprawa, opisNaprawa_en, opisNaprawa_de FROM records
+        """).fetchall():
+            for base in ("opisProblem", "opisNaprawa"):
+                vals = (r[base], r[base + "_en"], r[base + "_de"])
+                if _has_lang_gap(vals):
+                    tasks.append(("records", r["id"], base, vals))
+        for s in conn.execute("""
+            SELECT id, tytul, tytul_en, tytul_de, opis, opis_en, opis_de FROM solutions
+        """).fetchall():
+            for base in ("tytul", "opis"):
+                vals = (s[base], s[base + "_en"], s[base + "_de"])
+                if _has_lang_gap(vals):
+                    tasks.append(("solutions", s["id"], base, vals))
+
+        TRANSLATE_STATE["total"] = len(tasks)
+        for i, (table, row_id, base, vals) in enumerate(tasks):
+            pl, en, de, made, failed = _fill_missing_langs(*vals)
+            TRANSLATE_STATE["translated"] += made
+            TRANSLATE_STATE["failed"] += failed
+            if made:
+                conn.execute(
+                    f"UPDATE {table} SET {base}=?, {base}_en=?, {base}_de=? WHERE id=?",
+                    (pl, en, de, row_id))
+                conn.commit()
+            TRANSLATE_STATE["processed"] = i + 1
+        checkpoint_wal(conn)
+    except Exception as e:
+        print(f"[TRANSLATE BATCH] Błąd: {e}")
+        TRANSLATE_STATE["error"] = str(e)
+    finally:
+        conn.close()
+        TRANSLATE_STATE["is_running"] = False
+        TRANSLATE_STATE["done"] = True
+
 
 def _app_lang():
     """Język UI z nagłówka X-App-Lang (domyślnie 'pl')."""
@@ -2567,6 +2645,37 @@ def api_zuken_summaries_export():
         return response
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+# ═══════════════════════════════════════════════════════════════════
+# ADMIN: MASOWE UZUPEŁNIANIE TŁUMACZEŃ (PL/EN/DE)
+# ═══════════════════════════════════════════════════════════════════
+
+@app.route("/api/admin/translate-missing", methods=["POST"])
+def admin_translate_missing():
+    """Uruchamia w tle masowe tłumaczenie pól usterek/wariantów bez pełnego PL/EN/DE."""
+    user = get_current_user()
+    if not user or user.get("role") != "admin":
+        return jsonify({"error": smsg("adminRequired")}), 403
+    with _translate_lock:
+        if TRANSLATE_STATE["is_running"]:
+            return jsonify({"status": "running",
+                            "processed": TRANSLATE_STATE["processed"],
+                            "total": TRANSLATE_STATE["total"]})
+        TRANSLATE_STATE.update(is_running=True, done=False, total=0,
+                               processed=0, translated=0, failed=0, error="")
+        threading.Thread(target=_translate_missing_worker, daemon=True).start()
+    return jsonify({"status": "started"})
+
+
+@app.route("/api/admin/translate-missing/status", methods=["GET"])
+def admin_translate_missing_status():
+    """Zwraca postęp masowego tłumaczenia."""
+    user = get_current_user()
+    if not user or user.get("role") != "admin":
+        return jsonify({"error": smsg("adminRequired")}), 403
+    with _translate_lock:
+        return jsonify(dict(TRANSLATE_STATE))
 
 
 if __name__ == "__main__":

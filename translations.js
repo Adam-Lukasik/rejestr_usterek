@@ -453,7 +453,15 @@ const TRANSLATIONS = {
         importReplace: "Zastąp całą bazę",
         optTitle: "Optymalizacja zdjęć i VACUUM bazy",
         optDesc: "Automatycznie kompresuje zdjęcia archiwalne i zmniejsza rozmiar pliku SQLite na dysku.",
-        optBtn: "⚡ Uruchom optymalizację"
+        optBtn: "⚡ Uruchom optymalizację",
+        trTitle: "🌐 Uzupełnij brakujące tłumaczenia usterek (PL / EN / DE)",
+        trDesc: "Przetwarza w tle wszystkie usterki i warianty napraw, którym brakuje wersji angielskiej lub niemieckiej. Wymaga dostępu do internetu.",
+        trBtn: "Przetłumacz brakujące",
+        trConfirm: "Uruchomić masowe tłumaczenie brakujących wersji językowych? Może to potrwać kilka minut.",
+        trRunning: "Tłumaczenie w toku…",
+        trProgress: "Tłumaczenie… {p}/{n} pól",
+        trDone: "Zakończono: przetłumaczono {n} pól, błędów: {f}.",
+        trErr: "Błąd masowego tłumaczenia: {v}"
       },
       auth: {
         loginSubtitle: "Zaloguj się, aby uzyskać dostęp",
@@ -1416,7 +1424,15 @@ const TRANSLATIONS = {
         importReplace: "Replace entire database",
         optTitle: "Photo optimization & database VACUUM",
         optDesc: "Automatically compresses archived photos and reduces the SQLite file size on disk.",
-        optBtn: "⚡ Run optimization"
+        optBtn: "⚡ Run optimization",
+        trTitle: "🌐 Fill in missing defect translations (PL / EN / DE)",
+        trDesc: "Processes in the background all defects and repair variants missing the English or German version. Requires internet access.",
+        trBtn: "Translate missing",
+        trConfirm: "Start bulk translation of missing language versions? This may take a few minutes.",
+        trRunning: "Translating…",
+        trProgress: "Translating… {p}/{n} fields",
+        trDone: "Done: {n} fields translated, errors: {f}.",
+        trErr: "Bulk translation error: {v}"
       },
       auth: {
         loginSubtitle: "Sign in to get access",
@@ -2378,7 +2394,15 @@ const TRANSLATIONS = {
         importReplace: "Gesamte Datenbank ersetzen",
         optTitle: "Fotooptimierung & Datenbank-VACUUM",
         optDesc: "Komprimiert archivierte Fotos automatisch und verkleinert die SQLite-Datei auf dem Datenträger.",
-        optBtn: "⚡ Optimierung starten"
+        optBtn: "⚡ Optimierung starten",
+        trTitle: "🌐 Fehlende Mängel-Übersetzungen ergänzen (PL / EN / DE)",
+        trDesc: "Verarbeitet im Hintergrund alle Mängel und Reparaturvarianten ohne englische oder deutsche Version. Erfordert Internetzugang.",
+        trBtn: "Fehlende übersetzen",
+        trConfirm: "Massenübersetzung fehlender Sprachversionen starten? Dies kann einige Minuten dauern.",
+        trRunning: "Übersetzung läuft…",
+        trProgress: "Übersetze… {p}/{n} Felder",
+        trDone: "Fertig: {n} Felder übersetzt, Fehler: {f}.",
+        trErr: "Fehler bei Massenübersetzung: {v}"
       },
       auth: {
         loginSubtitle: "Anmelden für Zugriff",
