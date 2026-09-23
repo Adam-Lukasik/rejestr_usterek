@@ -3597,14 +3597,14 @@ async function loadRecordSolutions(recId) {
     const noDescMsg = t('js.common.noDesc');
 
     if (!solutions || solutions.length === 0) {
-      targets.forEach(t => {
-        t.box.innerHTML = `<div style="font-size:12px; color:var(--text-dim); padding:8px 0;">${emptyMsg}</div>`;
+      targets.forEach(tgt => {
+        tgt.box.innerHTML = `<div style="font-size:12px; color:var(--text-dim); padding:8px 0;">${emptyMsg}</div>`;
       });
       return;
     }
 
-    targets.forEach(t => {
-      t.box.innerHTML = '';
+    targets.forEach(tgt => {
+      tgt.box.innerHTML = '';
       for (const sol of solutions) {
         const pickT = pickLang(sol, 'tytul');
         const pickO = pickLang(sol, 'opis');
@@ -3622,7 +3622,7 @@ async function loadRecordSolutions(recId) {
           <div class="sol-header" style="flex-direction:column; align-items:flex-start; gap:4px; margin-bottom:8px;">
             <div style="display:flex; align-items:center; justify-content:space-between; width:100%; flex-wrap:wrap; gap:6px;">
               <span class="sol-title" style="font-size:13.5px; font-weight:700;">${variantWord} ${sol.numer}: ${badge}${escapeHtml(solTytul)}</span>
-              <button type="button" class="btn-secondary-action" style="padding:3px 9px; font-size:11.5px; font-weight:600; display:inline-flex; align-items:center; gap:5px; border-color:var(--primary); color:var(--primary); background:rgba(2, 132, 199, 0.08); border-radius:var(--radius-sm);" onclick="openAiDiagnosisForSolution('${escapeHtml(recId)}', '${escapeHtml(sol.id)}')" title="${(typeof t === 'function' ? t('zuken.btnSolutionSchematic') : '') || 'Schemat Zuken'}">
+              <button type="button" class="btn-secondary-action" style="padding:3px 9px; font-size:11.5px; font-weight:600; display:inline-flex; align-items:center; gap:5px; border-color:var(--primary); color:var(--primary); background:rgba(2, 132, 199, 0.08); border-radius:var(--radius-sm);" onclick="openAiDiagnosisForSolution('${escapeHtml(recId)}', '${escapeHtml(sol.id)}')" title="${t('zuken.btnSolutionSchematic') || 'Schemat Zuken'}">
                 <span>📐</span> <span>${t('zuken.btnSolutionSchematic')}</span>
               </button>
             </div>
@@ -3632,14 +3632,15 @@ async function loadRecordSolutions(recId) {
             </div>
           </div>
           <div style="font-size:13px; line-height:1.45; white-space:pre-wrap; margin-bottom:10px;">${escapeHtml(solOpis || noDescMsg)}</div>
-          <div id="sol-photos-${t.prefix}-${sol.id}" class="photo-gallery-grid" style="grid-template-columns: repeat(auto-fill, minmax(100px, 120px)); gap: 8px; margin-bottom: 8px;"></div>
-          <div id="sol-docs-${t.prefix}-${sol.id}" style="display:flex; flex-direction:column; gap:4px;"></div>
+          <div id="sol-photos-${tgt.prefix}-${sol.id}" class="photo-gallery-grid" style="grid-template-columns: repeat(auto-fill, minmax(100px, 120px)); gap: 8px; margin-bottom: 8px;"></div>
+          <div id="sol-docs-${tgt.prefix}-${sol.id}" style="display:flex; flex-direction:column; gap:4px;"></div>
         `;
-        t.box.appendChild(card);
+        tgt.box.appendChild(card);
 
         // Zdjęcia wariantu (podgląd)
+        const _tgtPrefix = tgt.prefix;
         apiCall(`/api/solutions/${sol.id}/photos`).then(async pList => {
-          const phBox = document.getElementById(`sol-photos-${t.prefix}-${sol.id}`);
+          const phBox = document.getElementById(`sol-photos-${_tgtPrefix}-${sol.id}`);
           if (!phBox || !pList || pList.length === 0) return;
           const fullPhotos = await Promise.all(
             pList.map(pm => apiCall(`/api/solution-photos/${pm.id}`))
@@ -3657,7 +3658,7 @@ async function loadRecordSolutions(recId) {
 
         // Dokumenty wariantu (podgląd)
         apiCall(`/api/solutions/${sol.id}/documents`).then(dList => {
-          const dBox = document.getElementById(`sol-docs-${t.prefix}-${sol.id}`);
+          const dBox = document.getElementById(`sol-docs-${_tgtPrefix}-${sol.id}`);
           if (!dBox || !dList || dList.length === 0) return;
           dBox.innerHTML = dList.map(d => {
             const isPdf = (d.filename || '').toLowerCase().endsWith('.pdf');
@@ -3686,8 +3687,8 @@ async function loadRecordSolutions(recId) {
       }
     });
   } catch(e) {
-    targets.forEach(t => {
-      t.box.innerHTML = `<div style="font-size:12px; color:var(--red);">${window.t('js.form.errLoadSolutions')}</div>`;
+    targets.forEach(tgt => {
+      tgt.box.innerHTML = `<div style="font-size:12px; color:var(--red);">${window.t('js.form.errLoadSolutions')}</div>`;
     });
   }
 }
@@ -8520,6 +8521,17 @@ function showWirePath(el) {
   closeWirePath();
 
   const hopHtml = hops.map(h => {
+    if (h.from_clean === h.to_clean && h.from_pin === h.to_pin && h.from !== h.to) {
+      const mateA = (h.from || '').split('-').pop();
+      const mateB = (h.to || '').split('-').pop();
+      const pin = h.from_pin ? ':' + escapeHtml(h.from_pin) : '';
+      return `<div style="display:flex; align-items:center; gap:8px; padding:6px 0; border-bottom:1px dashed var(--border); font-size:12px;">
+        <span style="font-family:var(--font-mono, monospace); font-weight:700; color:var(--text-main); white-space:nowrap;">${escapeHtml(mateA)}${pin}</span>
+        <span style="color:#7c3aed; font-weight:700;">⇄</span>
+        <span style="flex:1; font-size:11px; color:#7c3aed;">${escapeHtml(t('js.zuken.matePair'))}</span>
+        <span style="font-family:var(--font-mono, monospace); font-weight:700; color:#0284c7; white-space:nowrap;">${escapeHtml(mateB)}${pin}</span>
+      </div>`;
+    }
     const wlabel = h.wire_number || h.signal || '';
     const attrs = [wlabel, h.cross_section ? h.cross_section + ' mm²' : '', (h.length && h.length !== '0') ? fmtWireLength(h.length) : ''].filter(Boolean).join(' · ');
     return `<div style="display:flex; align-items:center; gap:8px; padding:6px 0; border-bottom:1px dashed var(--border); font-size:12px;">
@@ -8623,8 +8635,9 @@ function circuitWireStroke(colorText) {
   return '#64748b';
 }
 
-function circuitHopInline(h) {
-  const nodeA = escapeHtml(h.from_clean) + (h.from_pin ? ':' + escapeHtml(h.from_pin) : '');
+function circuitHopInline(h, mateMark) {
+  const nodeA = escapeHtml(h.from_clean) + (h.from_pin ? ':' + escapeHtml(h.from_pin) : '')
+    + (mateMark ? ` <span style="color:#7c3aed;" title="${escapeHtml(t('js.zuken.matePair'))}">⇄${escapeHtml(mateMark)}</span>` : '');
   if (h.internal === 'fuse' || h.internal === 'relay') {
     const lbl = h.internal === 'fuse' ? t('js.zuken.viaFuse') : t('js.zuken.viaRelay');
     return `${nodeA} <span style="color:#d97706;">—[⚡ ${escapeHtml(lbl)} ${escapeHtml(h.internal_label || '')}]→</span>`;
@@ -8649,13 +8662,24 @@ function circuitSegDesc(h) {
 function circuitEndHtml(e) {
   const rm = CIRCUIT_ROLE_META[e.role] || CIRCUIT_ROLE_META.load;
   const endL = (e.clean || e.device) + (e.pin ? ':' + e.pin : '');
-  const hopsTxt = (e.path || []).map(circuitHopInline).join(' ');
+  const ml = e.module_label;
+  const dispL = ml ? `${ml.module} · ${ml.code}` : endL;
+  const _isMate = h => h.from_clean === h.to_clean && h.from_pin === h.to_pin && h.from !== h.to;
+  const path = e.path || [];
+  const hopsTxt = path.map((h, i) => {
+    if (_isMate(h)) return null;
+    const partner = (i > 0 && _isMate(path[i - 1]))
+      ? (path[i - 1].to || '').split('-').pop() : '';
+    return circuitHopInline(h, partner);
+  }).filter(Boolean).join(' ');
   const metaBits = [];
+  if (ml) metaBits.push(escapeHtml(endL) + (e.plug ? ` · ${escapeHtml(t('js.zuken.plugLabel'))} ${escapeHtml(e.plug.clean)} (${escapeHtml(e.plug.label)})` : ''));
   if (e.function || e.desc) metaBits.push(escapeHtml(e.function || e.desc));
+  if (ml && ml.max_current) metaBits.push(escapeHtml(ml.max_current));
   if (e.role === 'gnd' && e.shared > 0) metaBits.push(escapeHtml(t('js.zuken.sharedGnd', { n: e.shared })));
   const fe = { path: e.path || [], clean: e.clean, device: e.device, pin: e.pin, function: e.function || '' };
   return `<div data-fe="${escapeHtml(JSON.stringify(fe))}" onclick="showWirePath(this)" style="margin:4px 0 4px 14px; padding:6px 10px; background:var(--bg-card); border:1px solid var(--border); border-left:3px solid ${rm.color}; border-radius:6px; cursor:pointer;" title="${escapeHtml(endL)}">
-    <div style="font-weight:700; color:${rm.color}; font-size:12px; font-family:var(--font-mono, monospace);">${rm.icon} ${escapeHtml(t('js.zuken.' + rm.key))} ⇒ ${escapeHtml(endL)}${metaBits.length ? ` <span style="color:var(--text-muted); font-weight:400; font-size:11px;">— ${metaBits.join(' · ')}</span>` : ''}</div>
+    <div style="font-weight:700; color:${rm.color}; font-size:12px; font-family:var(--font-mono, monospace);">${rm.icon} ${escapeHtml(t('js.zuken.' + rm.key))} ⇒ ${escapeHtml(dispL)}${metaBits.length ? ` <span style="color:var(--text-muted); font-weight:400; font-size:11px;">— ${metaBits.join(' · ')}</span>` : ''}</div>
     <div style="font-size:11px; color:var(--text-muted); margin-top:2px; font-family:var(--font-mono, monospace); line-height:1.6;">${hopsTxt}</div>
   </div>`;
 }
@@ -8743,11 +8767,23 @@ function showCircuitChecklist() {
         const ends = p.ends || [];
         const src = ends.find(e => e.role === 'source' || e.role === 'terminal') || ends[0];
         if (!src) return;
+        const srcMl = src.module_label;
         const nodes = [{ label: ld.clean + ':' + p.pin, dev: ld.clean, seg: null, isEnd: false }];
-        (src.path || []).forEach((h, i) => nodes.push({
-          label: h.to_clean + (h.to_pin ? ':' + h.to_pin : ''), dev: h.to_clean,
-          seg: h, isEnd: i === src.path.length - 1
-        }));
+        (src.path || []).forEach((h, i) => {
+          const mate = h.from_clean === h.to_clean && h.from_pin === h.to_pin && h.from !== h.to;
+          if (mate) {
+            const last = nodes[nodes.length - 1];
+            if (last) last.label += ' ⇄ ' + (h.to || '').split('-').pop();
+            return;
+          }
+          const isEnd = i === src.path.length - 1;
+          const base = h.to_clean + (h.to_pin ? ':' + h.to_pin : '');
+          nodes.push({
+            label: (isEnd && srcMl) ? `${srcMl.module} · ${srcMl.code} (${base})` : base,
+            dev: h.to_clean, seg: h, isEnd
+          });
+        });
+        const plugTxt = src.plug ? ` · ${escapeHtml(t('js.zuken.plugLabel'))} ${escapeHtml(src.plug.clean)} (${escapeHtml(src.plug.label)})` : '';
         const stepsHtml = nodes.map(s => {
           n++;
           const segTxt = s.seg ? circuitSegDesc(s.seg) : '';
@@ -8757,7 +8793,7 @@ function showCircuitChecklist() {
             <div style="flex:1; min-width:0;">
               <span style="font-family:var(--font-mono, monospace); font-weight:700; font-size:12.5px;">${escapeHtml(s.label)}</span>
               <button type="button" data-dev="${escapeHtml(s.dev)}" onclick="jumpToWireDevice(this.dataset.dev)" title="${escapeHtml(t('ui.zuken.wirePathJump'))}" style="background:none; border:none; cursor:pointer; color:#0284c7; font-size:12px; padding:0 4px;">⇲</button>
-              <div style="font-size:11px; color:var(--text-muted); margin-top:1px;">${escapeHtml(roleTxt)}${segTxt ? ' · ' + segTxt : ''}</div>
+              <div style="font-size:11px; color:var(--text-muted); margin-top:1px;">${escapeHtml(roleTxt)}${segTxt ? ' · ' + segTxt : ''}${s.isEnd ? plugTxt : ''}</div>
             </div>
           </div>`;
         }).join('');
@@ -8790,14 +8826,211 @@ function showCircuitChecklist() {
   circuitOverlay(t('js.zuken.checklistTitle'), sections.join('') || `<div style="color:var(--text-muted); font-size:12px;">—</div>`);
 }
 
-function circuitSvgForLoad(ld) {
+// ── Widok gniazd złącza od strony przewodów ──────────────────────────
+// Układy gniazd zweryfikowane z rysunków katalogowych TE
+// (widok "CONTACT CAVITY NUMBERS" = strona łączenia; od strony przewodów = lustro).
+const CONN_JPT_COLS = { 4: 2, 6: 3, 8: 4, 10: 5, 14: 7, 18: 9, 22: 11 };
+
+function connHalfInfo(connMeta, clean, devSfx) {
+  const cm = (connMeta || {})[clean] || {};
+  const h = (cm.halves || {})[devSfx] || null;
+  return {
+    article: (h && h.article) || cm.article || '',
+    desc: (h && h.desc) || cm.desc || cm.type || '',
+    pins: cm.pins || 0
+  };
+}
+
+// Wykrywa rodzinę/płeć obudowy; zwraca siatkę gniazd lub null gdy nieznana.
+// Płeć = płeć styków/obudowy: receptacle/socket → F, plug/tab/cap → M.
+// Uwaga: u TE „Plug Housing" (Superseal, MATE-N-LOK) mieści styki żeńskie → F.
+function connFaceLayout(info) {
+  const art = (info.article || '').trim(), desc = info.desc || '', blob = art + ' ' + desc;
+  let gender = '', fam = '', rows = 0, cols = 0;
+  let n = parseInt(info.pins, 10) || 0;
+  const cn = desc.match(/(\d+)\s*circuits?/i) || desc.match(/PIN:\s*(\d+)/i)
+          || desc.match(/(\d+)\s*pos/i) || desc.match(/(\d+)\s*pole/i);
+  if (cn) n = +cn[1];
+
+  if (/junior\s*(power\s*)?timer/i.test(desc) || /^(\d+-)?92950[45]-/.test(art)) {
+    fam = 'JPT'; rows = 2; cols = CONN_JPT_COLS[n] || 0;
+    if (/receptacle/i.test(blob) || /^(\d+-)?929504-/.test(art)) gender = 'F';
+    if (/pin\s*housing|pinhousing|tab[-\s]?housing/i.test(blob) || /^(\d+-)?929505-/.test(art)) gender = 'M';
+  } else if (/mini[\s-]?fit/i.test(desc) || /^39-0[01]-\d{4}/.test(art)) {
+    fam = 'MINIFIT'; rows = 2; cols = n / 2;
+    // Molex: ostatnia cyfra artykułu 0/5 = receptacle, 1/2 = plug (opisy BOM bywają mylące)
+    if (/[05]$/.test(art)) gender = 'F'; else if (/[12]$/.test(art)) gender = 'M';
+    if (!gender) {
+      if (/receptacle/i.test(blob)) gender = 'F';
+      if (/\bplug\b|wtyk/i.test(blob)) gender = 'M';
+    }
+  } else if (/micro[\s-]?fit/i.test(desc) || /^4302[05]-|^4364[05]-/.test(art)) {
+    if (/single\s*row/i.test(desc)) return null; // 1-rzędowe Micro-Fit: niezweryfikowane
+    fam = 'MICROFIT'; rows = 2; cols = n / 2;
+    if (/^43025-/.test(art) || /receptacle/i.test(blob)) gender = 'F';
+    if (/^43020-/.test(art) || /\bplug\b|wtyk/i.test(blob)) gender = 'M';
+  } else if (/superseal/i.test(blob) || /^282[01]\d\d-/.test(art)) {
+    fam = 'SUPERSEAL'; rows = 1; cols = n;
+    if (/contact\s*gender\s*receptacle|female|\bplug\b/i.test(blob) || /^2820\d\d-/.test(art)) gender = 'F';
+    if (/contact\s*gender\s*tab|\bcap\b|\bmale\b/i.test(blob) || /^2821\d\d-/.test(art)) gender = 'M';
+  } else if (/mate[\s-]?n[\s-]?lok/i.test(desc) || /^1-480\d{3}-|^\d-?480\d{3}$/.test(art)) {
+    fam = 'MATENLOK'; cols = 2; rows = n / 2;
+    if (/receptacle|\bplug\b|wtyk|socket/i.test(blob)) gender = 'F';
+    if (/\bcap\b|\bpin\b/i.test(blob)) gender = 'M';
+  }
+  if (!fam || !gender || !cols || !rows || cols !== Math.floor(cols) || rows !== Math.floor(rows)) return null;
+  return { fam, gender, cols, rows, n };
+}
+
+// Numer gniazda w komórce (r=0 góra, c=0 lewa) patrząc OD STRONY PRZEWODÓW.
+// Połówka żeńska: zatrzask u góry. Męska: rysowana obrócona o 180° (zatrzask
+// na dole) — tak jak na rysunkach producenta — więc przy ułożeniu pionowym
+// ten sam pin wypada w tej samej kolumnie, w przeciwnym rzędzie.
+// Konwencje zweryfikowane z rysunków katalogowych:
+//   JPT (TE):      F czoło: góra nieparz./dół parz., rosnąco L→R (pin 1 góra-lewo)
+//   MINIFIT:       F czoło: pin 1 dół-prawo (góra n..cols+1, dół cols..1, malejąco)
+//   MICROFIT:      F czoło: pin 1 dół-lewo (dół 1..cols, góra cols+1..n, rosnąco)
+//   SUPERSEAL:     1 rząd; F od tyłu: pin 1 prawo (malejąco L→R)
+//   MATENLOK:      F czoło: pin 1 dół-prawo (kolumna prawa nieparz., lewa parz., do góry)
+// Widok od strony przewodów = lustro kolumn widoku czoła; M = rotacja 180°.
+function connFacePinAt(L, r, c) {
+  const cols = L.cols, n = L.n;
+  switch (L.fam) {
+    case 'JPT': {
+      const fi = cols - 1 - c, odd = 2 * fi + 1, even = 2 * fi + 2;
+      return L.gender === 'F' ? (r === 0 ? odd : even) : (r === 0 ? even : odd);
+    }
+    case 'MINIFIT':
+      return L.gender === 'F' ? (r === 0 ? cols + 1 + c : c + 1)
+                              : (r === 0 ? c + 1 : cols + 1 + c);
+    case 'MICROFIT':
+      return L.gender === 'F' ? (r === 0 ? n - c : cols - c)
+                              : (r === 0 ? cols - c : n - c);
+    case 'SUPERSEAL':
+      return n - c;
+    case 'MATENLOK':
+      return L.gender === 'F' ? 2 * (L.rows - 1 - r) + 1 + c : 2 * r + 1 + c;
+  }
+  return 0;
+}
+
+function connFaceSvg(L, pin) {
+  const cw = 30, ch = 24, pad = 7, latchH = 13;
+  const W = pad * 2 + L.cols * cw, H = latchH + pad * 2 + L.rows * ch;
+  const latchTop = L.gender !== 'M'; // męska rysowana obrócona o 180°
+  const boxY = latchTop ? latchH : 1, latchY = latchTop ? 1 : H - latchH + 2;
+  let s = `<svg viewBox="0 0 ${W} ${H}" style="width:100%; display:block;" xmlns="http://www.w3.org/2000/svg">`;
+  s += `<rect x="${W / 2 - 24}" y="${latchY}" width="48" height="${latchH - 3}" rx="3" fill="var(--bg-card-subtle,#e2e8f0)" stroke="var(--border,#94a3b8)"/>`;
+  s += `<rect x="1" y="${boxY}" width="${W - 2}" height="${H - latchH - 1}" rx="4" fill="var(--bg-card,#fff)" stroke="var(--border,#94a3b8)" stroke-width="1.2"/>`;
+  for (let r = 0; r < L.rows; r++)
+    for (let c = 0; c < L.cols; c++) {
+      const p = connFacePinAt(L, r, c);
+      const hot = String(p) === String(pin);
+      const x = pad + c * cw, y = boxY + pad + r * ch;
+      s += `<rect x="${x + 1}" y="${y + 1}" width="${cw - 2}" height="${ch - 2}" rx="3" fill="${hot ? '#0284c7' : 'var(--bg-card-subtle,#f1f5f9)'}" stroke="${hot ? '#0284c7' : 'var(--border,#cbd5e1)'}" stroke-width="${hot ? 2 : 1}"/>`;
+      s += `<text x="${x + cw / 2}" y="${y + ch / 2 + 3.5}" text-anchor="middle" font-size="${L.cols > 6 ? 8.5 : 10}" font-weight="${hot ? 800 : 600}" fill="${hot ? '#fff' : 'var(--text-muted,#475569)'}" font-family="monospace">${p}</text>`;
+    }
+  return s + '</svg>';
+}
+
+function closeConnFace() {
+  document.getElementById('conn-face-overlay')?.remove();
+}
+
+function showConnFace(el) {
+  const d = el.dataset;
+  const cp = ZUKEN_STATE.lastCircuit || {};
+  const connMeta = cp.conn_meta || {};
+  const sfxs = [d.dev];
+  if (d.mate) sfxs.push(d.mate);
+  const infos = sfxs.map(sfx => ({ sfx, ...connHalfInfo(connMeta, d.clean, sfx) }));
+  const lays = infos.map(i => connFaceLayout(i));
+  const ki = lays.findIndex(Boolean);
+  if (ki < 0) return;
+  // połówka bez własnego artykułu → odpowiednik (odwrotna płeć, ta sama rodzina)
+  lays.forEach((L, i) => {
+    if (!L) {
+      const ref = lays[ki];
+      lays[i] = { fam: ref.fam, gender: ref.gender === 'F' ? 'M' : 'F',
+                  cols: ref.cols, rows: ref.rows, n: ref.n, inferred: true };
+    }
+  });
+
+  // przewody na pinie danej połówki — z hopów wszystkich ścieżek obwodu
+  const sfxOf = dev => (dev || '').split('-').pop();
+  const wiresAt = sfx => {
+    const seen = new Set(), out = [];
+    (cp.loads || []).forEach(ld => (ld.pins || []).forEach(p => (p.ends || []).forEach(e => (e.path || []).forEach(h => {
+      if (h.from_clean === h.to_clean && h.from_pin === h.to_pin && h.from !== h.to) return; // hop wewnątrz pary
+      const isFrom = sfxOf(h.from) === sfx && String(h.from_pin) === String(d.pin);
+      const isTo = sfxOf(h.to) === sfx && String(h.to_pin) === String(d.pin);
+      if (!isFrom && !isTo) return;
+      const oClean = isFrom ? (h.to_clean || sfxOf(h.to)) : (h.from_clean || sfxOf(h.from));
+      const oPin = isFrom ? h.to_pin : h.from_pin;
+      const key = `${oClean}|${oPin}|${h.wire_number || h.signal || ''}|${h.wire_color || ''}|${h.cross_section || ''}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      out.push({ h, label: oClean + (oPin ? ':' + oPin : '') });
+    }))));
+    return out;
+  };
+  const wireRow = w => {
+    const h = w.h;
+    const cs = (h.cross_section || '').replace(/\s*mm²?$/i, '');
+    const attrs = h.internal
+      ? `⚡ ${h.internal_label || h.internal}`
+      : [h.wire_number || h.signal || '', h.wire_color || '', cs ? cs + ' mm²' : '',
+         (h.length && h.length !== '0') ? fmtWireLength(h.length) : ''].filter(Boolean).join(' · ');
+    return `<div style="display:flex; gap:6px; align-items:baseline; font-size:11px; margin-top:3px; text-align:left;">
+      <span style="display:inline-block; width:14px; height:4px; border-radius:2px; flex-shrink:0; align-self:center; background:${circuitWireStroke(h.wire_color)};"></span>
+      <span style="font-family:var(--font-mono,monospace); font-weight:600; color:var(--text-muted); white-space:nowrap;">→ ${escapeHtml(w.label)}</span>
+      <span style="color:var(--text-main); min-width:0; word-break:break-word;">${escapeHtml(attrs)}</span>
+    </div>`;
+  };
+
+  const panel = (i) => {
+    const L = lays[i], info = infos[i];
+    const gen = t(L.gender === 'F' ? 'js.zuken.connFemale' : 'js.zuken.connMale');
+    const art = info.article || (L.inferred ? t('js.zuken.connCounterpart') : '');
+    const wires = d.pin ? wiresAt(info.sfx).map(wireRow).join('') : '';
+    return `<div style="width:100%; max-width:330px; margin:0 auto;">
+      <div style="font-family:var(--font-mono,monospace); font-weight:800; font-size:13px; color:var(--text-main);">${escapeHtml(info.sfx)}${d.pin ? ':' + escapeHtml(d.pin) : ''}</div>
+      <div style="font-size:11px; color:var(--text-muted); margin:2px 0 6px;">${escapeHtml(gen)}${art ? ' · ' + escapeHtml(art) : ''}</div>
+      ${connFaceSvg(L, d.pin)}
+      ${wires ? `<div style="margin-top:6px; border-top:1px dashed var(--border); padding-top:5px;">${wires}</div>` : ''}
+    </div>`;
+  };
+  const body = `<div style="display:flex; flex-direction:column; gap:10px; align-items:stretch;">
+      ${panel(0)}
+      ${lays.length > 1 ? `<div style="display:flex; align-items:center; justify-content:center; color:#7c3aed; font-size:20px; font-weight:800; line-height:1;">↕</div>${panel(1)}` : ''}
+    </div>
+    <div style="margin-top:10px; font-size:11px; color:var(--text-muted);">${escapeHtml(t('js.zuken.connWireSide'))}</div>`;
+
+  closeConnFace();
+  const overlay = document.createElement('div');
+  overlay.id = 'conn-face-overlay';
+  overlay.style.cssText = 'position:fixed; inset:0; background:rgba(0,0,0,0.35); z-index:10010; display:flex; align-items:center; justify-content:center; padding:20px;';
+  overlay.onclick = (ev) => { if (ev.target === overlay) closeConnFace(); };
+  overlay.innerHTML = `
+    <div style="background:var(--bg-card,#fff); border-radius:12px; max-width:760px; width:100%; max-height:80vh; display:flex; flex-direction:column; box-shadow:0 20px 50px rgba(0,0,0,0.3); border:1px solid var(--border);">
+      <div style="padding:12px 18px; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; gap:10px;">
+        <div style="font-weight:800; font-size:14px; color:var(--text-main);">${escapeHtml(t('js.zuken.connViewTitle'))}</div>
+        <button onclick="closeConnFace()" style="background:none; border:none; font-size:18px; cursor:pointer; color:var(--text-muted); line-height:1;">✕</button>
+      </div>
+      <div style="padding:14px 18px; overflow-y:auto;">${body}</div>
+    </div>`;
+  document.body.appendChild(overlay);
+}
+
+function circuitSvgForLoad(ld, connMeta) {
   const feedPin = (ld.pins || []).find(p => p.role === 'feed') || (ld.pins || [])[0];
   const gndPin = (ld.pins || []).find(p => p.role === 'gnd');
   if (!feedPin) return '';
   const src = (feedPin.ends || []).find(e => e.role === 'source' || e.role === 'terminal') || (feedPin.ends || [])[0];
   if (!src) return '';
 
-  const trunk = [{ dev: src.device, pin: src.pin, clean: src.clean, edge: null, role: src.role, info: src.function || src.desc || '' }];
+  const trunk = [{ dev: src.device, pin: src.pin, clean: src.clean, edge: null, role: src.role,
+                   info: src.function || src.desc || '', ml: src.module_label || null }];
   [...(src.path || [])].reverse().forEach(h =>
     trunk.push({ dev: h.from, pin: h.from_pin, clean: h.from_clean, edge: h, role: '', info: '' }));
   const trunkLast = trunk.length - 1;
@@ -8814,23 +9047,59 @@ function circuitSvgForLoad(ld) {
     }));
   }
 
+  // scal pary wtyk<->wtyczka (X26 -> X26'): ten sam pin, inna strona zlacza
+  const mergeMates = arr => {
+    const out = [];
+    arr.forEach(nd => {
+      const prev = out[out.length - 1];
+      if (prev && prev.clean === nd.clean && prev.pin === nd.pin) {
+        prev.mate = (nd.dev || '').split('-').pop();
+      } else {
+        out.push(nd);
+      }
+    });
+    return out;
+  };
+  const trunk2 = mergeMates(trunk), gndChain2 = mergeMates(gndChain);
+
   const rowOf = {};
-  trunk.forEach((nd, i) => { rowOf[nd.dev + ':' + nd.pin] = i; });
-  gndChain.forEach((nd, j) => { rowOf[nd.dev + ':' + nd.pin] = trunk.length + j; });
+  trunk2.forEach((nd, i) => { rowOf[nd.dev + ':' + nd.pin] = i; });
+  gndChain2.forEach((nd, j) => { rowOf[nd.dev + ':' + nd.pin] = trunk2.length + j; });
 
   const stubs = [];
   const addStub = e => {
-    let at = trunkLast;
+    let at = trunk2.length - 1;
     (e.path || []).forEach(h => { const k = h.to + ':' + h.to_pin; if (k in rowOf) at = rowOf[k]; });
     stubs.push({ e, at });
   };
   (feedPin.ends || []).forEach(e => { if (e !== src) addStub(e); });
   if (gndPin) (gndPin.ends || []).forEach(e => { if (e !== g) addStub(e); });
 
-  const rows = trunk.length + gndChain.length;
+  const rows = trunk2.length + gndChain2.length;
   const rowH = 64, boxW = 210, boxH = 34, cx = 30, stubX = cx + boxW + 130, stubW = 250;
-  const W = stubX + stubW + 20, H = rows * rowH + 46;
+  const W = stubX + stubW + 20;
   const nodeY = i => 24 + i * rowH;
+
+  // rozrzut odnóg: stub'y z tego samego węzła idą w dół wachlarzem
+  const STUB_STEP = 36, STUB_CAP = 12;
+  const stubGroups = {};
+  stubs.forEach(st => { (stubGroups[st.at] = stubGroups[st.at] || []).push(st); });
+  const stubLayout = [];
+  let stubMaxY = 0;
+  Object.keys(stubGroups).forEach(atK => {
+    const at = +atK, baseY = nodeY(at) + boxH / 2, grp = stubGroups[atK];
+    grp.slice(0, STUB_CAP).forEach((st, k) => {
+      const sy = baseY + k * STUB_STEP;
+      stubLayout.push({ st, sy });
+      stubMaxY = Math.max(stubMaxY, sy + 20);
+    });
+    if (grp.length > STUB_CAP) {
+      const sy = baseY + STUB_CAP * STUB_STEP;
+      stubLayout.push({ overflow: grp.length - STUB_CAP, sy });
+      stubMaxY = Math.max(stubMaxY, sy + 20);
+    }
+  });
+  const H = Math.max(rows * rowH + 46, stubMaxY + 30);
   const roleStyle = {
     source:   { stroke: '#2563eb', icon: '⚡' },
     terminal: { stroke: '#7c3aed', icon: '⊟' },
@@ -8842,7 +9111,7 @@ function circuitSvgForLoad(ld) {
   };
 
   let svg = '';
-  const allNodes = trunk.concat(gndChain);
+  const allNodes = trunk2.concat(gndChain2);
   allNodes.forEach((nd, i) => {
     const y = nodeY(i), x = cx;
     if (nd.edge) {
@@ -8861,20 +9130,36 @@ function circuitSvgForLoad(ld) {
     const rs = roleStyle[nd.role] || roleStyle[''];
     const fill = nd.role === 'gnd' ? '#1e293b' : 'var(--bg-card, #fff)';
     const fg = nd.role === 'gnd' ? '#f8fafc' : 'var(--text-main, #0f172a)';
+    const cm = (connMeta || {})[nd.clean] || {};
+    const pinFrac = (cm.pins && nd.pin) ? `${nd.pin}/${cm.pins}` : '';
+    const ownSfx = nd.mate ? ((nd.dev || '').split('-').pop() || nd.clean) : nd.clean;
+    const devSfx = (nd.dev || '').split('-').pop() || nd.clean;
+    const canFace = !!(nd.pin && (connFaceLayout(connHalfInfo(connMeta, nd.clean, devSfx))
+        || (nd.mate && connFaceLayout(connHalfInfo(connMeta, nd.clean, nd.mate)))));
+    if (canFace)
+      svg += `<g style="cursor:pointer" onclick="showConnFace(this)" data-clean="${escapeHtml(nd.clean)}" data-dev="${escapeHtml(devSfx)}" data-mate="${escapeHtml(nd.mate || '')}" data-pin="${escapeHtml(nd.pin)}"><title>${escapeHtml(t('js.zuken.connViewTitle'))}</title>`;
     svg += `<rect x="${x}" y="${y}" width="${boxW}" height="${boxH}" rx="7" fill="${fill}" stroke="${rs.stroke}" stroke-width="2"/>`;
-    svg += `<text x="${x + 8}" y="${y + 15}" font-size="11" font-weight="700" fill="${fg}" font-family="monospace">${rs.icon ? rs.icon + ' ' : ''}${escapeHtml(nd.clean)}${nd.pin ? ':' + escapeHtml(nd.pin) : ''}</text>`;
-    if (nd.info) svg += `<text x="${x + 8}" y="${y + 28}" font-size="9" fill="${nd.role === 'gnd' ? '#cbd5e1' : 'var(--text-muted, #64748b)'}">${escapeHtml(String(nd.info).slice(0, 38))}</text>`;
+    const nodeTitle = (nd.ml ? `${nd.ml.module} · ${nd.ml.code}` : `${ownSfx}${nd.pin ? ':' + nd.pin : ''}`) + (nd.mate ? ` ⇄ ${nd.mate}` : '');
+    const nodeInfo = nd.ml ? [nd.ml.function, `${nd.clean}:${nd.pin}`].filter(Boolean).join(' · ')
+      : [nd.info, pinFrac, cm.type || cm.article || cm.supplier || ''].filter(Boolean).join(' · ');
+    svg += `<text x="${x + 8}" y="${y + 15}" font-size="11" font-weight="700" fill="${fg}" font-family="monospace">${rs.icon ? rs.icon + ' ' : ''}${escapeHtml(nodeTitle)}</text>`;
+    if (nodeInfo) svg += `<text x="${x + 8}" y="${y + 28}" font-size="9" fill="${nd.role === 'gnd' ? '#cbd5e1' : 'var(--text-muted, #64748b)'}">${escapeHtml(String(nodeInfo).slice(0, 46))}</text>`;
+    if (canFace) svg += '</g>';
   });
 
-  stubs.slice(0, 10).forEach(st => {
-    const y = nodeY(st.at) + boxH / 2;
-    const e = st.e;
+  stubLayout.forEach(sl => {
+    if (sl.overflow) {
+      svg += `<text x="${stubX + 7}" y="${sl.sy + 4}" font-size="9.5" fill="var(--text-muted, #64748b)">+${sl.overflow} ${escapeHtml(t('js.zuken.moreEnds'))}</text>`;
+      return;
+    }
+    const st = sl.st, e = st.e, y = sl.sy, atY = nodeY(st.at);
     const rm = CIRCUIT_ROLE_META[e.role] || CIRCUIT_ROLE_META.load;
     let wireLbl = '';
     const divIdx = (e.path || []).findIndex(h => (h.to + ':' + h.to_pin) && rowOf[h.to + ':' + h.to_pin] === st.at);
     const segH = (e.path || [])[divIdx + 1] || (e.path || [])[0];
     if (segH) wireLbl = [segH.wire_number || segH.signal || '', segH.wire_color || ''].filter(Boolean).join(' · ');
-    svg += `<line x1="${cx + boxW}" y1="${y}" x2="${stubX}" y2="${y}" stroke="#94a3b8" stroke-width="1.6" stroke-dasharray="4 3"/>`;
+    const wireStroke = (segH && segH.wire_color) ? circuitWireStroke(segH.wire_color) : '#94a3b8';
+    svg += `<line x1="${cx + boxW}" y1="${atY + boxH / 2}" x2="${stubX}" y2="${y}" stroke="${wireStroke}" stroke-width="1.6" stroke-dasharray="4 3"/>`;
     svg += `<rect x="${stubX}" y="${y - 15}" width="${stubW}" height="30" rx="6" fill="var(--bg-card, #fff)" stroke="${rm.color}" stroke-width="1.4" stroke-dasharray="3 2"/>`;
     svg += `<text x="${stubX + 7}" y="${y - 1}" font-size="10" font-weight="700" fill="${rm.color}" font-family="monospace">${rm.icon} ${escapeHtml(e.clean)}${e.pin ? ':' + escapeHtml(e.pin) : ''}</text>`;
     const sub = [e.function || e.desc || '', wireLbl].filter(Boolean).join(' · ');
@@ -8889,7 +9174,7 @@ function showCircuitDiagram() {
   if (!cp || !(cp.loads || []).length) return;
   closeWirePath();
   const parts = cp.loads.slice(0, 5).map(ld => {
-    const svg = circuitSvgForLoad(ld);
+    const svg = circuitSvgForLoad(ld, cp.conn_meta || {});
     if (!svg) return '';
     return `<div style="margin-bottom:16px;">
       <div style="font-size:12px; font-weight:800; color:var(--text-main); margin-bottom:4px; font-family:var(--font-mono,monospace);">🔌 ${escapeHtml(ld.clean)}${(ld.function || ld.desc) ? ` <span style="font-weight:500; color:var(--text-muted);">— ${escapeHtml(ld.function || ld.desc)}</span>` : ''}</div>

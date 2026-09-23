@@ -3320,29 +3320,31 @@ def parse_carnation_html(file_path):
         return None
 
 
-def get_carnation_diagnostic_info(ps_code=None, query_text="", lang="pl"):
-    """
-    Odnajduje plik konfiguracyjny Carnation Genesis w Bazie wiedzy
-    i wyciąga z niego kontekstowe informacje dla podanego zapytania diagnostycznego.
-    """
+def _carnation_html_path(ps_code=None):
+    """Ścieżka do pliku konfiguracyjnego Carnation Genesis (HTML) w Bazie wiedzy."""
     html_files = []
     if os.path.exists(BAZA_WIEDZY_DIR):
         for root, _, files in os.walk(BAZA_WIEDZY_DIR):
             for f in files:
                 if f.lower().endswith(".html"):
                     html_files.append(os.path.join(root, f))
-
     if not html_files:
         return None
-
-    selected_file = None
     if ps_code:
         for hf in html_files:
             if str(ps_code).upper() in hf.upper():
-                selected_file = hf
-                break
+                return hf
+    return html_files[0]
+
+
+def get_carnation_diagnostic_info(ps_code=None, query_text="", lang="pl"):
+    """
+    Odnajduje plik konfiguracyjny Carnation Genesis w Bazie wiedzy
+    i wyciąga z niego kontekstowe informacje dla podanego zapytania diagnostycznego.
+    """
+    selected_file = _carnation_html_path(ps_code)
     if not selected_file:
-        selected_file = html_files[0]
+        return None
 
     parsed = parse_carnation_html(selected_file)
     if not parsed:
@@ -4582,7 +4584,8 @@ def generate_ps_technical_summaries(ps_code, lang="pl"):
                         if not dup[fld] and pin_entry[fld]:
                             dup[fld] = pin_entry[fld]
 
-    # Skojarz z artykułami z BOM
+    # Skojarz z artykułami z BOM — najpierw po dokładnym device_code,
+    # bo połówki złącza (X26 / X26') mają rozdzielone pozycje w BOM
     if bom_proj_ids and connectors_map:
         ph_bom = ",".join("?" for _ in bom_proj_ids)
         cur.execute(f"""
@@ -4592,18 +4595,34 @@ def generate_ps_technical_summaries(ps_code, lang="pl"):
             JOIN zuken_bom_items i ON d.bom_item_id = i.id
             WHERE i.project_id IN ({ph_bom});
         """, bom_proj_ids)
+        by_code = {}
+        by_clean = {}
         for br in cur.fetchall():
-            d_code = br["device_code"]
-            d_clean = br["device_clean"]
-            art_num = br["article_number"]
-            target_keys = [k for k in connectors_map if k == d_code or connectors_map[k]["device_clean"] == d_clean or connectors_map[k]["device_clean"] == d_code.lstrip("=+-:")]
-            for k in target_keys:
-                if not connectors_map[k]["article_number"]:
-                    connectors_map[k]["article_number"] = art_num
-                    connectors_map[k]["supplier"] = br["supplier"]
-                    connectors_map[k]["description"] = br["description"]
-                    img = find_local_component_image(art_num)
-                    connectors_map[k]["image_url"] = img or ""
+            if br["device_code"]:
+                by_code.setdefault(br["device_code"], br)
+            if br["device_clean"]:
+                by_clean.setdefault(br["device_clean"], []).append(br)
+
+        def _bom_row_for(dev_code, dev_clean):
+            if dev_code in by_code:
+                return by_code[dev_code]
+            cands = by_clean.get(dev_clean) or by_clean.get((dev_code or "").lstrip("=+-:")) or []
+            if not cands:
+                return None
+            sfx = (dev_code or "").split("-")[-1]
+            same = [r for r in cands if (r["device_code"] or "").split("-")[-1] == sfx]
+            return same[0] if same else cands[0]
+
+        for k, cdata in connectors_map.items():
+            if cdata["article_number"]:
+                continue
+            br = _bom_row_for(k, cdata["device_clean"])
+            if br:
+                cdata["article_number"] = br["article_number"]
+                cdata["supplier"] = br["supplier"]
+                cdata["description"] = br["description"]
+                img = find_local_component_image(br["article_number"])
+                cdata["image_url"] = img or ""
 
     conn_inserts = []
     for dev_code, cdata in connectors_map.items():
@@ -5140,6 +5159,28 @@ def _device_function_map(cur, bom_proj_ids):
     return by_code
 
 
+def _device_bom_name_map(cur, bom_proj_ids):
+    """device_clean -> opis pozycji BOM (np. 'Intercom Wolfelec').
+    Uzywane jako fallback, gdy function jest puste — urzadzenia =BOM-Axxx
+    (moduly/odbiorniki) maja nazwe tylko w opisie pozycji."""
+    out = {}
+    if not bom_proj_ids:
+        return out
+    ph = ",".join("?" for _ in bom_proj_ids)
+    for r in cur.execute(f"""
+        SELECT d.device_clean, i.description
+        FROM zuken_bom_devices d
+        JOIN zuken_bom_items i ON d.bom_item_id = i.id
+        WHERE i.project_id IN ({ph})
+          AND COALESCE(TRIM(i.description), '') != '';
+    """, bom_proj_ids):
+        clean = (r["device_clean"] or "").strip()
+        desc = (r["description"] or "").strip()
+        if clean and desc and clean not in out:
+            out[clean] = desc[:80]
+    return out
+
+
 def _wire_hop(fdev, fpin, tdev, tpin, row):
     """Jeden przeskok ścieżki sygnału z atrybutami przewodu z krawędzi grafu."""
     def _g(k):
@@ -5294,11 +5335,42 @@ def trace_signal_net(ps_code, query, lang="pl"):
 # ŚLEDZENIE PEŁNEGO OBWODU: tor zasilania (+), tor masy, rozgałęzienia
 # ═══════════════════════════════════════════════════════════════
 
-_CIRCUIT_FUSE_RE = re.compile(r"^FH?\d", re.IGNORECASE)
+# rodziny złączy do wyciągnięcia czytelnej nazwy typu z opisu BOM
+_CONN_TYPE_RE = re.compile(
+    r"(Junior\s+Power\s+Timer|Junior\s+Timer|Standard\s+Power\s+Timer"
+    r"|Micro\s+Timer|Superseal\s*[\d.]*|MATE-?N-?LOK|MULTI-?INTERLOK"
+    r"|MINI-?FIT\s*(?:JR\.?|3\.0)?|Micro-?Fit\s*3\.0|FASTIN-?FASTON\s*\d*"
+    r"|FF\s*250|IEC\s*C\d+|PP\s*\d+/\d+|MCP|DEUTSCH\s*DT\w*|AMP|Molex)",
+    re.IGNORECASE)
+_CONN_TYPE_FILLER = re.compile(
+    r"\b(unsealed|sealed|housing|receptacle|plug|connector|connectors"
+    r"|commercial|series|female|male|wire-to-wire|rectangular|power"
+    r"|crimp|terminal|positions?|pos\.?|pitch|dual|row|assembly|assy"
+    r"|genuine|system|only|multi|interlok)\b", re.IGNORECASE)
+
+_CIRCUIT_FUSE_RE = re.compile(r"^(FH?|U)\d", re.IGNORECASE)
+
+
+def _connector_type_name(desc):
+    """Krótka nazwa rodziny złącza z opisu BOM (np. 'Junior Timer',
+    'Mini-Fit Jr.', 'Superseal 1.5', 'MATE-N-LOK')."""
+    if not desc:
+        return ""
+    m = _CONN_TYPE_RE.search(desc)
+    if m:
+        name = re.sub(r"[\s_]+", " ", m.group(1)).strip(" .")
+        return name[:40]
+    raw = re.split(r"[;,]", desc)[0].strip()
+    first = _CONN_TYPE_FILLER.sub("", raw)
+    first = re.sub(r"\s{2,}", " ", first).strip(" ,.-:")
+    # gdy po odjeciu okreslen ogolnych zostaje za malo, pokaz surowy poczatek
+    if len(first) < 5:
+        first = raw
+    return first[:40]
 _CIRCUIT_MODULE_RE = re.compile(r"^A\d", re.IGNORECASE)
 _CIRCUIT_RELAY_RE = re.compile(r"^K\d", re.IGNORECASE)
 _CIRCUIT_RT_RE = re.compile(r"^RT\d", re.IGNORECASE)
-_CIRCUIT_PASS_RE = re.compile(r"^(X|SP|XS|FH?|F)\d", re.IGNORECASE)
+_CIRCUIT_PASS_RE = re.compile(r"^(X|SP|XS|FH?|F|U)\d", re.IGNORECASE)
 
 _PL_FOLD = str.maketrans({
     "Ą": "A", "Ć": "C", "Ę": "E", "Ł": "L", "Ń": "N", "Ó": "O",
@@ -5351,6 +5423,8 @@ _CIRCUIT_SYNONYMS = {
     "NIEBIESKIE": {"BLUES", "BLUE"}, "BLUES": {"NIEBIESKIE", "BLUE"},
     "CZERWONE": {"REDS", "RED"}, "REDS": {"CZERWONE", "RED"},
     "ROBOCZE": {"SCENE", "WORK"}, "SCENE": {"ROBOCZE", "WORK"},
+    "INWERTER": {"INVERTER"}, "INVERTER": {"INWERTER"},
+    "PRZETWORNICA": {"INVERTER", "INWERTER"},
 }
 
 
@@ -5402,6 +5476,65 @@ def _match_signals(query, sig_nodes, limit=6):
             scored.append((len(s_toks - allv), len(s_toks), sig))
     scored.sort()
     return [s for _, _, s in scored[:limit]]
+
+
+def _tokens_match(a, b):
+    """Dopasowanie tokenu opisu do tokenu sygnału: dokładne, synonim
+    lub przedrostek (SOCKET~SOCKETS) przy min. 4 znakach."""
+    if a == b:
+        return True
+    if b in _CIRCUIT_SYNONYMS.get(a, ()) or a in _CIRCUIT_SYNONYMS.get(b, ()):
+        return True
+    return len(a) >= 4 and len(b) >= 4 and (a.startswith(b) or b.startswith(a))
+
+
+def _bom_device_descriptions(cur, bom_ids, dev_clean):
+    """Opis+kategoria pozycji BOM dla kodu urządzenia nieobecnego
+    w raporcie połączeń (np. A313 -> 'ProCar Power USB-C/A ...')."""
+    if not bom_ids or not dev_clean:
+        return []
+    ph = ",".join("?" for _ in bom_ids)
+    out = []
+    for r in cur.execute(f"""
+        SELECT DISTINCT i.description, i.category
+        FROM zuken_bom_devices d
+        JOIN zuken_bom_items i ON i.id = d.bom_item_id
+        WHERE i.project_id IN ({ph}) AND UPPER(d.device_clean) = ?
+    """, (*bom_ids, dev_clean.upper())):
+        txt = " ".join(x for x in ((r["description"] or "").strip(),
+                                   (r["category"] or "").strip()) if x)
+        if txt:
+            out.append(txt)
+    return out
+
+
+def _match_signals_by_desc(descs, sig_nodes, limit=6):
+    """Dopasowanie sygnałów po tokenach opisu BOM (luźniejsze niż
+    _match_signals): liczymy tokeny opisu pokryte przez sygnał.
+    Wymagane min. 2 trafienia albo jeden rzadki (<=3 sygnały razem)."""
+    toks = list(dict.fromkeys(
+        t for d in descs for t in _circuit_tokens(d)
+        if len(t) >= 3 and not t.isdigit()))
+    if not toks:
+        return []
+    scored = []
+    for sig in sig_nodes:
+        s_toks = set(_circuit_tokens(sig))
+        if not s_toks:
+            continue
+        hits = sum(1 for t in toks
+                   if any(_tokens_match(t, st) for st in s_toks))
+        cov = sum(1 for st in s_toks
+                  if any(_tokens_match(t, st) for t in toks))
+        if hits:
+            scored.append((-(hits + cov / len(s_toks)), len(s_toks), sig))
+    if not scored:
+        return []
+    scored.sort()
+    best_key = scored[0][0]
+    if best_key > -1.5:  # pojedyncze trafienie: tylko gdy rzadkie
+        return [s for _, _, s in scored][:limit] if len(scored) <= 3 else []
+    return [s for neg, _, s in scored if neg == best_key][:limit]
 
 
 def _circuit_evpss_for_signal(signal, carn):
@@ -5497,7 +5630,57 @@ def _circuit_extend_adjacency(cur, adj, ps_code):
             for tgt in ("87", "87A"):
                 for p87 in rp_map.get(tgt, ()):
                     _link(dev, p30, p87, "relay", f"{label} 30\u2192{tgt}")
+        # styczniki bez numeracji 30/87 (np. K2 zasilania inwertera):
+        # dokladnie 2 styki robocze bez relay_pin = para styku glownego
+        work = sorted({str(ct.get("pin") or "").strip() for ct in contacts
+                       if str(ct.get("pin") or "").strip()
+                       and not str(ct.get("relay_pin") or "").strip()
+                       and "Styk roboczy" in (ct.get("role") or "")})
+        if len(work) == 2:
+            _link(dev, work[0], work[1], "relay", f"{label} styk")
     return adj, internal_devs
+
+
+def _evpss_signal_label(sig, parsed):
+    """Nazwa sygnału -> wyjście/wejście EVPSS Carnation (dopasowanie przez
+    synonimy nazw). Zwraca dict {code, kind, module, function, max_current}."""
+    if not sig or not parsed:
+        return None
+    sig_toks = set(_circuit_tokens(sig))
+    if not sig_toks:
+        return None
+
+    def _sig_covered_by(f_toks):
+        return all((({tk} | _CIRCUIT_SYNONYMS.get(tk, set())) & f_toks)
+                   for tk in sig_toks)
+
+    def _f_covered_by_sig(f_toks):
+        return all((({tk} | _CIRCUIT_SYNONYMS.get(tk, set())) & sig_toks)
+                   for tk in f_toks)
+
+    best = None
+    for code, out in (parsed.get("outputs") or {}).items():
+        f_toks = set(_circuit_tokens(out.get("function") or ""))
+        if not f_toks or not (_f_covered_by_sig(f_toks) or _sig_covered_by(f_toks)):
+            continue
+        score = len(f_toks & sig_toks) * 100 + min(len(f_toks), len(sig_toks))
+        if best is None or score > best[0]:
+            m = re.match(r"O(\d)\.", code)
+            best = (score, {"code": code, "kind": "output",
+                            "module": f"Carnation {m.group(1)}" if m else "Carnation",
+                            "function": out.get("function") or "",
+                            "max_current": out.get("max_current") or ""})
+    for code, inp in (parsed.get("inputs") or {}).items():
+        f_toks = set(_circuit_tokens(inp.get("function") or ""))
+        if not f_toks or not (_f_covered_by_sig(f_toks) or _sig_covered_by(f_toks)):
+            continue
+        score = len(f_toks & sig_toks) * 100 + min(len(f_toks), len(sig_toks))
+        if best is None or score > best[0]:
+            best = (score, {"code": code, "kind": "input",
+                            "module": "Carnation ECU",
+                            "function": inp.get("function") or "",
+                            "max_current": ""})
+    return best[1] if best else None
 
 
 def _circuit_end_role(ed, last_row):
@@ -5546,11 +5729,22 @@ def trace_circuit(ps_code, query, lang="pl"):
     adj, internal_devs = _circuit_extend_adjacency(cur, adj, ps_code)
     glossary = get_glossary_dict()
     dev_funcs = _device_function_map(cur, bom_ids)
+    bom_names = _device_bom_name_map(cur, bom_ids)
     sig_nodes = _signal_node_map(cur, conn_ids)
-    conn.close()
     carn = get_carnation_diagnostic_info(ps_code, q, lang=lang) or {}
-    pass_fn = lambda nd: bool(  # noqa: E731
-        _CIRCUIT_PASS_RE.match(clean_device_code(nd[0]) or "")) or nd[0] in internal_devs
+
+    def _is_pass(nd):
+        c = clean_device_code(nd[0]) or ""
+        if _CIRCUIT_PASS_RE.match(c):
+            return True
+        # zaciski rozdzielcze (RT) sa przechodnie — ciagniemy sciezke
+        # dalej, az do stycznika/bezpiecznika/zrodla; punkty masy (+GND)
+        # pozostaja koncami, zeby nie rozwijac calej sieci mas
+        if _CIRCUIT_RT_RE.match(c) and "+GND" not in (nd[0] or "").upper():
+            return True
+        return nd[0] in internal_devs
+
+    pass_fn = _is_pass
 
     # ── 1. Rozpoznanie zapytania ────────────────────────────────
     dev_q = pin_q = ""
@@ -5577,6 +5771,12 @@ def trace_circuit(ps_code, query, lang="pl"):
                     dev_nodes.setdefault(ndev, set()).add(npin)
             if alt and dev_nodes:
                 pin_q = ""
+    # urządzenie spoza raportu połączeń (=BOM-...): opis BOM jako
+    # dodatkowy trop do sygnału (np. A313 -> 'ProCar ... USB socket')
+    bom_descs = []
+    if dev_q and not dev_nodes:
+        bom_descs = _bom_device_descriptions(cur, bom_ids, dev_q)
+    conn.close()
 
     resolved = {"kind": "", "label": q}
     seed_devices = []
@@ -5595,8 +5795,15 @@ def trace_circuit(ps_code, query, lang="pl"):
             seed_devices.append((ndev, pins))
     else:
         sig_matches = _match_signals(q, sig_nodes)
+        via_dev = ""
+        if not sig_matches and bom_descs:
+            sig_matches = _match_signals_by_desc(bom_descs, sig_nodes)
+            if sig_matches:
+                via_dev = dev_q
         if not sig_matches:
-            for out in carn.get("relevant_outputs") or []:
+            evpss_items = (carn.get("relevant_outputs") or []) + \
+                          (carn.get("relevant_inputs") or [])
+            for out in evpss_items:
                 for s in _match_signals(out.get("function") or "", sig_nodes):
                     if s not in sig_matches:
                         sig_matches.append(s)
@@ -5613,9 +5820,7 @@ def trace_circuit(ps_code, query, lang="pl"):
             nodes = sig_nodes.get(sig) or set()
             terms = []
             for nd in nodes:
-                c = clean_device_code(nd[0]) or ""
-                is_pass = bool(_CIRCUIT_PASS_RE.match(c)) or nd[0] in internal_devs
-                if not is_pass or len(adj.get(nd, {})) <= 1:
+                if not pass_fn(nd) or len(adj.get(nd, {})) <= 1:
                     terms.append(nd)
             all_terms.extend(terms)
             loads_here = [nd for nd in terms
@@ -5639,7 +5844,9 @@ def trace_circuit(ps_code, query, lang="pl"):
                              key=lambda n: (_natural_sort_key(n[0]),
                                             _natural_sort_key(n[1])))[:12]:
                 seed_devices.append((nd[0], [nd[1]]))
-        resolved = {"kind": "signal", "label": ", ".join(used_sigs or sig_matches[:1])}
+        label = ", ".join(used_sigs or sig_matches[:1])
+        resolved = {"kind": "signal",
+                    "label": f"{via_dev} \u2192 {label}" if via_dev else label}
 
     # ── 2. Śledzenie pinów ──────────────────────────────────────
     loads_out = []
@@ -5667,7 +5874,8 @@ def trace_circuit(ps_code, query, lang="pl"):
                 eclean = clean_device_code(ed) or ed
                 ends_out.append({
                     "device": ed, "pin": ep, "clean": eclean, "role": role,
-                    "function": dev_funcs.get(ed) or dev_funcs.get(eclean) or "",
+                    "function": dev_funcs.get(ed) or dev_funcs.get(eclean)
+                                or bom_names.get(eclean) or "",
                     "desc": explain_device_code(ed, glossary, lang=lang) or "",
                     "path": hops,
                     "via_fuse": any(h.get("internal") == "fuse" for h in hops),
@@ -5687,10 +5895,48 @@ def trace_circuit(ps_code, query, lang="pl"):
         if pins_out:
             loads_out.append({
                 "device": ndev, "clean": clean,
-                "function": dev_funcs.get(ndev) or dev_funcs.get(clean) or "",
+                "function": dev_funcs.get(ndev) or dev_funcs.get(clean)
+                            or bom_names.get(clean) or "",
                 "desc": explain_device_code(ndev, glossary, lang=lang) or "",
                 "pins": pins_out,
             })
+
+    # ── 3. Etykiety modułów Carnation dla końców-źródeł ─────────
+    # A103/A104/A105 -> "Carnation 1/2/3 · O<n.m>", A15 (wejścia) ->
+    # "Carnation ECU · I1.m" — sygnał na krawędzi do modułu wskazuje wyjście.
+    carn_file = _carnation_html_path(ps_code)
+    carn_parsed = parse_carnation_html(carn_file) if carn_file else None
+    for ld in loads_out:
+        for p in ld["pins"]:
+            for e in p["ends"]:
+                if not _CIRCUIT_MODULE_RE.match(e["clean"] or ""):
+                    continue
+                lbl = None
+                if e["path"]:
+                    for h in reversed(e["path"]):
+                        if h.get("signal"):
+                            lbl = _evpss_signal_label(h["signal"], carn_parsed)
+                            if lbl:
+                                break
+                if not lbl:
+                    continue
+                e["module_label"] = lbl
+                # funkcja EVPSS wazniejsza niz ogolny opis BOM modulu
+                if not e["function"] or e["function"] == bom_names.get(e["clean"]):
+                    e["function"] = lbl["function"] or e["function"]
+                # wtyczka modułu: ostatnie złącze przechodnie przed końcem
+                prev = e["path"][-1] if e["path"] else None
+                if (prev and prev.get("from_clean")
+                        and _PASSTHROUGH_DEV_RE.match(prev["from_clean"])):
+                    rng = ""
+                    if lbl["kind"] == "output":
+                        try:
+                            rng = ("O1\u2013O8" if int(lbl["code"].split(".")[1]) <= 8
+                                   else "O9\u2013O16")
+                        except Exception:
+                            rng = ""
+                    e["plug"] = {"clean": prev["from_clean"],
+                                 "label": f'{lbl["module"]} {rng}'.strip()}
 
     evpss_out = None
     if evpss:
@@ -5705,9 +5951,67 @@ def trace_circuit(ps_code, query, lang="pl"):
         evpss_out = dict(evpss)
         evpss_out["rules"] = rules[:4]
 
+    # ── 4. Metadane złączy: liczba pinów, nr katalogowy, dostawca ─
+    conn_meta = {}
+    cleans = set()
+    for ld in loads_out:
+        cleans.add(ld["clean"])
+        for p in ld["pins"]:
+            for e in p["ends"]:
+                cleans.add(e["clean"])
+                for h in e["path"]:
+                    cleans.add(h.get("from_clean") or "")
+                    cleans.add(h.get("to_clean") or "")
+    cleans.discard("")
+    if cleans:
+        try:
+            conn2 = get_db()
+            ph = ",".join("?" for _ in cleans)
+            for r in conn2.execute(f"""
+                SELECT device_code, device_clean, pin_count, description,
+                       article_number, supplier
+                FROM zuken_ps_connectors
+                WHERE device_clean IN ({ph})
+                  AND (? = '' OR ps_code = ?)
+            """, (*cleans, ps_code or "", ps_code or "")):
+                cm = conn_meta.setdefault(r["device_clean"], {})
+                if r["pin_count"] and not cm.get("pins"):
+                    cm["pins"] = r["pin_count"]
+                if r["description"] and not cm.get("desc"):
+                    cm["desc"] = r["description"]
+                    if not cm.get("type"):
+                        cm["type"] = _connector_type_name(r["description"])
+                if r["article_number"] and not cm.get("article"):
+                    cm["article"] = r["article_number"]
+                if r["supplier"] and not cm.get("supplier"):
+                    cm["supplier"] = r["supplier"]
+            # artykuły per połówka złącza (X26 vs X26') — w BOM mają
+            # rozdzielone pozycje (np. 929505-6 wtyk / 929504-6 gniazdo);
+            # przy kilku rewizjach projektu wygrywa najnowsza
+            for r in conn2.execute(f"""
+                SELECT d.device_code, d.device_clean,
+                       i.article_number, i.supplier, i.description
+                FROM zuken_bom_devices d
+                JOIN zuken_bom_items i ON d.bom_item_id = i.id
+                JOIN zuken_projects p ON i.project_id = p.id
+                WHERE d.device_clean IN ({ph})
+                  AND i.article_number IS NOT NULL AND TRIM(i.article_number) != ''
+                  AND (? = '' OR p.ps_codes LIKE '%' || ? || '%')
+                ORDER BY p.revision_date DESC
+            """, (*cleans, ps_code or "", ps_code or "")):
+                halves = conn_meta.setdefault(r["device_clean"], {}).setdefault("halves", {})
+                sfx = (r["device_code"] or "").split("-")[-1]
+                if sfx not in halves:
+                    halves[sfx] = {"article": r["article_number"],
+                                   "supplier": r["supplier"] or "",
+                                   "desc": r["description"] or ""}
+            conn2.close()
+        except Exception:
+            pass
+
     return {"ok": True, "query": q, "resolved": resolved,
             "evpss": evpss_out, "loads": loads_out,
-            "more_signals": more_signals}
+            "more_signals": more_signals, "conn_meta": conn_meta}
 
 
 def get_ps_connectors(ps_code, search="", system_filter="", limit=100, offset=0, lang="pl"):

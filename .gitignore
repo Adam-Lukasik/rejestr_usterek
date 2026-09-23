@@ -26,6 +26,7 @@ ENV/
 *.tmp
 temp/
 scratch/
+nul
 SumatraPDF-settings.txt
 sumatrapdfcache/
 
