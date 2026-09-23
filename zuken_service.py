@@ -88,6 +88,12 @@ ZS_MSG = {
     "pdfReadErr": {"pl": "Błąd odczytu PDF {f}: {e}", "en": "PDF read error {f}: {e}", "de": "PDF-Lesefehler {f}: {e}"},
     "indexedPdf": {"pl": "Zaindeksowano {p} arkuszy i {s} symboli.", "en": "Indexed {p} sheets and {s} symbols.", "de": "{p} Blätter und {s} Symbole indexiert."},
     "kbDirMissing": {"pl": "Katalog {v} nie istnieje.", "en": "Directory {v} does not exist.", "de": "Verzeichnis {v} existiert nicht."},
+    "kbNoFiles": {"pl": "Folder projektu nie zawiera plików do przetworzenia (.xlsx, .pdf).", "en": "The project folder contains no files to process (.xlsx, .pdf).", "de": "Der Projektordner enthält keine zu verarbeitenden Dateien (.xlsx, .pdf)."},
+    "kbBadPs": {"pl": "Niepoprawny numer projektu PS: {v}", "en": "Invalid PS project number: {v}", "de": "Ungültige PS-Projektnummer: {v}"},
+    "kbNoUpload": {"pl": "Nie przesłano żadnego pliku.", "en": "No file was uploaded.", "de": "Es wurde keine Datei hochgeladen."},
+    "kbBadExt": {"pl": "Niedozwolony typ pliku: {v}. Dozwolone: .xlsx, .pdf, .e3s, .html", "en": "Unsupported file type: {v}. Allowed: .xlsx, .pdf, .e3s, .html", "de": "Nicht unterstützter Dateityp: {v}. Erlaubt: .xlsx, .pdf, .e3s, .html"},
+    "e3sRegistered": {"pl": "Plik projektu E3 obecny — schemat można otwierać w Zuken E3.", "en": "E3 project file present — the schematic can be opened in Zuken E3.", "de": "E3-Projektdatei vorhanden — der Schaltplan kann in Zuken E3 geöffnet werden."},
+    "ctrlRegistered": {"pl": "Raport sterownika obecny — używany przy analizie ścieżki sygnału (parsowanie: Carnation HTML).", "en": "Controller report present — used for signal path analysis (parsing: Carnation HTML).", "de": "Steuergerätebericht vorhanden — wird für die Signalpfadanalyse verwendet (Parsing: Carnation HTML)."},
     "wireLong": {"pl": "wiązka długa / wzdłużna", "en": "long harness / longitudinal", "de": "langer Kabelbaum / längs"},
     "wireMid": {"pl": "wiązka średnia", "en": "medium harness", "de": "mittlerer Kabelbaum"},
     "wireLocal": {"pl": "odcinek lokalny", "en": "local segment", "de": "lokales Segment"},
@@ -3169,6 +3175,178 @@ def sync_all_knowledge_base(lang="pl"):
                 results.append({"type": "pdf", "file": f, "schematic_id": sch_id, "symbols": sym_count, "message": msg})
 
     return {"status": "success", "results": results}
+
+
+# ═══════════════════════════════════════════════════════════════════
+# BAZA WIEDZY DLA PROJEKTU PS — STATUS PLIKÓW, UPLOAD I PRZETWARZANIE
+# ═══════════════════════════════════════════════════════════════════
+
+# Typy plików rozpoznawane w folderze Bazy wiedzy projektu PS.
+# Kolejność = kolejność wyświetlania na liście kontrolnej w UI.
+# "ctrl" = raport konfiguracyjny sterownika (Carnation HTML, docelowo Acetech — format TBD).
+KB_FILE_TYPES = ("conn", "bom", "pdf", "e3s", "ctrl")
+KB_REQUIRED_TYPES = ("conn", "bom", "pdf")
+KB_ALLOWED_EXTENSIONS = (".xlsx", ".pdf", ".e3s", ".html", ".htm", ".xml", ".json", ".csv", ".txt")
+
+# Wzorce w nazwach plików wskazujące na raport konfiguracyjny sterownika
+# (używane m.in. by PDF-y Acetech nie lądowały w slocie „schemat PDF").
+_KB_CTRL_NAME_RE = re.compile(r"(acetech|carnation|genesis|evpss|config|konfigurac|controller|sterownik)", re.I)
+
+
+def _kb_classify_file(filename):
+    """Klasyfikuje plik z folderu Bazy wiedzy do typu KB (conn/bom/pdf/e3s/ctrl)."""
+    if not filename or filename.startswith("~$"):
+        return None
+    f_lower = filename.lower()
+    if f_lower.endswith(".xlsx"):
+        return "bom" if "bom" in f_lower else "conn"
+    if f_lower.endswith(".pdf"):
+        return "ctrl" if _KB_CTRL_NAME_RE.search(f_lower) else "pdf"
+    if f_lower.endswith(".e3s"):
+        return "e3s"
+    if f_lower.endswith((".html", ".htm", ".xml", ".json", ".csv", ".txt")):
+        return "ctrl"
+    return None
+
+
+def get_ps_kb_files_status(ps_code, lang="pl"):
+    """
+    Zwraca szczegółową listę kontrolną plików Bazy wiedzy dla projektu PS.
+    Dla każdego typu (conn/bom/pdf/e3s/html) podaje znalezione nazwy plików,
+    czy typ jest wymagany oraz stan wygenerowanych zestawień Asystenta.
+    """
+    init_zuken_tables()
+    ps_code = str(ps_code or "").strip().upper()
+    folder_path = os.path.join(BAZA_WIEDZY_DIR, ps_code) if ps_code else ""
+
+    files = []
+    if ps_code and os.path.isdir(folder_path):
+        try:
+            files = sorted(os.listdir(folder_path))
+        except Exception:
+            files = []
+
+    by_type = {k: [] for k in KB_FILE_TYPES}
+    other_files = []
+    for f in files:
+        full = os.path.join(folder_path, f)
+        if os.path.isdir(full):
+            continue
+        tkey = _kb_classify_file(f)
+        if tkey:
+            by_type[tkey].append(f)
+        else:
+            other_files.append(f)
+
+    types = [{
+        "key": key,
+        "required": key in KB_REQUIRED_TYPES,
+        "found": bool(by_type[key]),
+        "files": by_type[key]
+    } for key in KB_FILE_TYPES]
+
+    has_summaries = False
+    generated_at = ""
+    counts = {}
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT generated_at, connectors_count, fuses_count, relays_count
+            FROM zuken_ps_summaries WHERE ps_code = ?;
+        """, (ps_code,))
+        row = cur.fetchone()
+        conn.close()
+        if row:
+            has_summaries = True
+            generated_at = row["generated_at"] or ""
+            counts = {
+                "connectors": row["connectors_count"] or 0,
+                "fuses": row["fuses_count"] or 0,
+                "relays": row["relays_count"] or 0
+            }
+    except Exception:
+        pass
+
+    return {
+        "ps_code": ps_code,
+        "folder_path": folder_path,
+        "folder_exists": bool(ps_code) and os.path.isdir(folder_path),
+        "types": types,
+        "other_files": other_files,
+        "ready": all(t["found"] for t in types if t["required"]),
+        "has_summaries": has_summaries,
+        "generated_at": generated_at,
+        "counts": counts
+    }
+
+
+def sync_ps_knowledge_base(ps_code, lang="pl"):
+    """
+    Skanuje folder Bazy wiedzy jednego projektu PS i wykonuje:
+    import list połączeń (XLSX), import BOM (XLSX) oraz indeksację schematów PDF.
+    Zwraca listę wyników per plik (jak sync_all_knowledge_base, ale dla jednego PS).
+    """
+    init_zuken_tables()
+    ps_code = str(ps_code or "").strip().upper()
+    kb_dir = os.path.join(BAZA_WIEDZY_DIR, ps_code)
+    if not ps_code or not os.path.isdir(kb_dir):
+        return {"status": "error", "message": zsmsg("kbDirMissing", lang, v=kb_dir),
+                "message_key": "kbDirMissing", "results": []}
+
+    try:
+        files = sorted(os.listdir(kb_dir))
+    except Exception as e:
+        return {"status": "error", "message": str(e), "results": []}
+
+    results = []
+    for f in files:
+        full_path = os.path.join(kb_dir, f)
+        if os.path.isdir(full_path):
+            continue
+        ftype = _kb_classify_file(f)
+        try:
+            if ftype == "bom":
+                items_cnt, devs_cnt, msg = import_zuken_bom_xlsx(full_path, ps_code=ps_code, lang=lang)
+                results.append({"type": "bom_xlsx", "file": f, "articles": items_cnt, "devices": devs_cnt, "message": msg})
+            elif ftype == "conn":
+                count, msg = import_zuken_xlsx(full_path, ps_code=ps_code, lang=lang)
+                results.append({"type": "xlsx", "file": f, "connections": count, "message": msg})
+            elif ftype == "pdf":
+                sch_id, sym_count, msg = index_zuken_pdf(full_path, ps_code=ps_code, lang=lang)
+                results.append({"type": "pdf", "file": f, "schematic_id": sch_id, "symbols": sym_count, "message": msg})
+            elif ftype == "e3s":
+                results.append({"type": "e3s", "file": f, "message": zsmsg("e3sRegistered", lang)})
+            elif ftype == "ctrl":
+                results.append({"type": "ctrl", "file": f, "message": zsmsg("ctrlRegistered", lang)})
+        except Exception as ex:
+            results.append({"type": "error", "file": f, "message": str(ex)})
+
+    return {"status": "success", "results": results}
+
+
+def process_ps_knowledge_base(ps_code, lang="pl"):
+    """
+    Pełny pipeline po dodaniu plików do Bazy wiedzy projektu PS:
+    1) import XLSX (połączenia + BOM) i indeksacja PDF (sync_ps_knowledge_base),
+    2) generowanie zestawień Asystenta (złącza z pinoutem, bezpieczniki, przekaźniki).
+    """
+    sync_res = sync_ps_knowledge_base(ps_code, lang=lang)
+    if sync_res.get("status") == "error":
+        return sync_res
+    if not sync_res["results"]:
+        return {"status": "error", "message": zsmsg("kbNoFiles", lang),
+                "message_key": "kbNoFiles", "message_params": {}, "results": []}
+
+    summ = generate_ps_technical_summaries(ps_code, lang=lang)
+    return {
+        "status": "success" if summ.get("status") == "success" else "partial",
+        "results": sync_res["results"],
+        "summaries": summ,
+        "message": summ.get("message"),
+        "message_key": summ.get("message_key"),
+        "message_params": summ.get("message_params") or {}
+    }
 
 
 # ═══════════════════════════════════════════════════════════════════

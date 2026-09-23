@@ -37,3 +37,6 @@ sumatrapdfcache/
 Baza wiedzy/
 baza wiedzy/
 
+# Kopie zapasowe i paczki synchronizacyjne
+backups/
+

@@ -1831,18 +1831,99 @@
         <h2 style="font-size:18px; font-weight:700; margin-bottom:16px;" data-i18n="ui.backup.pageTitle">Kopie Zapasowe i Narzędzia Bazy</h2>
 
         <div style="display:flex; flex-direction:column; gap:16px;">
-          <div class="detail-section-card" style="border-left: 4px solid var(--primary); background: rgba(37, 99, 235, 0.04);">
+
+          <!-- AUTOMATYCZNE KOPIE -->
+          <div class="detail-section-card" style="border-left:4px solid #059669; background:rgba(5,150,105,0.04);">
+            <h3 style="font-size:14px; font-weight:800; color:#047857; margin-bottom:4px;" data-i18n="ui.backup.autoTitle">🛡 Automatyczne kopie zapasowe</h3>
+            <p style="font-size:12.5px; color:var(--text-main); margin-bottom:6px; line-height:1.4;" data-i18n="ui.backup.autoDesc">
+              Przy każdym starcie programu tworzona jest spójna kopia pliku bazy (snapshot). Przechowywane są ostatnie kopie — starsze są usuwane automatycznie.
+            </p>
+            <div id="backup-status-text" style="font-size:12px; color:var(--text-muted); margin-bottom:10px;" data-i18n="ui.backup.autoLoading">Wczytywanie stanu kopii…</div>
+            <div style="display:flex; gap:10px; flex-wrap:wrap;">
+              <button type="button" class="btn-primary-action" id="btn-backup-snapshot" style="padding:9px 18px; font-weight:700; display:inline-flex; align-items:center; gap:6px;">
+                <span>📸</span> <span data-i18n="ui.backup.snapshotBtn">Utwórz kopię teraz</span>
+              </button>
+              <button type="button" class="btn-secondary-action" id="btn-backup-open-folder" data-i18n="ui.backup.openFolderBtn">📂 Otwórz folder kopii</button>
+            </div>
+          </div>
+
+          <!-- SYNCHRONIZACJA MIĘDZY KOMPUTERAMI -->
+          <div class="detail-section-card" style="border-left:4px solid var(--primary); background:rgba(37,99,235,0.04);">
+            <h3 style="font-size:14px; font-weight:800; color:var(--primary); margin-bottom:4px;" data-i18n="ui.backup.syncTitle">🔄 Synchronizacja między komputerami</h3>
+            <p style="font-size:12.5px; color:var(--text-main); margin-bottom:8px; line-height:1.5;" data-i18n-html="ui.backup.syncDesc">
+              <strong>1.</strong> Na tym komputerze wyeksportuj paczkę synchronizacyjną i skopiuj ją na pendrive.
+              <strong>2.</strong> Na drugim komputerze wybierz „Importuj i scal paczkę" — dane połączą się automatycznie
+              (nowsza wersja usterki wygrywa, usunięcia się propagują, pliki Bazy Wiedzy dojdą same).
+              <strong>3.</strong> Wyeksportuj paczkę z powrotem, żeby pierwszy komputer też był aktualny.
+            </p>
+            <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:10px;">
+              <select id="sync-kb-mode" class="dict-input" style="padding:8px 10px; font-size:12.5px; border-radius:8px; border:1px solid var(--border); background:var(--bg-card); color:var(--text-main);">
+                <option value="delta" selected data-i18n="ui.backup.kbDelta">Baza + nowe/zmienione pliki Bazy Wiedzy</option>
+                <option value="all" data-i18n="ui.backup.kbAll">Baza + cała Baza Wiedzy</option>
+                <option value="none" data-i18n="ui.backup.kbNone">Tylko baza danych</option>
+              </select>
+              <button type="button" class="btn-primary-action" id="btn-sync-export" style="padding:9px 18px; font-weight:700; display:inline-flex; align-items:center; gap:6px;">
+                <span>📤</span> <span data-i18n="ui.backup.syncExportBtn">Eksportuj paczkę sync</span>
+              </button>
+              <button type="button" class="btn-secondary-action" id="btn-sync-import" data-i18n="ui.backup.syncImportBtn">📥 Importuj i scal paczkę</button>
+              <input type="file" id="input-sync-import" accept=".zip,.db,application/zip" style="display:none;">
+            </div>
+            <div id="sync-export-result" style="font-size:12px; color:var(--text-muted); margin-bottom:6px;"></div>
+            <div id="sync-import-report" style="font-size:12px;"></div>
+          </div>
+
+          <!-- PEŁNY BACKUP ZIP -->
+          <div class="detail-section-card">
+            <h3 style="font-size:14px; font-weight:700; margin-bottom:4px;" data-i18n="ui.backup.pkgTitle">📦 Pełny backup (paczka ZIP)</h3>
+            <p style="font-size:12px; color:var(--text-muted); margin-bottom:10px;" data-i18n="ui.backup.pkgDesc">Tworzy paczkę ZIP ze spójną kopią bazy danych, manifestem i opcjonalnie całą Bazą Wiedzy (pliki PDF, e3s, XLSX, zdjęcia komponentów).</p>
+            <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:8px;">
+              <select id="backup-kb-mode" class="dict-input" style="padding:8px 10px; font-size:12.5px; border-radius:8px; border:1px solid var(--border); background:var(--bg-card); color:var(--text-main);">
+                <option value="all" selected data-i18n="ui.backup.kbAll">Baza + cała Baza Wiedzy</option>
+                <option value="delta" data-i18n="ui.backup.kbDelta">Baza + nowe/zmienione pliki Bazy Wiedzy</option>
+                <option value="none" data-i18n="ui.backup.kbNone">Tylko baza danych</option>
+              </select>
+              <button class="btn-secondary-action" id="btn-backup-create" data-i18n="ui.backup.pkgBtn">📦 Utwórz paczkę backupu</button>
+            </div>
+            <div id="backup-create-result" style="font-size:12px; color:var(--text-muted);"></div>
+          </div>
+
+          <!-- LISTA KOPII -->
+          <div class="detail-section-card">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+              <h3 style="font-size:14px; font-weight:700;" data-i18n="ui.backup.listTitle">🗂 Zapisane kopie zapasowe</h3>
+              <button class="btn-secondary-action" id="btn-backup-refresh" style="padding:5px 12px; font-size:12px;" data-i18n="ui.backup.refreshBtn">↻ Odśwież</button>
+            </div>
+            <div id="backup-list" style="font-size:12px; color:var(--text-muted);" data-i18n="ui.backup.listEmpty">Brak zapisanych kopii.</div>
+          </div>
+
+          <!-- PRZYWRACANIE -->
+          <div class="detail-section-card" style="border-left:4px solid var(--red); background:rgba(220,38,38,0.03);">
+            <h3 style="font-size:14px; font-weight:800; color:var(--red); margin-bottom:4px;" data-i18n="ui.backup.restoreTitle">♻ Przywracanie bazy z kopii</h3>
+            <p style="font-size:12.5px; color:var(--text-main); margin-bottom:6px; line-height:1.4;" data-i18n="ui.backup.restoreDesc">
+              Nadpisuje bieżącą bazę danymi z paczki ZIP lub pliku .db. Przed przywróceniem automatycznie tworzona jest kopia bezpieczeństwa obecnego stanu.
+            </p>
+            <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+              <button class="btn-secondary-action" id="btn-backup-restore" style="color:var(--red);" data-i18n="ui.backup.restoreBtn">♻ Wybierz plik i przywróć</button>
+              <label style="font-size:12px; color:var(--text-muted); display:inline-flex; align-items:center; gap:5px;">
+                <input type="checkbox" id="restore-include-kb" checked> <span data-i18n="ui.backup.restoreKb">Przywróć też pliki Bazy Wiedzy z paczki</span>
+              </label>
+              <input type="file" id="input-backup-restore" accept=".zip,.db,application/zip" style="display:none;">
+            </div>
+          </div>
+
+          <!-- PRZYGOTOWANIE DO RĘCZNEGO KOPIOWANIA (WAL) -->
+          <div class="detail-section-card">
             <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap;">
               <div style="max-width:620px;">
-                <h3 style="font-size:14px; font-weight:800; color:var(--primary); margin-bottom:4px;" data-i18n="ui.backup.walTitle">💾 Przygotuj bazę do skopiowania na pendrive (Scal plik rejestr_usterek.db)</h3>
-                <p style="font-size:12.5px; color:var(--text-main); margin-bottom:4px; line-height:1.4;" data-i18n-html="ui.backup.walDesc">
+                <h3 style="font-size:14px; font-weight:700; margin-bottom:4px;" data-i18n="ui.backup.walTitle">💾 Przygotuj bazę do ręcznego kopiowania (scal plik rejestr_usterek.db)</h3>
+                <p style="font-size:12px; color:var(--text-muted); margin-bottom:4px; line-height:1.4;" data-i18n-html="ui.backup.walDesc">
                   Wymusza natychmiastowe zrzucenie wszystkich bieżących transakcji i wpisów (bufora WAL) bezpośrednio do głównego pliku <code>rejestr_usterek.db</code>.
                 </p>
                 <div style="font-size:11.5px; color:var(--text-muted);" data-i18n-html="ui.backup.walNote">
-                  Dzięki temu plik <code>rejestr_usterek.db</code> jest w 100% kompletny i możesz go bezpiecznie skopiować do domu.
+                  Dzięki temu plik <code>rejestr_usterek.db</code> jest w 100% kompletny i możesz go bezpiecznie skopiować na pendrive. Alternatywnie użyj paczki synchronizacyjnej powyżej — jest bezpieczniejsza.
                 </div>
               </div>
-              <button type="button" class="btn-primary-action" id="btn-flush-wal-db" style="padding:9px 18px; font-weight:700; white-space:nowrap; display:inline-flex; align-items:center; gap:6px;">
+              <button type="button" class="btn-secondary-action" id="btn-flush-wal-db" style="padding:9px 18px; font-weight:700; white-space:nowrap; display:inline-flex; align-items:center; gap:6px;">
                 <span>⚡</span> <span data-i18n="ui.backup.walBtn">Scal plik bazy teraz</span>
               </button>
             </div>
@@ -1864,19 +1945,9 @@
           </div>
 
           <div class="detail-section-card">
-            <h3 style="font-size:14px; font-weight:700; margin-bottom:4px;" data-i18n="ui.backup.exportTitle">Pobierz kopię zapasową (Backup JSON)</h3>
-            <p style="font-size:12px; color:var(--text-muted); margin-bottom:12px;" data-i18n="ui.backup.exportDesc">Eksportuje całą bazę usterek, słowników i powiązań do pliku JSON.</p>
-            <button class="btn-secondary-action" id="btn-export-backup-json" data-i18n="ui.backup.exportBtn">⬇ Pobierz kopię JSON</button>
-          </div>
-
-          <div class="detail-section-card">
-            <h3 style="font-size:14px; font-weight:700; margin-bottom:4px;" data-i18n="ui.backup.importTitle">Wczytaj kopię zapasową (Import JSON)</h3>
-            <p style="font-size:12px; color:var(--text-muted); margin-bottom:12px;" data-i18n="ui.backup.importDesc">Wgraj dane z pliku JSON (scal z obecnymi danymi lub zastąp bazę).</p>
-            <div style="display:flex; gap:10px;">
-              <button class="btn-secondary-action" id="btn-import-merge" data-i18n="ui.backup.importMerge">Scal z bieżącą bazą</button>
-              <button class="btn-secondary-action" id="btn-import-replace" style="color:var(--red);" data-i18n="ui.backup.importReplace">Zastąp całą bazę</button>
-            </div>
-            <input type="file" id="input-backup-import" accept="application/json" style="display:none;">
+            <h3 style="font-size:14px; font-weight:700; margin-bottom:4px;" data-i18n="ui.backup.exportTitle">Lekki eksport JSON (bez załączników)</h3>
+            <p style="font-size:12px; color:var(--text-muted); margin-bottom:12px;" data-i18n="ui.backup.exportDesc">Eksportuje listę usterek i słowników do pliku JSON — do odczytu i analizy. Nie zawiera zdjęć, dokumentów ani wariantów napraw. Pełna kopia = paczka ZIP powyżej.</p>
+            <button class="btn-secondary-action" id="btn-export-backup-json" data-i18n="ui.backup.exportBtn">⬇ Pobierz eksport JSON</button>
           </div>
 
           <div class="detail-section-card">
@@ -1912,6 +1983,10 @@
                 <!-- Wypełniane w JS -->
               </select>
             </div>
+
+            <button type="button" class="btn-secondary-action" style="padding:7px 12px; font-size:12.5px; display:inline-flex; align-items:center; gap:5px;" onclick="openKbManager(ZUKEN_SUMM_STATE.currentPs)" data-i18n-title="ui.projects.kbManageTitle" title="Otwórz menedżera plików Bazy wiedzy dla tego PS">
+              <span>📁</span> <span data-i18n="ui.projects.kbManage">Pliki Bazy wiedzy…</span>
+            </button>
 
             <button type="button" class="btn-primary-action" id="btn-zuken-generate-summaries" style="padding:7px 14px; font-size:12.5px; background:linear-gradient(135deg, #10b981, #059669); border:none; display:inline-flex; align-items:center; gap:6px;" onclick="generateZukenSummariesForSelectedPs()">
               <span>⚡</span> <span data-i18n="zuken.btnGenerateSummaries">Wygeneruj / Odśwież z XLSX</span>
@@ -2130,7 +2205,7 @@
         <input type="hidden" id="pe-old-ps">
         <div class="form-group">
           <label data-i18n="ui.projects.psNumber">Numer projektu PS * (np. PS011871)</label>
-          <input type="text" id="pe-ps" required placeholder="np. PS011871" data-i18n-placeholder="form.projectPlaceholder">
+          <input type="text" id="pe-ps" required placeholder="np. PS011871" data-i18n-placeholder="form.projectPlaceholder" oninput="kbOnPsInput()">
         </div>
         <div class="form-group">
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:5px;">
@@ -2162,11 +2237,70 @@
             </div>
           </div>
         </div>
+        <!-- ── Baza wiedzy — Asystent Zuken ── -->
+        <div class="form-group" style="border-top:1px solid var(--border); padding-top:12px; margin-top:4px; margin-bottom:0;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+            <label style="margin-bottom:0;" data-i18n="ui.projects.kbTitle">📁 Baza wiedzy — Asystent Zuken</label>
+            <button type="button" class="btn-quick-add" onclick="kbManageFromProjectModal()" data-i18n-title="ui.projects.kbManageTitle" title="Otwórz menedżera plików Bazy wiedzy dla tego PS" data-i18n="ui.projects.kbManage">📁 Pliki Bazy wiedzy…</button>
+          </div>
+          <div id="pe-kb-mini" style="font-size:12px; color:var(--text-muted); line-height:1.9;"></div>
+        </div>
         <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:16px;">
           <button type="button" class="btn-secondary-action" onclick="closeModal('modal-project-edit')" data-i18n="ui.common.cancel">Anuluj</button>
           <button type="submit" class="btn-primary-action" data-i18n="ui.projects.saveProject">Zapisz projekt</button>
         </div>
       </form>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════ MODAL: BAZA WIEDZY PROJEKTU — PLIKI ASYSTENTA ZUKEN ════════════ -->
+<div class="modal-backdrop" id="modal-kb-files" style="display:none;">
+  <div class="modal-box large">
+    <div class="modal-header">
+      <h3 id="modal-kb-title">📁 Baza wiedzy projektu</h3>
+      <button class="btn-close-modal" onclick="closeModal('modal-kb-files')">✕</button>
+    </div>
+    <div class="modal-body">
+      <!-- Pasek folderu projektu -->
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:14px; padding:10px 12px; background:var(--bg-card-subtle); border:1px solid var(--border); border-radius:var(--radius-md);">
+        <div style="font-size:12px; color:var(--text-muted); min-width:0;">
+          <span data-i18n="ui.kb.folderLabel">Folder Bazy wiedzy:</span>
+          <code id="kb-folder-path" style="color:var(--text-main); word-break:break-all;">—</code>
+        </div>
+        <button type="button" class="btn-secondary-action" style="padding:5px 12px; font-size:12px; white-space:nowrap;" onclick="kbOpenFolder()" data-i18n-title="ui.kb.openFolderTitle" title="Otwiera folder projektu w Eksploratorze Windows">
+          <span data-i18n="ui.kb.openFolder">📂 Otwórz folder</span>
+        </button>
+      </div>
+
+      <!-- Lista kontrolna wymaganych plików -->
+      <div style="font-size:12.5px; font-weight:700; margin-bottom:6px;" data-i18n="ui.kb.checklistTitle">Pliki potrzebne Asystentowi Zuken:</div>
+      <div id="kb-checklist" style="display:flex; flex-direction:column; gap:8px; margin-bottom:8px;"></div>
+      <div style="font-size:11.5px; color:var(--text-muted); margin-bottom:14px;" data-i18n="ui.kb.revisionsNote">Możesz dodać kilka rewizji każdego pliku — program rozpoznaje wersje po datach w nazwach.</div>
+
+      <!-- Strefa wgrywania plików -->
+      <div id="kb-dropzone" onclick="kbTriggerUpload()" ondragover="event.preventDefault(); this.style.borderColor='var(--primary)'; this.style.background='var(--bg-card-subtle)';" ondragleave="this.style.borderColor='var(--border)'; this.style.background='';" ondrop="event.preventDefault(); this.style.borderColor='var(--border)'; this.style.background=''; kbUploadFiles(Array.from(event.dataTransfer.files||[]));" style="border:2px dashed var(--border); border-radius:var(--radius-md); padding:16px; text-align:center; cursor:pointer; font-size:12.5px; color:var(--text-muted); margin-bottom:6px; transition:border-color .15s, background .15s;">
+        <span style="font-size:18px;">📥</span>
+        <span data-i18n-html="ui.kb.dropHint">Kliknij, aby wybrać pliki z dysku <b>lub przeciągnij je tutaj</b> (.xlsx, .pdf, .e3s, .html)</span>
+      </div>
+      <input type="file" id="kb-file-input" multiple accept=".xlsx,.pdf,.e3s,.html,.htm,.xml,.json,.csv,.txt" style="display:none;" onchange="kbHandleFileInput(this)">
+      <div id="kb-upload-log" style="display:none; font-size:12px; margin:8px 0 14px 0;"></div>
+
+      <!-- Przetwarzanie po dodaniu plików -->
+      <div style="border:1px solid var(--border); border-radius:var(--radius-md); padding:12px 14px; background:var(--bg-card-subtle); margin-top:14px;">
+        <div style="font-size:12.5px; font-weight:700; margin-bottom:4px;" data-i18n="ui.kb.processTitle">⚙️ Przetwarzanie plików projektu</div>
+        <div style="font-size:12px; color:var(--text-muted); line-height:1.5; margin-bottom:10px;" data-i18n-html="ui.kb.processDesc">
+          Po uzupełnieniu plików uruchom przetwarzanie — program automatycznie zaimportuje listy połączeń i BOM (XLSX) do bazy, zaindeksuje schematy PDF oraz wygeneruje zestawienia Asystenta (spis złączy z pinoutem, bezpieczniki, przekaźniki).
+        </div>
+        <button type="button" class="btn-primary-action" id="btn-kb-process" style="background:linear-gradient(135deg,#10b981,#059669); border:none; font-size:12.5px; display:inline-flex; align-items:center; gap:6px;" onclick="kbProcessFiles()" data-i18n-title="ui.kb.processBtnTitle" title="Importuje XLSX, indeksuje PDF i generuje zestawienia Asystenta Zuken">
+          <span data-i18n="ui.kb.processBtn">⚡ Przetwórz pliki projektu</span>
+        </button>
+        <div id="kb-process-log" style="display:none; margin-top:10px; font-size:12px; max-height:180px; overflow-y:auto;"></div>
+      </div>
+
+      <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:16px;">
+        <button type="button" class="btn-secondary-action" onclick="closeModal('modal-kb-files')" data-i18n="ui.common.close">Zamknij</button>
+      </div>
     </div>
   </div>
 </div>
@@ -3092,6 +3226,7 @@ function switchView(viewName) {
   if (viewName === 'users') renderUsersTable();
   if (viewName === 'dashboard') renderDefectsTable();
   if (viewName === 'zuken-summaries') loadZukenSummariesView();
+  if (viewName === 'backup') loadBackupStatus();
 }
 
 
@@ -4826,6 +4961,7 @@ function renderProjectsTable() {
       <td><b>${escapeHtml(meta.klient || '—')}</b></td>
       <td>${escapeHtml(meta.model || '—')}</td>
       <td style="text-align:right;">
+        <button class="btn-secondary-action" style="padding:3px 8px; font-size:11.5px;" onclick="openKbManager('${escapeHtml(ps)}')" title="${t('ui.projects.kbManageTitle')}">📁</button>
         <button class="btn-secondary-action" style="padding:3px 8px; font-size:11.5px;" onclick="editProjectDialog('${escapeHtml(ps)}')">${t('ui.common.edit')}</button>
         <button class="btn-secondary-action" style="padding:3px 8px; font-size:11.5px; color:var(--red);" onclick="deleteProject('${escapeHtml(ps)}')">${t('ui.common.delete')}</button>
       </td>
@@ -4929,6 +5065,7 @@ function openNewProjectDialog() {
 
   renderProjectModalDropdowns('', '');
   openModal('modal-project-edit');
+  kbRefreshMiniChecklist();
   setTimeout(() => document.getElementById('pe-ps')?.focus(), 60);
 }
 
@@ -4942,6 +5079,7 @@ function editProjectDialog(ps) {
 
   renderProjectModalDropdowns(meta.klient || '', meta.model || '');
   openModal('modal-project-edit');
+  kbRefreshMiniChecklist();
   setTimeout(() => document.getElementById('pe-ps')?.focus(), 60);
 }
 
@@ -4988,6 +5126,11 @@ document.getElementById('form-project-edit').addEventListener('submit', async (e
       STATE.lastSelectedPS = newPs;
       fillClientAndModelFromPS(newPs);
     }
+
+    // Nowy projekt — otwórz menedżera plików Bazy wiedzy (lista plików Asystenta Zuken)
+    if (!oldPs) {
+      setTimeout(() => openKbManager(newPs), 150);
+    }
   } catch(err) {
     showToast(t('js.common.error', { v: err.message }), 'error');
   }
@@ -5003,6 +5146,223 @@ async function deleteProject(ps) {
       renderProjectsTable();
       renderFormDropdowns();
     } catch(err) { showToast(t('js.common.error', { v: err.message }), 'error'); }
+  }
+}
+
+/* ── BAZA WIEDZY PROJEKTU — PLIKI ASYSTENTA ZUKEN ── */
+const KB_STATE = { ps: '', _miniTimer: null };
+const KB_TYPES = [
+  { key: 'conn', nameKey: 'ui.kb.typeConnName', descKey: 'ui.kb.typeConnDesc', accept: '.xlsx' },
+  { key: 'bom',  nameKey: 'ui.kb.typeBomName',  descKey: 'ui.kb.typeBomDesc',  accept: '.xlsx' },
+  { key: 'pdf',  nameKey: 'ui.kb.typePdfName',  descKey: 'ui.kb.typePdfDesc',  accept: '.pdf' },
+  { key: 'e3s',  nameKey: 'ui.kb.typeE3sName',  descKey: 'ui.kb.typeE3sDesc',  accept: '.e3s' },
+  { key: 'ctrl', nameKey: 'ui.kb.typeCtrlName', descKey: 'ui.kb.typeCtrlDesc', accept: '.html,.htm,.xml,.json,.csv,.txt,.pdf' }
+];
+
+async function openKbManager(ps) {
+  ps = (ps || '').trim().toUpperCase();
+  if (!ps) {
+    showToast(t('ui.kb.enterPsFirst'), 'warning');
+    return;
+  }
+  KB_STATE.ps = ps;
+  const titleEl = document.getElementById('modal-kb-title');
+  if (titleEl) titleEl.textContent = `📁 ${t('ui.kb.title', { ps })}`;
+  const upLog = document.getElementById('kb-upload-log');
+  const prLog = document.getElementById('kb-process-log');
+  if (upLog) { upLog.style.display = 'none'; upLog.innerHTML = ''; }
+  if (prLog) { prLog.style.display = 'none'; prLog.innerHTML = ''; }
+  openModal('modal-kb-files');
+  await kbRefreshStatus();
+}
+
+function kbManageFromProjectModal() {
+  const ps = (document.getElementById('pe-ps')?.value || '').trim().toUpperCase();
+  if (!ps) {
+    showToast(t('ui.kb.enterPsFirst'), 'warning');
+    return;
+  }
+  openKbManager(ps);
+}
+
+async function kbRefreshStatus() {
+  const ps = KB_STATE.ps;
+  const box = document.getElementById('kb-checklist');
+  if (!ps || !box) return;
+  try {
+    const res = await apiCall(`/api/zuken/kb/${encodeURIComponent(ps)}/files`);
+    const pathEl = document.getElementById('kb-folder-path');
+    if (pathEl) pathEl.textContent = res.folder_path || '—';
+    renderKbChecklist(res);
+  } catch(err) {
+    box.innerHTML = `<div style="color:var(--red); font-size:12px;">${escapeHtml(err.message)}</div>`;
+  }
+  kbRefreshMiniChecklist();
+}
+
+function renderKbChecklist(res) {
+  const box = document.getElementById('kb-checklist');
+  if (!box) return;
+  const tmap = {};
+  (res.types || []).forEach(x => { tmap[x.key] = x; });
+
+  box.innerHTML = KB_TYPES.map(tp => {
+    const st = tmap[tp.key] || { found: false, files: [], required: true };
+    const icon = st.found ? '✅' : (st.required ? '🔴' : '⚪');
+    const badge = st.required
+      ? `<span style="font-size:10px; font-weight:700; color:#dc2626; background:rgba(220,38,38,0.1); padding:1px 6px; border-radius:8px; margin-left:6px;">${t('ui.kb.requiredBadge')}</span>`
+      : `<span style="font-size:10px; font-weight:700; color:var(--text-muted); background:var(--bg-card-subtle); padding:1px 6px; border-radius:8px; margin-left:6px;">${t('ui.kb.optionalBadge')}</span>`;
+    const filesHtml = st.found
+      ? st.files.map(f => `<div style="font-size:11px; color:#059669; font-weight:600; margin-top:2px; word-break:break-all;">📄 ${escapeHtml(f)}</div>`).join('')
+      : `<div style="font-size:11px; color:${st.required ? '#dc2626' : 'var(--text-muted)'}; margin-top:2px;">${t('ui.kb.noFile')}</div>`;
+    return `
+      <div style="display:flex; gap:10px; align-items:flex-start; padding:9px 11px; border:1px solid var(--border); border-radius:var(--radius-md); background:var(--bg-card);">
+        <span style="font-size:15px; line-height:1.4; flex-shrink:0;">${icon}</span>
+        <div style="flex:1; min-width:0;">
+          <div style="font-size:12.5px; font-weight:700; color:var(--text-main);">${escapeHtml(t(tp.nameKey))}${badge}</div>
+          <div style="font-size:11.5px; color:var(--text-muted); line-height:1.4; margin-top:1px;">${escapeHtml(t(tp.descKey))}</div>
+          ${filesHtml}
+        </div>
+        <button type="button" class="btn-secondary-action" style="padding:4px 10px; font-size:11.5px; white-space:nowrap; flex-shrink:0;" onclick="kbTriggerUpload('${tp.accept}')">${t('ui.kb.uploadBtn')}</button>
+      </div>`;
+  }).join('');
+
+  // Wiersz podsumowania: gotowość + stan zestawień
+  const ready = res.ready;
+  const summLine = res.has_summaries
+    ? `<span style="color:#059669;">${t('ui.kb.statusSummaries', { c: res.counts?.connectors || 0, f: res.counts?.fuses || 0, r: res.counts?.relays || 0, d: res.generated_at || '—' })}</span>`
+    : `<span style="color:#d97706;">${t('ui.kb.statusNoSummaries')}</span>`;
+  box.innerHTML += `
+    <div style="display:flex; gap:8px; align-items:center; padding:8px 11px; border-radius:var(--radius-md); font-size:12px; background:${ready ? 'rgba(16,185,129,0.08)' : 'rgba(245,158,11,0.08)'}; border:1px solid ${ready ? 'rgba(16,185,129,0.35)' : 'rgba(245,158,11,0.35)'};">
+      <span>${ready ? '🟢' : '🟠'}</span>
+      <span style="font-weight:600;">${ready ? t('ui.kb.statusReady') : t('ui.kb.statusIncomplete')}</span>
+      <span style="color:var(--text-muted);">·</span>
+      ${summLine}
+    </div>`;
+}
+
+function kbTriggerUpload(accept) {
+  const inp = document.getElementById('kb-file-input');
+  if (!inp) return;
+  inp.value = '';
+  inp.accept = accept || '.xlsx,.pdf,.e3s,.html,.htm,.xml,.json,.csv,.txt';
+  inp.click();
+}
+
+async function kbHandleFileInput(inp) {
+  const files = Array.from(inp.files || []);
+  if (!files.length) return;
+  await kbUploadFiles(files);
+}
+
+async function kbUploadFiles(files) {
+  const ps = KB_STATE.ps;
+  if (!ps) return;
+  const log = document.getElementById('kb-upload-log');
+  if (!log) return;
+  log.style.display = 'block';
+  for (const file of files) {
+    const line = document.createElement('div');
+    line.style.padding = '2px 0';
+    line.textContent = `⏳ ${file.name}`;
+    log.appendChild(line);
+    try {
+      const fd = new FormData();
+      fd.append('file', file, file.name);
+      const res = await fetch(`/api/zuken/kb/${encodeURIComponent(ps)}/upload`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${STATE.authToken || ''}`,
+          'X-App-Lang': (typeof CURRENT_LANG !== 'undefined') ? CURRENT_LANG : 'pl'
+        },
+        body: fd
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(j.error || `HTTP ${res.status}`);
+      line.textContent = `✅ ${file.name} — ${t('ui.kb.uploadedOk')}`;
+      line.style.color = '#059669';
+    } catch(err) {
+      line.textContent = `❌ ${file.name}: ${err.message}`;
+      line.style.color = 'var(--red)';
+    }
+  }
+  await kbRefreshStatus();
+}
+
+async function kbProcessFiles() {
+  const ps = KB_STATE.ps;
+  if (!ps) return;
+  const btn = document.getElementById('btn-kb-process');
+  const log = document.getElementById('kb-process-log');
+  if (btn) btn.disabled = true;
+  if (log) {
+    log.style.display = 'block';
+    log.innerHTML = `<div style="color:var(--text-muted);">⏳ ${t('ui.kb.processing')}</div>`;
+  }
+  try {
+    const res = await apiCall(`/api/zuken/kb/${encodeURIComponent(ps)}/process`, 'POST', {});
+    let html = '';
+    (res.results || []).forEach(r => {
+      const isErr = r.type === 'error';
+      html += `<div style="padding:2px 0; color:${isErr ? 'var(--red)' : 'var(--text-main)'};">${isErr ? '❌' : '✓'} <b>${escapeHtml(r.file || '')}</b> — ${escapeHtml(r.message || '')}</div>`;
+    });
+    if (res.summaries) {
+      const s = res.summaries;
+      const sMsg = (s.message_key ? t('js.zuken.' + s.message_key, s.message_params || {}) : '') || s.message || '';
+      html += `<div style="margin-top:6px; padding-top:6px; border-top:1px solid var(--border); font-weight:700; color:${s.status === 'success' ? '#059669' : 'var(--red)'};">⚡ ${escapeHtml(sMsg)}</div>`;
+    }
+    if (log) log.innerHTML = html || `<div>${t('ui.kb.processDone')}</div>`;
+    showToast(t('ui.kb.processDone'), res.status === 'success' ? 'success' : 'warning');
+    await kbRefreshStatus();
+    if (STATE.currentView === 'zuken-summaries' && typeof loadZukenSummariesView === 'function') {
+      loadZukenSummariesView(ps);
+    }
+  } catch(err) {
+    if (log) log.innerHTML = `<div style="color:var(--red);">❌ ${escapeHtml(err.message)}</div>`;
+    showToast(err.message, 'error');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function kbOpenFolder() {
+  const ps = KB_STATE.ps;
+  if (!ps) return;
+  try {
+    await apiCall(`/api/zuken/kb/${encodeURIComponent(ps)}/open-folder`, 'POST', {});
+  } catch(err) {
+    showToast(err.message, 'error');
+  }
+}
+
+/* ── Mini lista kontrolna w modalu projektu ── */
+function kbOnPsInput() {
+  clearTimeout(KB_STATE._miniTimer);
+  KB_STATE._miniTimer = setTimeout(kbRefreshMiniChecklist, 400);
+}
+
+async function kbRefreshMiniChecklist() {
+  const mini = document.getElementById('pe-kb-mini');
+  if (!mini) return;
+  const modal = document.getElementById('modal-project-edit');
+  if (!modal || modal.style.display === 'none') return;
+  const ps = (document.getElementById('pe-ps')?.value || '').trim().toUpperCase();
+  if (!ps) {
+    mini.innerHTML = `<span style="color:var(--text-muted);">${t('ui.kb.enterPsFirst')}</span>`;
+    return;
+  }
+  try {
+    const res = await apiCall(`/api/zuken/kb/${encodeURIComponent(ps)}/files`);
+    const tmap = {};
+    (res.types || []).forEach(x => { tmap[x.key] = x; });
+    mini.innerHTML = KB_TYPES.map(tp => {
+      const st = tmap[tp.key] || {};
+      const icon = st.found ? '✅' : (st.required ? '🔴' : '⚪');
+      const cnt = st.found && st.files && st.files.length > 1 ? ` (${st.files.length})` : '';
+      return `<span style="display:inline-flex; align-items:center; gap:4px; margin-right:14px;" title="${escapeHtml(t(tp.descKey))}">${icon} ${escapeHtml(t(tp.nameKey))}${cnt}</span>`;
+    }).join('');
+  } catch(e) {
+    mini.innerHTML = `<span style="color:var(--red);">${escapeHtml(e.message)}</span>`;
   }
 }
 
@@ -5400,36 +5760,214 @@ document.getElementById('btn-export-backup-json').addEventListener('click', () =
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = `kopia_rejestr_usterek_${new Date().toISOString().slice(0,10)}.json`;
+  a.download = `eksport_rejestr_usterek_${new Date().toISOString().slice(0,10)}.json`;
   a.click();
   showToast(t('js.backup.jsonDownloaded'), 'success');
 });
 
-const importInput = document.getElementById('input-backup-import');
-document.getElementById('btn-import-merge').addEventListener('click', () => {
-  importInput.dataset.mode = 'merge';
-  importInput.click();
-});
-document.getElementById('btn-import-replace').addEventListener('click', () => {
-  if (!confirm(t('js.backup.confirmReplace'))) return;
-  importInput.dataset.mode = 'replace';
-  importInput.click();
-});
-importInput.addEventListener('change', (e) => {
-  const file = e.target.files[0];
-  const mode = importInput.dataset.mode || 'merge';
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = async () => {
-    try {
-      const parsed = JSON.parse(reader.result);
-      const res = await apiCall(`/api/import?mode=${mode}`, 'POST', parsed);
-      showToast(t('js.backup.importDone', { v: res.imported }), 'success');
-      loadAllData();
-    } catch(err) { showToast(t('js.backup.errImport', { v: err.message }), 'error'); }
+/* ── KOPIE ZAPASOWE / SYNCHRONIZACJA (backup_service) ── */
+function fmtBytes(b) {
+  if (!b && b !== 0) return '-';
+  if (b >= 1024*1024*1024) return (b/(1024*1024*1024)).toFixed(2) + ' GB';
+  if (b >= 1024*1024) return (b/(1024*1024)).toFixed(1) + ' MB';
+  return Math.round(b/1024) + ' KB';
+}
+function fmtTs(ts) {
+  if (!ts) return '-';
+  try { return new Date(ts*1000).toLocaleString(); } catch(e) { return '-'; }
+}
+
+async function loadBackupStatus() {
+  const statusEl = document.getElementById('backup-status-text');
+  const listEl = document.getElementById('backup-list');
+  try {
+    const s = await apiCall('/api/backup/status');
+    if (statusEl) {
+      const last = s.last_auto || s.last_backup;
+      statusEl.innerHTML =
+        `📁 <code>${escapeHtml(s.backup_dir)}</code> &nbsp;•&nbsp; ` +
+        `${t('ui.backup.autoCount', { n: s.auto_count || 0 })} &nbsp;•&nbsp; ` +
+        `${last ? t('ui.backup.autoLast', { v: fmtTs(last.mtime) }) : t('ui.backup.autoNone')}`;
+    }
+    renderBackupList(s.items || []);
+  } catch(e) {
+    if (statusEl) statusEl.textContent = t('js.backup.errBackup', { v: e.message });
+  }
+}
+
+function renderBackupList(items) {
+  const listEl = document.getElementById('backup-list');
+  if (!listEl) return;
+  if (!items.length) {
+    listEl.innerHTML = `<span style="color:var(--text-muted);">${t('ui.backup.listEmpty')}</span>`;
+    return;
+  }
+  const kindLabel = {
+    auto: t('ui.backup.kindAuto'), backup: t('ui.backup.kindBackup'),
+    sync: t('ui.backup.kindSync'), safety: t('ui.backup.kindSafety'),
+    snapshot: t('ui.backup.kindSnapshot')
   };
-  reader.readAsText(file);
-  importInput.value = '';
+  const token = STATE.authToken ? `?token=${encodeURIComponent(STATE.authToken)}` : '';
+  let html = `<table style="width:100%; border-collapse:collapse; font-size:12px;">
+    <tr style="text-align:left; color:var(--text-muted); border-bottom:1px solid var(--border);">
+      <th style="padding:4px 6px;">${t('ui.backup.listColName')}</th>
+      <th style="padding:4px 6px;">${t('ui.backup.listColKind')}</th>
+      <th style="padding:4px 6px;">${t('ui.backup.listColSize')}</th>
+      <th style="padding:4px 6px;">${t('ui.backup.listColDate')}</th>
+      <th style="padding:4px 6px;"></th>
+    </tr>`;
+  for (const b of items.slice(0, 30)) {
+    html += `<tr style="border-bottom:1px solid var(--border);">
+      <td style="padding:4px 6px; word-break:break-all;"><code>${escapeHtml(b.name)}</code></td>
+      <td style="padding:4px 6px;">${kindLabel[b.kind] || b.kind}</td>
+      <td style="padding:4px 6px; white-space:nowrap;">${fmtBytes(b.size)}</td>
+      <td style="padding:4px 6px; white-space:nowrap;">${fmtTs(b.mtime)}</td>
+      <td style="padding:4px 6px;"><a href="/api/backup/download/${encodeURIComponent(b.name)}${token}" style="color:var(--primary);">${t('ui.backup.downloadLink')}</a></td>
+    </tr>`;
+  }
+  html += '</table>';
+  listEl.innerHTML = html;
+}
+
+async function uploadBackupFile(endpoint, file, extraFields) {
+  const fd = new FormData();
+  fd.append('file', file, file.name);
+  if (extraFields) for (const k in extraFields) fd.append(k, extraFields[k]);
+  const res = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${STATE.authToken || ''}`,
+      'X-App-Lang': (typeof CURRENT_LANG !== 'undefined') ? CURRENT_LANG : 'pl'
+    },
+    body: fd
+  });
+  const j = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(j.error || `HTTP ${res.status}`);
+  return j;
+}
+
+document.getElementById('btn-backup-snapshot')?.addEventListener('click', async () => {
+  try {
+    showToast(t('js.backup.creating'), 'info');
+    const res = await apiCall('/api/backup/snapshot', 'POST', {});
+    showToast(t('js.backup.snapshotDone', { v: res.name }), 'success');
+    loadBackupStatus();
+  } catch(e) { showToast(t('js.backup.errBackup', { v: e.message }), 'error'); }
+});
+
+document.getElementById('btn-backup-open-folder')?.addEventListener('click', async () => {
+  try { await apiCall('/api/backup/open-folder', 'POST', {}); }
+  catch(e) { showToast(t('js.backup.errBackup', { v: e.message }), 'error'); }
+});
+
+document.getElementById('btn-backup-refresh')?.addEventListener('click', loadBackupStatus);
+
+document.getElementById('btn-backup-create')?.addEventListener('click', async () => {
+  const kb = document.getElementById('backup-kb-mode')?.value || 'all';
+  const resEl = document.getElementById('backup-create-result');
+  try {
+    showToast(t('js.backup.creating'), 'info');
+    if (resEl) resEl.textContent = t('js.backup.creating');
+    const res = await apiCall('/api/backup/create', 'POST', { kb });
+    if (resEl) resEl.textContent = t('js.backup.pkgDone',
+      { v: res.path, s: fmtBytes(res.size), n: res.kb_included });
+    showToast(t('js.backup.pkgDoneShort'), 'success');
+    loadBackupStatus();
+  } catch(e) {
+    if (resEl) resEl.textContent = '';
+    showToast(t('js.backup.errBackup', { v: e.message }), 'error');
+  }
+});
+
+document.getElementById('btn-sync-export')?.addEventListener('click', async () => {
+  const kb = document.getElementById('sync-kb-mode')?.value || 'delta';
+  const resEl = document.getElementById('sync-export-result');
+  try {
+    showToast(t('js.backup.creating'), 'info');
+    if (resEl) resEl.textContent = t('js.backup.creating');
+    const res = await apiCall('/api/sync/export', 'POST', { kb });
+    if (resEl) resEl.textContent = t('js.backup.syncExported',
+      { v: res.path, s: fmtBytes(res.size), n: res.kb_included });
+    showToast(t('js.backup.syncExportedShort'), 'success');
+    loadBackupStatus();
+  } catch(e) {
+    if (resEl) resEl.textContent = '';
+    showToast(t('js.backup.errBackup', { v: e.message }), 'error');
+  }
+});
+
+function renderSyncReport(res) {
+  const el = document.getElementById('sync-import-report');
+  if (!el) return;
+  const added = res.added || {}, updated = res.updated || {};
+  const conflicts = res.conflicts || [];
+  const kb = res.kb || {};
+  const rows = [];
+  const tables = ['records','solutions','photos','documents','solution_photos','solution_documents','users','zuken_glossary'];
+  for (const tb of tables) {
+    const a = added[tb] || 0, u = updated[tb] || 0;
+    if (a || u) rows.push(`<tr><td style="padding:2px 8px 2px 0;"><code>${tb}</code></td><td style="padding:2px 8px;">+${a}</td><td style="padding:2px 8px;">↻${u}</td></tr>`);
+  }
+  let html = `<div style="border:1px solid var(--border); border-radius:8px; padding:10px 12px; background:var(--bg-card);">
+    <div style="font-weight:700; margin-bottom:6px;">${t('ui.backup.reportTitle')}</div>
+    <table style="font-size:12px; margin-bottom:6px;"><tr style="color:var(--text-muted);"><th style="text-align:left; padding:2px 8px 2px 0;">${t('ui.backup.reportTable')}</th><th style="text-align:left; padding:2px 8px;">${t('ui.backup.reportAdded')}</th><th style="text-align:left; padding:2px 8px;">${t('ui.backup.reportUpdated')}</th></tr>${rows.join('') || `<tr><td colspan="3" style="color:var(--text-muted);">${t('ui.backup.reportNothing')}</td></tr>`}</table>
+    <div style="font-size:12px; color:var(--text-muted);">
+      ${t('ui.backup.reportKb', { c: (kb.copied||[]).length + (kb.overwritten||[]).length, s: (kb.skipped||[]).length })}
+      ${res.tombstones_applied ? ' &nbsp;•&nbsp; ' + t('ui.backup.reportDeleted', { n: res.tombstones_applied }) : ''}
+      ${res.reindex ? ' &nbsp;•&nbsp; ' + t('ui.backup.reportReindex') : ''}
+      ${res.pre_backup ? ' &nbsp;•&nbsp; ' + t('ui.backup.reportPreBackup', { v: res.pre_backup }) : ''}
+    </div>`;
+  if (conflicts.length) {
+    html += `<div style="margin-top:8px; font-size:12px;"><div style="font-weight:700; color:#B45309;">${t('ui.backup.reportConflicts', { n: conflicts.length })}</div>
+      <ul style="margin:4px 0 0 16px; padding:0;">` +
+      conflicts.slice(0, 20).map(c =>
+        `<li><code>${escapeHtml(c.table)}</code> ${escapeHtml(c.label || c.id)} — ${c.kept === 'remote' ? t('ui.backup.keptRemote') : t('ui.backup.keptLocal')}</li>`).join('') +
+      `</ul></div>`;
+  }
+  html += '</div>';
+  el.innerHTML = html;
+}
+
+document.getElementById('btn-sync-import')?.addEventListener('click', () => {
+  document.getElementById('input-sync-import')?.click();
+});
+document.getElementById('input-sync-import')?.addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+  const rep = document.getElementById('sync-import-report');
+  try {
+    showToast(t('js.backup.merging'), 'info');
+    if (rep) rep.innerHTML = `<span style="color:var(--text-muted);">${t('js.backup.merging')}</span>`;
+    const res = await uploadBackupFile('/api/sync/import', file);
+    renderSyncReport(res);
+    showToast(t('js.backup.syncMerged'), 'success');
+    loadAllData();
+    loadBackupStatus();
+  } catch(err) {
+    if (rep) rep.innerHTML = '';
+    showToast(t('js.backup.errImport', { v: err.message }), 'error');
+  }
+});
+
+document.getElementById('btn-backup-restore')?.addEventListener('click', () => {
+  document.getElementById('input-backup-restore')?.click();
+});
+document.getElementById('input-backup-restore')?.addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+  if (!confirm(t('js.backup.restoreConfirm', { v: file.name }))) return;
+  try {
+    showToast(t('js.backup.restoring'), 'info');
+    const includeKb = document.getElementById('restore-include-kb')?.checked !== false;
+    const res = await uploadBackupFile('/api/backup/restore', file,
+      { include_kb: includeKb ? '1' : '0' });
+    alert(t('js.backup.restoreDone', { v: res.pre_backup || '' }));
+    location.reload();
+  } catch(err) {
+    showToast(t('js.backup.errImport', { v: err.message }), 'error');
+  }
 });
 
 document.getElementById('btn-run-db-optimize').addEventListener('click', async () => {
@@ -5522,10 +6060,10 @@ window.addEventListener('keydown', (e) => {
       closeModal('modal-defect-preview');
       return;
     }
-    ['modal-quick-switch', 'modal-project-edit', 'modal-user-edit', 'modal-multi-ps', 'modal-reset-password'].forEach(id => {
+    for (const id of ['modal-kb-files', 'modal-quick-switch', 'modal-project-edit', 'modal-user-edit', 'modal-multi-ps', 'modal-reset-password']) {
       const el = document.getElementById(id);
-      if (el && el.style.display === 'flex') closeModal(id);
-    });
+      if (el && el.style.display === 'flex') { closeModal(id); break; }
+    }
   }
   if (e.ctrlKey && (e.key === 'b' || e.key === 'B')) {
     e.preventDefault();

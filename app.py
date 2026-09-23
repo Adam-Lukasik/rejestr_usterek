@@ -1,5 +1,6 @@
 import os
 import sys
+import subprocess
 import sqlite3
 import json
 import base64
@@ -19,6 +20,7 @@ from datetime import datetime as _dt, timedelta as _td
 from functools import wraps
 from flask import Flask, send_from_directory, request, jsonify, Response
 import zuken_service
+import backup_service
 
 
 SUPPORTED_LANGS = ("pl", "en", "de")
@@ -136,6 +138,8 @@ def optimize_image_bytes(raw_bytes: bytes, max_dim: int = 1920, quality: int = 8
         return raw_bytes
 
 app = Flask(__name__)
+# Limit uploadu dla paczek synchronizacyjnych / backupów (baza + Baza wiedzy)
+app.config["MAX_CONTENT_LENGTH"] = 2 * 1024 * 1024 * 1024
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(BASE_DIR, "config.json")
@@ -145,7 +149,10 @@ def load_config():
         "DB_PATH": "rejestr_usterek.db",
         "HOST": "0.0.0.0",
         "PORT": 5000,
-        "SECRET_BACKUP_DIR": "",
+        "BACKUP_DIR": "backups",
+        "AUTO_BACKUP_ENABLED": True,
+        "AUTO_BACKUP_KEEP": 15,
+        "AUTO_BACKUP_INCLUDE_KB": False,
         "SMTP": {
             "ENABLED": False,
             "SERVER": "smtp.twojafirma.pl",
@@ -170,6 +177,9 @@ CFG = load_config()
 DB_PATH = CFG.get("DB_PATH", "rejestr_usterek.db")
 if not os.path.isabs(DB_PATH):
     DB_PATH = os.path.join(BASE_DIR, DB_PATH)
+
+# Konfiguracja modułu kopii zapasowych (ścieżki z config.json)
+backup_service.configure(DB_PATH, CFG, BASE_DIR)
 
 def get_db_connection():
     conn = sqlite3.connect(DB_PATH)
@@ -196,6 +206,17 @@ def checkpoint_wal(conn=None):
                 conn.close()
             except Exception:
                 pass
+
+
+def _mark_deleted(cursor, table_name, row_id):
+    """Zapisuje tombstone usuniętego wiersza — potrzebne przy scalaniu baz
+    między komputerami (usunięcie propaguje się zamiast „wskrzeszać" rekord)."""
+    try:
+        cursor.execute(
+            "INSERT OR REPLACE INTO sync_tombstones (table_name, row_id, deleted_at) VALUES (?,?,?)",
+            (table_name, row_id, _dt.now().isoformat(timespec="seconds")))
+    except Exception:
+        pass
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -389,8 +410,8 @@ def _translate_missing_worker():
             TRANSLATE_STATE["failed"] += failed
             if made:
                 conn.execute(
-                    f"UPDATE {table} SET {base}=?, {base}_en=?, {base}_de=? WHERE id=?",
-                    (pl, en, de, row_id))
+                    f"UPDATE {table} SET {base}=?, {base}_en=?, {base}_de=?, updated_at=? WHERE id=?",
+                    (pl, en, de, _dt.now().isoformat(timespec="seconds"), row_id))
                 conn.commit()
             TRANSLATE_STATE["processed"] = i + 1
         checkpoint_wal(conn)
@@ -507,6 +528,9 @@ def init_db():
         cursor.execute("ALTER TABLE records ADD COLUMN opisProblem_de TEXT")
     if "opisNaprawa_de" not in columns:
         cursor.execute("ALTER TABLE records ADD COLUMN opisNaprawa_de TEXT")
+    if "updated_at" not in columns:
+        cursor.execute("ALTER TABLE records ADD COLUMN updated_at TEXT")
+        cursor.execute("UPDATE records SET updated_at = created WHERE updated_at IS NULL")
 
     # 2. Tabela słowników
     cursor.execute("""
@@ -604,6 +628,9 @@ def init_db():
         cursor.execute("ALTER TABLE solutions ADD COLUMN tytul_de TEXT")
     if "opis_de" not in sol_columns:
         cursor.execute("ALTER TABLE solutions ADD COLUMN opis_de TEXT")
+    if "updated_at" not in sol_columns:
+        cursor.execute("ALTER TABLE solutions ADD COLUMN updated_at TEXT")
+        cursor.execute("UPDATE solutions SET updated_at = created WHERE updated_at IS NULL")
 
     # 9. Zdjęcia przypisane do wariantu rozwiązania
     cursor.execute("""
@@ -627,6 +654,17 @@ def init_db():
             data BLOB NOT NULL,
             created TEXT NOT NULL,
             FOREIGN KEY (solution_id) REFERENCES solutions(id)
+        )
+    """)
+
+    # 11. Rejestr usunięć (tombstone) — potrzebny do scalania baz między komputerami,
+    # żeby rekord skasowany na jednym PC nie „wskrósł" po synchronizacji z drugim.
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS sync_tombstones (
+            table_name TEXT NOT NULL,
+            row_id TEXT NOT NULL,
+            deleted_at TEXT NOT NULL,
+            PRIMARY KEY (table_name, row_id)
         )
     """)
 
@@ -772,6 +810,18 @@ def init_db():
         zuken_service.init_zuken_tables()
     except Exception as e:
         print(f"[ZUKEN] Błąd inicjalizacji tabel Zuken: {e}")
+
+    # Automatyczna kopia zapasowa bazy przy starcie (w tle, z rotacją)
+    if CFG.get("AUTO_BACKUP_ENABLED", True):
+        try:
+            import backup_service
+            backup_service.configure(DB_PATH, CFG, BASE_DIR)
+            threading.Thread(
+                target=backup_service.auto_backup_if_due,
+                daemon=True, name="AutoBackupOnStart"
+            ).start()
+        except Exception as e:
+            print(f"[BACKUP] Błąd uruchamiania auto-backupu: {e}")
 
 # ═══════════════════════════════════════════════════════════════════
 # ENDPOINTY AUTORYZACJI I PROFILU
@@ -1282,9 +1332,10 @@ def create_record():
         INSERT INTO records (
             id, created, klient, model, projekt, vin, typ, element,
             opisProblem, opisNaprawa, status, created_by, fixed_by, fixed_at,
-            opisProblem_en, opisNaprawa_en, opisProblem_de, opisNaprawa_de
+            opisProblem_en, opisNaprawa_en, opisProblem_de, opisNaprawa_de,
+            updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         data.get("id"),
         data.get("created", _dt.now().isoformat(timespec="seconds")),
@@ -1303,7 +1354,8 @@ def create_record():
         opis_prob_en,
         opis_nap_en,
         opis_prob_de,
-        opis_nap_de
+        opis_nap_de,
+        _dt.now().isoformat(timespec="seconds")
     ))
     conn.commit()
     checkpoint_wal(conn)
@@ -1380,7 +1432,8 @@ def update_record(rec_id):
             opisProblem=?, opisNaprawa=?, status=?,
             created_by=COALESCE(NULLIF(?, ''), created_by),
             fixed_by=?, fixed_at=?,
-            opisProblem_en=?, opisNaprawa_en=?, opisProblem_de=?, opisNaprawa_de=?
+            opisProblem_en=?, opisNaprawa_en=?, opisProblem_de=?, opisNaprawa_de=?,
+            updated_at=?
         WHERE id=?
     """, (
         data.get("klient", ""),
@@ -1399,6 +1452,7 @@ def update_record(rec_id):
         opis_nap_en,
         opis_prob_de,
         opis_nap_de,
+        _dt.now().isoformat(timespec="seconds"),
         rec_id
     ))
     conn.commit()
@@ -1425,9 +1479,10 @@ def update_status(rec_id):
     cursor = conn.cursor()
     cursor.execute("""
         UPDATE records
-        SET status=?, fixed_by=?, fixed_at=?
+        SET status=?, fixed_by=?, fixed_at=?, updated_at=?
         WHERE id=?
-    """, (status, fixed_by, fixed_at, rec_id))
+    """, (status, fixed_by, fixed_at,
+          _dt.now().isoformat(timespec="seconds"), rec_id))
     conn.commit()
     checkpoint_wal(conn)
     conn.close()
@@ -1437,6 +1492,20 @@ def update_status(rec_id):
 def delete_record(rec_id):
     conn = get_db_connection()
     cursor = conn.cursor()
+    # Tombstone'y dla scalania — najpierw zbierz ID wszystkich usuwanych wierszy
+    sol_ids = [r["id"] for r in cursor.execute(
+        "SELECT id FROM solutions WHERE record_id=?", (rec_id,)).fetchall()]
+    for sid in sol_ids:
+        _mark_deleted(cursor, "solutions", sid)
+        for r2 in cursor.execute("SELECT id FROM solution_photos WHERE solution_id=?", (sid,)).fetchall():
+            _mark_deleted(cursor, "solution_photos", r2["id"])
+        for r2 in cursor.execute("SELECT id FROM solution_documents WHERE solution_id=?", (sid,)).fetchall():
+            _mark_deleted(cursor, "solution_documents", r2["id"])
+    for r2 in cursor.execute("SELECT id FROM photos WHERE record_id=?", (rec_id,)).fetchall():
+        _mark_deleted(cursor, "photos", r2["id"])
+    for r2 in cursor.execute("SELECT id FROM documents WHERE record_id=?", (rec_id,)).fetchall():
+        _mark_deleted(cursor, "documents", r2["id"])
+    _mark_deleted(cursor, "records", rec_id)
     # Usuń zdjęcia i dokumenty wariantów rozwiązań należących do tej usterki
     cursor.execute("""
         DELETE FROM solution_documents WHERE solution_id IN
@@ -1479,8 +1548,10 @@ def import_data():
             cursor.execute("""
                 INSERT OR IGNORE INTO records
                 (id, created, klient, model, projekt, vin, typ, element,
-                 opisProblem, opisNaprawa, status, created_by, fixed_by, fixed_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 opisProblem, opisNaprawa, status, created_by, fixed_by, fixed_at,
+                 opisProblem_en, opisNaprawa_en, opisProblem_de, opisNaprawa_de,
+                 updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 r.get("id"),
                 r.get("created", _dt.now().isoformat(timespec="seconds")),
@@ -1495,7 +1566,12 @@ def import_data():
                 r.get("status", "open"),
                 r.get("created_by", ""),
                 r.get("fixed_by", ""),
-                r.get("fixed_at")
+                r.get("fixed_at"),
+                r.get("opisProblem_en", ""),
+                r.get("opisNaprawa_en", ""),
+                r.get("opisProblem_de", ""),
+                r.get("opisNaprawa_de", ""),
+                r.get("updated_at") or r.get("created", _dt.now().isoformat(timespec="seconds"))
             ))
             if cursor.rowcount > 0:
                 imported_count += 1
@@ -1580,8 +1656,8 @@ def add_solution(rec_id):
     now_str = _dt.now().isoformat(timespec="seconds")
 
     conn.execute("""
-        INSERT INTO solutions (id, record_id, numer, tytul, opis, created_by, created, tytul_en, opis_en, tytul_de, opis_de)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO solutions (id, record_id, numer, tytul, opis, created_by, created, tytul_en, opis_en, tytul_de, opis_de, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         sol_id, rec_id, max_num + 1, tytul,
         opis,
@@ -1590,7 +1666,8 @@ def add_solution(rec_id):
         tytul_en,
         opis_en,
         tytul_de,
-        opis_de
+        opis_de,
+        now_str
     ))
     conn.commit()
     checkpoint_wal(conn)
@@ -1636,14 +1713,15 @@ def update_solution(sol_id):
         opis_en = old["opis_en"] if old else ""
         opis_de = old["opis_de"] if old else ""
 
+    now_upd = _dt.now().isoformat(timespec="seconds")
     if created_by is not None:
         conn.execute("""
-            UPDATE solutions SET tytul=?, opis=?, tytul_en=?, opis_en=?, tytul_de=?, opis_de=?, created_by=? WHERE id=?
-        """, (tytul, opis, tytul_en, opis_en, tytul_de, opis_de, str(created_by).strip(), sol_id))
+            UPDATE solutions SET tytul=?, opis=?, tytul_en=?, opis_en=?, tytul_de=?, opis_de=?, created_by=?, updated_at=? WHERE id=?
+        """, (tytul, opis, tytul_en, opis_en, tytul_de, opis_de, str(created_by).strip(), now_upd, sol_id))
     else:
         conn.execute("""
-            UPDATE solutions SET tytul=?, opis=?, tytul_en=?, opis_en=?, tytul_de=?, opis_de=? WHERE id=?
-        """, (tytul, opis, tytul_en, opis_en, tytul_de, opis_de, sol_id))
+            UPDATE solutions SET tytul=?, opis=?, tytul_en=?, opis_en=?, tytul_de=?, opis_de=?, updated_at=? WHERE id=?
+        """, (tytul, opis, tytul_en, opis_en, tytul_de, opis_de, now_upd, sol_id))
     conn.commit()
     checkpoint_wal(conn)
     conn.close()
@@ -1656,6 +1734,12 @@ def update_solution(sol_id):
 def delete_solution(sol_id):
     """Usuwa wariant rozwiązania wraz z jego zdjęciami i dokumentami."""
     conn = get_db_connection()
+    cur = conn.cursor()
+    _mark_deleted(cur, "solutions", sol_id)
+    for r2 in cur.execute("SELECT id FROM solution_photos WHERE solution_id=?", (sol_id,)).fetchall():
+        _mark_deleted(cur, "solution_photos", r2["id"])
+    for r2 in cur.execute("SELECT id FROM solution_documents WHERE solution_id=?", (sol_id,)).fetchall():
+        _mark_deleted(cur, "solution_documents", r2["id"])
     conn.execute("DELETE FROM solution_photos WHERE solution_id=?", (sol_id,))
     conn.execute("DELETE FROM solution_documents WHERE solution_id=?", (sol_id,))
     conn.execute("DELETE FROM solutions WHERE id=?", (sol_id,))
@@ -1712,6 +1796,7 @@ def get_solution_photo(photo_id):
 def delete_solution_photo(photo_id):
     """Usuwa zdjęcie wariantu rozwiązania."""
     conn = get_db_connection()
+    _mark_deleted(conn.cursor(), "solution_photos", photo_id)
     conn.execute("DELETE FROM solution_photos WHERE id=?", (photo_id,))
     conn.commit()
     checkpoint_wal(conn)
@@ -1826,6 +1911,7 @@ def open_solution_document(doc_id):
 def delete_solution_document(doc_id):
     """Usuwa dokument wariantu rozwiązania."""
     conn = get_db_connection()
+    _mark_deleted(conn.cursor(), "solution_documents", doc_id)
     conn.execute("DELETE FROM solution_documents WHERE id=?", (doc_id,))
     conn.commit()
     checkpoint_wal(conn)
@@ -1880,6 +1966,7 @@ def get_photo(photo_id):
 @app.route("/api/photos/<photo_id>", methods=["DELETE"])
 def delete_photo(photo_id):
     conn = get_db_connection()
+    _mark_deleted(conn.cursor(), "photos", photo_id)
     conn.execute("DELETE FROM photos WHERE id=?", (photo_id,))
     conn.commit()
     checkpoint_wal(conn)
@@ -2042,6 +2129,7 @@ def open_document(doc_id):
 @app.route("/api/documents/<doc_id>", methods=["DELETE"])
 def delete_document(doc_id):
     conn = get_db_connection()
+    _mark_deleted(conn.cursor(), "documents", doc_id)
     conn.execute("DELETE FROM documents WHERE id=?", (doc_id,))
     conn.commit()
     conn.close()
@@ -2077,6 +2165,86 @@ def api_zuken_sync():
     try:
         res = zuken_service.sync_all_knowledge_base(lang=_app_lang())
         return jsonify(res)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+def _valid_ps_code(ps_code):
+    """Numer PS może zawierać tylko litery, cyfry, '-' i '_' (blokuje path traversal)."""
+    return bool(ps_code) and len(ps_code) <= 32 and all(c.isalnum() or c in "-_" for c in ps_code)
+
+
+@app.route("/api/zuken/kb/<ps_code>/files", methods=["GET"])
+def api_zuken_kb_files(ps_code):
+    """Zwraca listę kontrolną plików Bazy wiedzy wymaganych przez Asystenta Zuken dla danego PS."""
+    try:
+        return jsonify(zuken_service.get_ps_kb_files_status(ps_code, lang=_app_lang()))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/zuken/kb/<ps_code>/upload", methods=["POST"])
+def api_zuken_kb_upload(ps_code):
+    """Zapisuje przesłany plik (.xlsx/.pdf/.e3s/.html) do folderu Bazy wiedzy danego PS."""
+    lang = _app_lang()
+    ps = (ps_code or "").strip().upper()
+    if not _valid_ps_code(ps):
+        return jsonify({"error": zuken_service.zsmsg("kbBadPs", lang, v=ps_code)}), 400
+    if "file" not in request.files:
+        return jsonify({"error": zuken_service.zsmsg("kbNoUpload", lang)}), 400
+
+    f = request.files["file"]
+    filename = os.path.basename(f.filename or "").strip()
+    if not filename:
+        return jsonify({"error": zuken_service.zsmsg("kbNoUpload", lang)}), 400
+
+    ext = os.path.splitext(filename)[1].lower()
+    if ext not in zuken_service.KB_ALLOWED_EXTENSIONS:
+        return jsonify({"error": zuken_service.zsmsg("kbBadExt", lang, v=filename)}), 400
+
+    try:
+        kb_dir = os.path.join(zuken_service.BAZA_WIEDZY_DIR, ps)
+        os.makedirs(kb_dir, exist_ok=True)
+        dest = os.path.join(kb_dir, filename)
+        f.save(dest)
+        return jsonify({
+            "status": "success",
+            "filename": filename,
+            "type": zuken_service._kb_classify_file(filename),
+            "size": os.path.getsize(dest)
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/zuken/kb/<ps_code>/open-folder", methods=["POST"])
+def api_zuken_kb_open_folder(ps_code):
+    """Tworzy (jeśli trzeba) i otwiera folder Bazy wiedzy danego PS w Eksploratorze Windows."""
+    lang = _app_lang()
+    ps = (ps_code or "").strip().upper()
+    if not _valid_ps_code(ps):
+        return jsonify({"error": zuken_service.zsmsg("kbBadPs", lang, v=ps_code)}), 400
+    try:
+        kb_dir = os.path.join(zuken_service.BAZA_WIEDZY_DIR, ps)
+        os.makedirs(kb_dir, exist_ok=True)
+        if hasattr(os, "startfile"):
+            os.startfile(kb_dir)
+        else:
+            subprocess.Popen(["xdg-open", kb_dir])
+        return jsonify({"status": "success", "folder": kb_dir})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/zuken/kb/<ps_code>/process", methods=["POST"])
+def api_zuken_kb_process(ps_code):
+    """Przetwarza pliki Bazy wiedzy danego PS: import XLSX, indeksacja PDF i generowanie zestawień."""
+    lang = _app_lang()
+    ps = (ps_code or "").strip().upper()
+    if not _valid_ps_code(ps):
+        return jsonify({"error": zuken_service.zsmsg("kbBadPs", lang, v=ps_code)}), 400
+    try:
+        return jsonify(zuken_service.process_ps_knowledge_base(ps, lang=lang))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -2691,6 +2859,189 @@ def admin_translate_missing_status():
         return jsonify({"error": smsg("adminRequired")}), 403
     with _translate_lock:
         return jsonify(dict(TRANSLATE_STATE))
+
+
+# ═══════════════════════════════════════════════════════════════════
+# KOPIE ZAPASOWE I SYNCHRONIZACJA MIĘDZY KOMPUTERAMI
+# ═══════════════════════════════════════════════════════════════════
+
+def _admin_required():
+    """Zwraca użytkownika-admina lub None."""
+    user = get_current_user()
+    if not user or user.get("role") != "admin":
+        return None
+    return user
+
+
+def _backup_file_path(name):
+    """Bezpieczna ścieżka do pliku w katalogu backupów (ochrona przed ../)."""
+    if not name:
+        return None
+    root = os.path.realpath(backup_service.BACKUP_DIR)
+    path = os.path.realpath(os.path.join(root, name))
+    if not path.startswith(root + os.sep) or not os.path.isfile(path):
+        return None
+    return path
+
+
+@app.route("/api/backup/status", methods=["GET"])
+def api_backup_status():
+    """Stan kopii zapasowych: folder, ostatnia kopia, licznik, lista plików."""
+    try:
+        return jsonify({"status": "ok",
+                        **backup_service.backup_status(),
+                        "items": backup_service.list_backups()})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/backup/snapshot", methods=["POST"])
+def api_backup_snapshot():
+    """Szybka, spójna kopia pliku .db do katalogu backupów."""
+    try:
+        path = backup_service.snapshot_into_backup_dir()
+        return jsonify({"status": "ok", "path": path,
+                        "name": os.path.basename(path),
+                        "size": os.path.getsize(path)})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/backup/create", methods=["POST"])
+def api_backup_create():
+    """Pełny backup ZIP: snapshot .db + manifest + opcjonalnie Baza wiedzy."""
+    data = request.get_json(silent=True) or {}
+    kb_mode = (data.get("kb") or request.args.get("kb") or "none").lower()
+    if kb_mode not in ("none", "delta", "all"):
+        kb_mode = "none"
+    try:
+        res = backup_service.create_backup_package(kb_mode=kb_mode, kind="backup")
+        res.pop("manifest", None)
+        return jsonify({"status": "ok", **res})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/backup/list", methods=["GET"])
+def api_backup_list():
+    """Lista plików kopii zapasowych."""
+    try:
+        return jsonify({"items": backup_service.list_backups(),
+                        "backup_dir": backup_service.BACKUP_DIR})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/backup/download/<path:name>", methods=["GET"])
+def api_backup_download(name):
+    """Pobranie pliku kopii przez przeglądarkę (admin — plik zawiera całą bazę)."""
+    if not _admin_required():
+        return jsonify({"error": smsg("adminRequired")}), 403
+    path = _backup_file_path(name)
+    if not path:
+        return jsonify({"error": smsg("fileNotFound")}), 404
+    return send_from_directory(os.path.dirname(path), os.path.basename(path),
+                               as_attachment=True)
+
+
+@app.route("/api/backup/open-folder", methods=["POST"])
+def api_backup_open_folder():
+    """Otwiera katalog kopii zapasowych w Eksploratorze Windows."""
+    try:
+        os.makedirs(backup_service.BACKUP_DIR, exist_ok=True)
+        if hasattr(os, "startfile"):
+            os.startfile(backup_service.BACKUP_DIR)
+        else:
+            subprocess.Popen(["xdg-open", backup_service.BACKUP_DIR])
+        return jsonify({"status": "ok", "folder": backup_service.BACKUP_DIR})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+def _uploaded_to_temp():
+    """Zapisuje przesłany plik do pliku tymczasowego. Zwraca ścieżkę lub None."""
+    if not request.files or "file" not in request.files:
+        return None
+    f = request.files["file"]
+    suffix = os.path.splitext(f.filename or "")[1] or ".zip"
+    import tempfile
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
+    tmp.close()
+    f.save(tmp.name)
+    return tmp.name
+
+
+@app.route("/api/sync/export", methods=["POST"])
+def api_sync_export():
+    """Paczka synchronizacyjna dla drugiego komputera (db + delta Bazy Wiedzy)."""
+    data = request.get_json(silent=True) or {}
+    kb_mode = (data.get("kb") or request.args.get("kb") or "delta").lower()
+    if kb_mode not in ("none", "delta", "all"):
+        kb_mode = "delta"
+    try:
+        res = backup_service.create_backup_package(kb_mode=kb_mode, kind="sync")
+        res.pop("manifest", None)
+        return jsonify({"status": "ok", **res})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/sync/import", methods=["POST"])
+def api_sync_import():
+    """Scalanie danych z paczki ZIP lub surowego .db z drugiego komputera (admin)."""
+    if not _admin_required():
+        return jsonify({"error": smsg("adminRequired")}), 403
+    tmp_path = _uploaded_to_temp()
+    try:
+        if tmp_path:
+            res = backup_service.import_package(tmp_path)
+        else:
+            data = request.get_json(silent=True) or {}
+            path = _backup_file_path((data.get("name") or "").strip())
+            if not path:
+                return jsonify({"error": smsg("fileNotFound")}), 404
+            res = backup_service.import_package(path)
+        if res.get("status") == "error":
+            return jsonify(res), 400
+        return jsonify(res)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if tmp_path:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+
+
+@app.route("/api/backup/restore", methods=["POST"])
+def api_backup_restore():
+    """Przywraca bazę z paczki ZIP lub pliku .db — z auto-snapshotem przed (admin)."""
+    if not _admin_required():
+        return jsonify({"error": smsg("adminRequired")}), 403
+    tmp_path = _uploaded_to_temp()
+    try:
+        if tmp_path:
+            include_kb = request.form.get("include_kb", "1") != "0"
+            res = backup_service.restore_from_package(tmp_path, include_kb=include_kb)
+        else:
+            data = request.get_json(silent=True) or {}
+            path = _backup_file_path((data.get("name") or "").strip())
+            if not path:
+                return jsonify({"error": smsg("fileNotFound")}), 404
+            res = backup_service.restore_from_package(
+                path, include_kb=data.get("include_kb", True))
+        if res.get("status") == "error":
+            return jsonify(res), 400
+        return jsonify(res)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if tmp_path:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
 
 
 if __name__ == "__main__":

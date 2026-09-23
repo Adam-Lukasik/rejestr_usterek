@@ -2,7 +2,10 @@
   "DB_PATH": "rejestr_usterek.db",
   "HOST": "0.0.0.0",
   "PORT": 5050,
-  "SECRET_BACKUP_DIR": "",
+  "BACKUP_DIR": "backups",
+  "AUTO_BACKUP_ENABLED": true,
+  "AUTO_BACKUP_KEEP": 15,
+  "AUTO_BACKUP_INCLUDE_KB": false,
   "SMTP": {
     "ENABLED": true,
     "SERVER": "smtp.gmail.com",
