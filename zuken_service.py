@@ -12,6 +12,8 @@ import json
 import sqlite3
 import zipfile
 import urllib.parse
+import urllib.request
+import urllib.error
 import xml.etree.ElementTree as ET
 from datetime import datetime
 from pathlib import Path
@@ -27,6 +29,11 @@ try:
     from PIL import Image
 except ImportError:
     Image = None
+
+try:
+    import extract_msg
+except ImportError:
+    extract_msg = None
 
 import subprocess
 import threading
@@ -93,7 +100,7 @@ ZS_MSG = {
     "kbNoUpload": {"pl": "Nie przesłano żadnego pliku.", "en": "No file was uploaded.", "de": "Es wurde keine Datei hochgeladen."},
     "kbBadExt": {"pl": "Niedozwolony typ pliku: {v}. Dozwolone: .xlsx, .pdf, .e3s, .html", "en": "Unsupported file type: {v}. Allowed: .xlsx, .pdf, .e3s, .html", "de": "Nicht unterstützter Dateityp: {v}. Erlaubt: .xlsx, .pdf, .e3s, .html"},
     "e3sRegistered": {"pl": "Plik projektu E3 obecny — schemat można otwierać w Zuken E3.", "en": "E3 project file present — the schematic can be opened in Zuken E3.", "de": "E3-Projektdatei vorhanden — der Schaltplan kann in Zuken E3 geöffnet werden."},
-    "ctrlRegistered": {"pl": "Raport sterownika obecny — używany przy analizie ścieżki sygnału (parsowanie: Carnation HTML).", "en": "Controller report present — used for signal path analysis (parsing: Carnation HTML).", "de": "Steuergerätebericht vorhanden — wird für die Signalpfadanalyse verwendet (Parsing: Carnation HTML)."},
+    "ctrlRegistered": {"pl": "Raport sterownika obecny — używany przy analizie ścieżki sygnału (parsowanie: Carnation HTML, Acetech PDF).", "en": "Controller report present — used for signal path analysis (parsing: Carnation HTML, Acetech PDF).", "de": "Steuergerätebericht vorhanden — wird für die Signalpfadanalyse verwendet (Parsing: Carnation HTML, Acetech PDF)."},
     "wireLong": {"pl": "wiązka długa / wzdłużna", "en": "long harness / longitudinal", "de": "langer Kabelbaum / längs"},
     "wireMid": {"pl": "wiązka średnia", "en": "medium harness", "de": "mittlerer Kabelbaum"},
     "wireLocal": {"pl": "odcinek lokalny", "en": "local segment", "de": "lokales Segment"},
@@ -128,9 +135,9 @@ ZS_MSG = {
     "cut121": {"pl": "12.1V (ostrzeżenie) / 12.2V (powrót)", "en": "12.1V (warning) / 12.2V (recovery)", "de": "12,1 V (Warnung) / 12,2 V (Wiedereinschaltung)"},
     "cut120": {"pl": "12.0V (ostrzeżenie) / 12.2V (powrót)", "en": "12.0V (warning) / 12.2V (recovery)", "de": "12,0 V (Warnung) / 12,2 V (Wiedereinschaltung)"},
     "carnSpk": {"pl": "Głośniki komunikatów Carnation w kabinie (=CAB+MID-X244) oraz w przedziale medycznym (=BOX+WAA-X258) odtwarzają komunikaty głosowe i ostrzeżenia sterownika Carnation Genesis EVPSS (m.in. niezapięte pasy, otwarte drzwi, stan zasilania).", "en": "Carnation message speakers in the cab (=CAB+MID-X244) and patient compartment (=BOX+WAA-X258) play voice messages and warnings from the Carnation Genesis EVPSS controller (incl. unfastened seatbelts, open doors, power status).", "de": "Carnation-Ansagelautsprecher im Fahrerhaus (=CAB+MID-X244) und im Patientenraum (=BOX+WAA-X258) spielen Sprachmeldungen und Warnungen der Carnation-Genesis-EVPSS-Steuerung ab (u. a. nicht angelegte Gurte, offene Türen, Spannungsstatus)."},
-    "carnOuts": {"pl": "Zidentyfikowano wyjścia modułów OPM Carnation: {v}.", "en": "Identified Carnation OPM module outputs: {v}.", "de": "Carnation-OPM-Modulausgänge identifiziert: {v}."},
+    "carnOuts": {"pl": "Zidentyfikowano wyjścia sterownika: {v}.", "en": "Identified controller outputs: {v}.", "de": "Steuerungsausgänge identifiziert: {v}."},
     "carnIns": {"pl": "Sygnały wejściowe z pojazdu bazowego: {v}.", "en": "Input signals from the base vehicle: {v}.", "de": "Eingangssignale vom Basisfahrzeug: {v}."},
-    "carnRules": {"pl": "Układ sterowany automatyką EVPSS: reguły {v}.", "en": "Circuit controlled by EVPSS automation: rules {v}.", "de": "Schaltung durch EVPSS-Automatik gesteuert: Regeln {v}."},
+    "carnRules": {"pl": "Układ sterowany automatyką sterownika: reguły {v}.", "en": "Circuit controlled by controller automation: rules {v}.", "de": "Schaltung durch Steuerungsautomatik gesteuert: Regeln {v}."},
     "carnLoadShed": {"pl": "Aktywny system 3-stopniowego odcinania odbiorników (Load Shedding 1/2/3 po spadku napięcia Aux < 12.1V).", "en": "Active 3-stage load shedding system (Load Shedding 1/2/3 when Aux voltage drops < 12.1V).", "de": "Aktives 3-stufiges Lastabwurfsystem (Load Shedding 1/2/3 bei Aux-Spannung < 12,1 V)."},
     "carnFull": {"pl": "Zarejestrowano pełną konfigurację sterownika Carnation Genesis EVPSS (v{v}): 3 moduły wyjściowe ({o} wyjść O1.1-O3.16), {i} wejść cyfrowych auta bazowego, {r} reguł automatyki i {n} komunikatów.", "en": "Full Carnation Genesis EVPSS controller configuration registered (v{v}): 3 output modules ({o} outputs O1.1-O3.16), {i} digital inputs from the base vehicle, {r} automation rules and {n} messages.", "de": "Vollständige Konfiguration der Carnation-Genesis-EVPSS-Steuerung erfasst (v{v}): 3 Ausgangsmodule ({o} Ausgänge O1.1-O3.16), {i} digitale Eingänge des Basisfahrzeugs, {r} Automatikregeln und {n} Meldungen."},
     "revWarnTitle": {"pl": "Zmiana wiązki w trakcie serii (Poprawka drzwi)", "en": "Mid-series harness change (Door fix)", "de": "Kabelbaumänderung mitten in der Serie (Türkorrektur)"},
@@ -138,7 +145,13 @@ ZS_MSG = {
     "revInfoTitle": {"pl": "Dostępne rewizje wiązki dla tego projektu", "en": "Available harness revisions for this project", "de": "Verfügbare Kabelbaum-Revisionen für dieses Projekt"},
     "revInfoText": {"pl": "W bazie zarejestrowano wersję bazową ({b}) oraz nowszą rewizję ({n}).", "en": "The database contains the base version ({b}) and a newer revision ({n}).", "de": "In der Datenbank sind die Basisversion ({b}) und eine neuere Revision ({n}) registriert."},
     "sigUnnamed": {"pl": "ZASILANIE / SYGNAŁ BEZ NAZWY", "en": "POWER / UNNAMED SIGNAL", "de": "VERSORGUNG / UNBENANNTES SIGNAL"},
-    "carnationRec": {"pl": "🧠 Logika sterownika Carnation Genesis (EVPSS): {v}", "en": "🧠 Carnation Genesis controller logic (EVPSS): {v}", "de": "🧠 Carnation-Genesis-Steuerungslogik (EVPSS): {v}"},
+    "controllerRec": {"pl": "🧠 Logika sterownika {n}: {v}", "en": "🧠 {n} controller logic: {v}", "de": "🧠 Steuerungslogik {n}: {v}"},
+    "reworkHit": {"pl": "⚠️ Rework dla złącza {n}: „{v}\" — pinout na produkcji może odbiegać od schematu, sprawdź listę reworków projektu.", "en": "⚠️ Rework registered for connector {n}: “{v}” — production pinout may differ from the schematic; check the project rework list.", "de": "⚠️ Rework für Stecker {n}: „{v}“ — der Produktions-Pinout kann vom Schaltplan abweichen; Rework-Liste des Projekts prüfen."},
+    "acetechFull": {"pl": "Zarejestrowano konfigurację sterownika Acetech (konfig. nr {v}): {o} wyjść ({om} moduły), {i} wejść fizycznych/CAN, {r} funkcji automatyki (np. Low Power Mode).", "en": "Acetech controller configuration registered (config no. {v}): {o} outputs ({om} modules), {i} physical/CAN inputs, {r} automation functions (e.g. Low Power Mode).", "de": "Acetech-Steuerungskonfiguration erfasst (Konfig. Nr. {v}): {o} Ausgänge ({om} Module), {i} physikalische/CAN-Eingänge, {r} Automatikfunktionen (z. B. Low Power Mode)."},
+    "ctrlDeclared": {"pl": "Zarejestrowano sterownik {n} (plik: {f}) — format raportu nie jest jeszcze parsowany; dokument jest przeszukiwany tekstowo.", "en": "Controller {n} registered (file: {f}) — report format is not parsed yet; the document is searched as text.", "de": "Steuergerät {n} registriert (Datei: {f}) — Berichtsformat wird noch nicht geparst; das Dokument wird als Text durchsucht."},
+    "ctrlDetected": {"pl": "🧠 Sterownik: {n} — {f}", "en": "🧠 Controller: {n} — {f}", "de": "🧠 Steuergerät: {n} — {f}"},
+    "ctrlDeclaredWarn": {"pl": "⚠️ Zadeklarowano sterownik {n} — brak parsowalnego raportu w folderze projektu (wskaż plik w menedżerze Bazy wiedzy).", "en": "⚠️ Controller {n} declared — no parseable report in the project folder (select the file in the Knowledge Base manager).", "de": "⚠️ Steuergerät {n} deklariert — kein parsbarer Bericht im Projektordner (Datei im Wissensdatenbank-Manager wählen)."},
+    "ctrlNoneMsg": {"pl": "🧠 Sterownik: brak (zadeklarowano)", "en": "🧠 Controller: none (declared)", "de": "🧠 Steuergerät: keins (deklariert)"},
     "recFocusVariant": {"pl": "Ukierunkowano na Wariant {n}: {t}. Sprawdź dedykowane arkusze schematu i złącza poniżej.", "en": "Focused on Variant {n}: {t}. Check the dedicated schematic sheets and connectors below.", "de": "Fokus auf Variante {n}: {t}. Prüfen Sie die zugehörigen Schaltplanblätter und Stecker unten."},
     "recVariants": {"pl": "Uwzględniono {n} warianty naprawy dla tej usterki{h}. Poniżej rekomendowane arkusze powiązanych obwodów.", "en": "Considered {n} repair variants for this defect{h}. Recommended sheets of related circuits are below.", "de": "{n} Reparaturvarianten für diesen Mangel berücksichtigt{h}. Empfohlene Blätter der zugehörigen Stromkreise siehe unten."},
     "recHistory": {"pl": "Znaleziono w bazie wiedzy {n} sprawdzone warianty naprawy dla tej usterki{h}. Sprawdź szczegółowy opis i dołączone arkusze.", "en": "Found {n} proven repair variants for this defect in the knowledge base{h}. Check the detailed description and attached sheets.", "de": "{n} bewährte Reparaturvarianten für diesen Mangel in der Wissensdatenbank gefunden{h}. Detaillierte Beschreibung und angehängte Blätter prüfen."},
@@ -156,6 +169,9 @@ ZS_MSG = {
     "projectN": {"pl": "Projekt {v}", "en": "Project {v}", "de": "Projekt {v}"},
     "specialClient": {"pl": "Klient specjalny", "en": "Special client", "de": "Sonderkunde"},
     "alreadyIndexed": {"pl": "Schemat {v} jest już zaindeksowany (bez zmian).", "en": "Schematic {v} is already indexed (unchanged).", "de": "Schaltplan {v} ist bereits indexiert (unverändert)."},
+    "docIndexed": {"pl": "Zaindeksowano treść dokumentu ({p} stron tekstu) — asystent będzie go przeszukiwał.", "en": "Document content indexed ({p} text pages) — the assistant will search it.", "de": "Dokumentinhalt indexiert ({p} Textseiten) — der Assistent durchsucht ihn."},
+    "docRegistered": {"pl": "Zarejestrowano plik projektu (treść nie jest indeksowana).", "en": "Project file registered (content is not indexed).", "de": "Projektdatei registriert (Inhalt wird nicht indexiert)."},
+    "docNoText": {"pl": "Nie udało się wyciągnąć tekstu z dokumentu.", "en": "Could not extract text from the document.", "de": "Text konnte nicht aus dem Dokument extrahiert werden."},
 }
 
 ZS_CSV_HEADERS = {
@@ -391,6 +407,19 @@ def init_zuken_tables():
     cur.execute("CREATE INDEX IF NOT EXISTS idx_zuken_pdf_sym_sch ON zuken_pdf_symbols (schematic_id);")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_zuken_pdf_sheets_sch ON zuken_pdf_sheets (schematic_id, page_number);")
 
+    # Migracja: rozróżnienie dokumentów projektu — 'schematic' = schemat E3
+    # (logika rewizji is_active), 'manual' = instrukcja/schemat urządzenia,
+    # 'doc' = dokument tekstowy (.txt/.msg/.xlsx). 'category' = podfolder KB.
+    try:
+        cols = [r[1] for r in cur.execute("PRAGMA table_info(zuken_pdf_schematics)").fetchall()]
+        if "doc_kind" not in cols:
+            cur.execute("ALTER TABLE zuken_pdf_schematics ADD COLUMN doc_kind TEXT DEFAULT 'schematic';")
+        if "category" not in cols:
+            cur.execute("ALTER TABLE zuken_pdf_schematics ADD COLUMN category TEXT DEFAULT '';")
+        cur.execute("UPDATE zuken_pdf_schematics SET doc_kind = 'schematic' WHERE doc_kind IS NULL OR doc_kind = '';")
+    except Exception:
+        pass
+
     # Cache pozycji etykiet urządzeń na stronach PDF (do parowania
     # bezpiecznik<->oprawka) — żeby nie ekstrahować tekstu przy każdym starcie
     cur.execute("""
@@ -519,6 +548,49 @@ def init_zuken_tables():
     cur.execute("CREATE INDEX IF NOT EXISTS idx_zuken_ps_fuse_ps ON zuken_ps_fuses (ps_code);")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_zuken_ps_relay_ps ON zuken_ps_relays (ps_code);")
 
+    # Ustawienia sterownika projektu: deklarowany typ ('AUTO'/'BRAK'/nazwa)
+    # i opcjonalnie wskazany plik raportu (ścieżka względna w folderze PS)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS zuken_controller_settings (
+            ps_code TEXT PRIMARY KEY,
+            controller_type TEXT DEFAULT '',
+            controller_file TEXT DEFAULT ''
+        );
+    """)
+
+    # Reworki wiązek per projekt PS (poprawki produkcyjne — np. zamiana pinów
+    # w złączu po znalezieniu błędu na pilocie). pin_changes: JSON
+    # [{"a": "16", "b": "17", "note": "Motor1↔Motor2"}, ...]
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS zuken_reworks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ps_code TEXT,
+            title TEXT,
+            description TEXT,
+            connector TEXT,
+            pin_changes TEXT,
+            vehicle_range TEXT,
+            attachment TEXT,
+            status TEXT DEFAULT 'open',
+            created_at TEXT,
+            updated_at TEXT
+        );
+    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_zuken_reworks_ps ON zuken_reworks (ps_code);")
+
+    # Zdjęcia reworków w dwóch sekcjach: side='bad' (stan błędny) / 'good' (po poprawce)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS zuken_rework_photos (
+            id TEXT PRIMARY KEY,
+            rework_id INTEGER NOT NULL,
+            side TEXT NOT NULL DEFAULT 'bad',
+            filename TEXT NOT NULL,
+            data BLOB NOT NULL,
+            created TEXT NOT NULL
+        );
+    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_zuken_rework_ph ON zuken_rework_photos (rework_id);")
+
 
     # Wypełnij / zaktualizuj domyślny słownik skrótów
     cur.executemany("""
@@ -639,7 +711,7 @@ def extract_project_info_from_filename(filename, raw_rows):
             d, m, y = dm.groups()
             iso_date = f"{int(y):04d}-{int(m):02d}-{int(d):02d}"
     if not iso_date:
-        iso_date = rev_date
+        iso_date = rev_date if re.match(r"^\d{4}-\d{2}-\d{2}$", rev_date or "") else ""
 
     # Nazwa rewizji (np. "poprawka drzwi" lub "Wersja bazowa")
     if "poprawka_drzwi" in fn_lower or "drzwi" in fn_lower:
@@ -852,7 +924,14 @@ def sanitize_article_code(code):
     """Zwraca bezpieczną nazwę pliku dla danego kodu artykułu."""
     if not code:
         return ""
-    sanitized = re.sub(r'[\\/*?:"<>|]', '_', str(code).strip())
+    # Usuń znaki kontrolne i białe znaki (w tym \n, \r, \t) zastępując je podkreślnikiem
+    sanitized = re.sub(r'[\x00-\x1f\x7f]', '_', str(code))
+    # Usuń znaki niedozwolone w nazwach plików Windows
+    sanitized = re.sub(r'[\\/*?:"<>|]', '_', sanitized)
+    # Zamień spacje na podkreślniki
+    sanitized = sanitized.replace(' ', '_')
+    # Usuń wiodące/końcowe podkreślniki i spacje
+    sanitized = sanitized.strip('_').strip()
     return sanitized
 
 
@@ -1393,15 +1472,17 @@ def _fetch_candidates_from_engines(query_text, art_label, max_needed, seen, cand
 
     # 1. Yandex
     enc_y = urllib.parse.quote_plus(query_text)
-    cmd_y = [
-        "curl.exe", "-s", "-L", "--compressed", "--max-time", "6",
-        "-H", "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
-        "-H", "Accept-Language: en-US,en;q=0.9",
-        f"https://yandex.com/images/search?text={enc_y}"
-    ]
     try:
-        res_y = subprocess.run(cmd_y, capture_output=True, text=True, encoding='utf-8', errors='ignore')
-        matches_y = re.findall(r'img_url=(https%3A%2F%2F[^&"]+)', res_y.stdout or "")
+        req_y = urllib.request.Request(
+            f"https://yandex.com/images/search?text={enc_y}",
+            headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+                "Accept-Language": "en-US,en;q=0.9",
+            }
+        )
+        with urllib.request.urlopen(req_y, timeout=6) as resp_y:
+            html_y = resp_y.read().decode("utf-8", errors="ignore")
+        matches_y = re.findall(r'img_url=(https%3A%2F%2F[^&"]+)', html_y)
         for m in matches_y:
             clean_u = urllib.parse.unquote(m).strip()
             if not clean_u or clean_u in seen:
@@ -1427,15 +1508,16 @@ def _fetch_candidates_from_engines(query_text, art_label, max_needed, seen, cand
     # 2. Bing
     if len(candidates) < max_needed:
         enc_b = urllib.parse.quote_plus(query_text)
-        cmd_b = [
-            "curl.exe", "-s", "-L", "--compressed", "--max-time", "6",
-            "-H", "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
-            "-H", "Accept-Language: pl-PL,pl;q=0.9,en-US;q=0.8,en;q=0.7",
-            f"https://www.bing.com/images/search?q={enc_b}&form=HDRSC2"
-        ]
         try:
-            res_b = subprocess.run(cmd_b, capture_output=True, text=True, encoding='utf-8', errors='ignore')
-            html_b = res_b.stdout or ""
+            req_b = urllib.request.Request(
+                f"https://www.bing.com/images/search?q={enc_b}&form=HDRSC2",
+                headers={
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+                    "Accept-Language": "pl-PL,pl;q=0.9,en-US;q=0.8,en;q=0.7",
+                }
+            )
+            with urllib.request.urlopen(req_b, timeout=6) as resp_b:
+                html_b = resp_b.read().decode("utf-8", errors="ignore")
             murls = re.findall(r'murl&quot;:&quot;(http[^&]+)&quot;', html_b)
             turls = re.findall(r'turl&quot;:&quot;(http[^&]+)&quot;', html_b)
 
@@ -1580,18 +1662,18 @@ def download_and_optimize_component_image(article_number, image_source, lang="pl
 
     # 1. Źródło to URL (http/https)
     if isinstance(image_source, str) and image_source.startswith("http"):
-        cmd = [
-            "curl.exe", "-s", "-L", "--max-time", "12",
-            "-H", "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
-            "-H", "Accept: image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
-            image_source
-        ]
         try:
-            res = subprocess.run(cmd, capture_output=True)
-            if res.returncode == 0 and len(res.stdout) > 800:
-                raw_bytes = res.stdout
-            else:
-                return False, zsmsg("dlErr", lang, c=res.returncode, b=len(res.stdout)), None
+            req = urllib.request.Request(
+                image_source,
+                headers={
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+                    "Accept": "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
+                }
+            )
+            with urllib.request.urlopen(req, timeout=12) as resp:
+                raw_bytes = resp.read()
+            if len(raw_bytes) <= 800:
+                return False, zsmsg("dlErr", lang, c=0, b=len(raw_bytes)), None
         except Exception as e:
             return False, zsmsg("connErr", lang, e=e), None
 
@@ -1960,10 +2042,13 @@ def start_batch_image_download(ps_code=None, category=None, scope=None, only_mis
 # INDEKSOWANIE SCHEMATÓW PDF Z ZUKEN E3
 # ═══════════════════════════════════════════════════════════════════
 
-def index_zuken_pdf(filepath, ps_code=None, lang="pl"):
+def index_zuken_pdf(filepath, ps_code=None, doc_kind="schematic", category="", lang="pl"):
     """
     Indeksuje wektorowy plik PDF ze schematem wyeksportowanym z Zuken E3.
     Wyciąga spisy arkuszy, numery stron oraz symbole aparatów i przewodów.
+    doc_kind='manual' oznacza dokumentację urządzenia (instrukcje, schematy
+    podzespołów) — indeksowaną i przeszukiwaną tak samo, ale wyłączoną
+    z logiki rewizji is_active (nie dezaktywuje głównego schematu projektu).
     Zwraca (schematic_id, total_symbols, message).
     """
     if pypdf is None:
@@ -2032,12 +2117,12 @@ def index_zuken_pdf(filepath, ps_code=None, lang="pl"):
     cur.execute("""
         INSERT INTO zuken_pdf_schematics (
             filename, filepath, project_name, ps_code, revision_date, revision_name,
-            total_pages, file_size, file_mtime, is_active, indexed_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+            total_pages, file_size, file_mtime, is_active, indexed_at, doc_kind, category
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
     """, (
         filename, filepath, info["project_name"], info["ps_codes"],
         info["revision_date"], info["revision_name"],
-        total_pages, file_size, file_mtime, 1, now_iso
+        total_pages, file_size, file_mtime, 1, now_iso, doc_kind, category or ""
     ))
     schematic_id = cur.lastrowid
 
@@ -2121,18 +2206,20 @@ def index_zuken_pdf(filepath, ps_code=None, lang="pl"):
         """, symbols_to_insert)
         total_symbols_count = len(symbols_to_insert)
 
-    # Ustal status is_active: dla danego projektu / PS najnowsza rewizja ma is_active = 1, starsze mają is_active = 0
+    # Ustal status is_active: dla danego projektu / PS najnowsza rewizja ma is_active = 1,
+    # starsze mają is_active = 0. Dotyczy wyłącznie schematów E3 (doc_kind='schematic') —
+    # instrukcje i dokumenty projektu są zawsze aktywne i nie wpływają na rewizje.
     ps_val = info["ps_codes"]
-    if ps_val:
+    if ps_val and doc_kind == "schematic":
         cur.execute("""
             SELECT id FROM zuken_pdf_schematics
-            WHERE ps_code = ?
+            WHERE ps_code = ? AND COALESCE(doc_kind, 'schematic') = 'schematic'
             ORDER BY revision_date DESC, id DESC;
         """, (ps_val,))
         rows = cur.fetchall()
         if rows:
             newest_id = rows[0][0]
-            cur.execute("UPDATE zuken_pdf_schematics SET is_active = 0 WHERE ps_code = ?", (ps_val,))
+            cur.execute("UPDATE zuken_pdf_schematics SET is_active = 0 WHERE ps_code = ? AND COALESCE(doc_kind, 'schematic') = 'schematic'", (ps_val,))
             cur.execute("UPDATE zuken_pdf_schematics SET is_active = 1 WHERE id = ?", (newest_id,))
 
     conn.commit()
@@ -2147,7 +2234,7 @@ def get_pdf_schematics():
     cur = conn.cursor()
     cur.execute("""
         SELECT id, filename, filepath, project_name, ps_code, revision_date, revision_name,
-               total_pages, is_active, indexed_at
+               total_pages, is_active, indexed_at, COALESCE(doc_kind, 'schematic') AS doc_kind, category
         FROM zuken_pdf_schematics
         ORDER BY is_active DESC, revision_date DESC, id DESC;
     """)
@@ -3149,30 +3236,222 @@ def find_pdf_sheets_for_query(query, ps_code=None, limit=25, extra_tokens=None, 
     return scored_results[:limit]
 
 
+def _kb_dir_for_ps(ps_code):
+    """
+    Zwraca ścieżkę folderu Bazy wiedzy dla danego PS: dokładne dopasowanie nazwy
+    ('PS012732') albo folder zawierający kod PS w nazwie ('Walia - PS012732').
+    Jeśli nic nie znaleziono — zwraca ścieżkę dokładną (do utworzenia przy uploadzie).
+    """
+    ps = str(ps_code or "").strip().upper()
+    exact = os.path.join(BAZA_WIEDZY_DIR, ps)
+    if not ps or os.path.isdir(exact):
+        return exact
+    try:
+        for entry in sorted(os.listdir(BAZA_WIEDZY_DIR)):
+            p = os.path.join(BAZA_WIEDZY_DIR, entry)
+            if os.path.isdir(p) and ps in entry.upper():
+                return p
+    except OSError:
+        pass
+    return exact
+
+
+def _kb_iter_files(base_dir):
+    """
+    Iteruje po plikach drzewa katalogu Bazy wiedzy (rekurencyjnie).
+    Zwraca (full_path, rel_path, category), gdzie category to nazwa pierwszego
+    podfolderu względem base_dir ('' dla plików na poziomie głównym).
+    """
+    for root, _, files in os.walk(base_dir):
+        for f in sorted(files):
+            if f.startswith("~$"):
+                continue
+            full = os.path.join(root, f)
+            rel = os.path.relpath(full, base_dir)
+            parts = rel.split(os.sep)
+            category = parts[0] if len(parts) > 1 else ""
+            yield full, rel, category
+
+
+def _extract_doc_text(filepath):
+    """Wyciąga czysty tekst z dokumentu projektu (.txt, .msg, .xlsx)."""
+    ext = os.path.splitext(filepath)[1].lower()
+    try:
+        if ext == ".txt":
+            for enc in ("utf-8", "cp1250", "latin-1"):
+                try:
+                    with open(filepath, "r", encoding=enc) as fh:
+                        return fh.read()
+                except UnicodeDecodeError:
+                    continue
+            return ""
+        if ext == ".msg":
+            if extract_msg is None:
+                return ""
+            m = extract_msg.Message(filepath)
+            parts = [
+                f"Temat: {m.subject or ''}",
+                f"Od: {m.sender or ''}",
+                f"Do: {m.to or ''}",
+                f"Data: {m.date or ''}",
+                "",
+                m.body or ""
+            ]
+            try:
+                m.close()
+            except Exception:
+                pass
+            return "\n".join(parts)
+        if ext == ".xlsx":
+            rows = parse_xlsx_fast(filepath)
+            lines = []
+            for r in rows:
+                vals = [str(v).strip() for v in r.values() if str(v).strip()]
+                if vals:
+                    lines.append(" | ".join(vals))
+            return "\n".join(lines)
+    except Exception as e:
+        print(f"[KB DOC] Błąd ekstrakcji tekstu z {filepath}: {e}")
+    return ""
+
+
+def _chunk_doc_text(text, chunk_size=8000):
+    """Dzieli tekst dokumentu na fragmenty ~chunk_size znaków na granicach linii."""
+    chunks = []
+    buf = []
+    buf_len = 0
+    for line in text.splitlines():
+        if buf_len + len(line) > chunk_size and buf:
+            chunks.append("\n".join(buf))
+            buf, buf_len = [], 0
+        buf.append(line)
+        buf_len += len(line) + 1
+    if buf:
+        chunks.append("\n".join(buf))
+    return chunks or [""]
+
+
+def index_kb_document(filepath, ps_code=None, category="", lang="pl"):
+    """
+    Indeksuje dokument tekstowy projektu (.txt, .msg, .xlsx-dokument) jako wpis
+    doc_kind='doc' w zuken_pdf_schematics — treść trafia do zuken_pdf_sheets
+    i jest przeszukiwana przez asystenta razem z arkuszami schematów PDF.
+    Zwraca (doc_id, message).
+    """
+    if not os.path.exists(filepath):
+        return None, zsmsg("fileMissing", lang, v=filepath)
+
+    filename = os.path.basename(filepath)
+    file_size = os.path.getsize(filepath)
+    file_mtime = os.path.getmtime(filepath)
+
+    conn = get_db()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT id FROM zuken_pdf_schematics
+        WHERE (filepath = ? OR filename = ?) AND file_size = ? AND abs(file_mtime - ?) < 1
+    """, (filepath, filename, file_size, file_mtime))
+    cached = cur.fetchone()
+    if cached:
+        conn.close()
+        return cached["id"], zsmsg("alreadyIndexed", lang, v=filename)
+
+    text = _extract_doc_text(filepath)
+    if not text or not text.strip():
+        conn.close()
+        return None, zsmsg("docNoText", lang)
+
+    info = extract_project_info_from_filename(filename, [])
+    if ps_code:
+        info["ps_codes"] = ps_code
+
+    cur.execute("DELETE FROM zuken_pdf_schematics WHERE filepath = ? OR filename = ?", (filepath, filename))
+
+    chunks = _chunk_doc_text(text)
+    now_iso = datetime.now().isoformat()
+    cur.execute("""
+        INSERT INTO zuken_pdf_schematics (
+            filename, filepath, project_name, ps_code, revision_date, revision_name,
+            total_pages, file_size, file_mtime, is_active, indexed_at, doc_kind, category
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+    """, (
+        filename, filepath, info["project_name"], info["ps_codes"],
+        "", "Dokument projektu", len(chunks), file_size, file_mtime, 1, now_iso,
+        "doc", category or ""
+    ))
+    doc_id = cur.lastrowid
+
+    for i, chunk in enumerate(chunks):
+        cur.execute("""
+            INSERT INTO zuken_pdf_sheets (schematic_id, page_number, sheet_number, sheet_title, section_code, raw_text)
+            VALUES (?, ?, ?, ?, ?, ?);
+        """, (doc_id, i + 1, str(i + 1), filename, "", chunk))
+
+    conn.commit()
+    conn.close()
+    return doc_id, zsmsg("docIndexed", lang, p=len(chunks))
+
+
+def _kb_process_file(full_path, rel_path, ps_code, category, lang="pl"):
+    """
+    Przetwarza pojedynczy plik Bazy wiedzy zgodnie z klasyfikacją:
+    conn/bom → import XLSX, pdf → indeksacja (schemat E3 lub manual),
+    ctrl → rejestracja raportu sterownika (+indeksacja PDF), e3s → rejestracja,
+    doc → indeksacja treści (.txt/.msg/.xlsx) lub rejestracja (binaria).
+    """
+    f = os.path.basename(full_path)
+    ftype = _kb_classify_file(f)
+    if not ftype:
+        return {"type": "skip", "file": rel_path, "message": zsmsg("docRegistered", lang)}
+    try:
+        if ftype == "bom":
+            items_cnt, devs_cnt, msg = import_zuken_bom_xlsx(full_path, ps_code=ps_code, lang=lang)
+            return {"type": "bom_xlsx", "file": rel_path, "articles": items_cnt, "devices": devs_cnt, "message": msg}
+        if ftype == "conn":
+            count, msg = import_zuken_xlsx(full_path, ps_code=ps_code, lang=lang)
+            return {"type": "xlsx", "file": rel_path, "connections": count, "message": msg}
+        if ftype == "pdf":
+            # Schemat E3 = PDF na poziomie głównym lub z kodem PS w nazwie;
+            # PDF-y w podfolderach-kategoriach bez kodu PS = dokumentacja urządzeń.
+            doc_kind = "schematic" if (not category or (ps_code and ps_code in f.upper())) else "manual"
+            sch_id, sym_count, msg = index_zuken_pdf(full_path, ps_code=ps_code, doc_kind=doc_kind, category=category, lang=lang)
+            return {"type": "pdf", "file": rel_path, "schematic_id": sch_id, "symbols": sym_count, "message": msg}
+        if ftype == "e3s":
+            return {"type": "e3s", "file": rel_path, "message": zsmsg("e3sRegistered", lang)}
+        if ftype == "ctrl":
+            # PDF-owy raport konfiguracyjny (np. Acetech) dodatkowo indeksujemy jako dokumentację
+            if f.lower().endswith(".pdf"):
+                index_zuken_pdf(full_path, ps_code=ps_code, doc_kind="manual", category=category, lang=lang)
+            return {"type": "ctrl", "file": rel_path, "message": zsmsg("ctrlRegistered", lang)}
+        if ftype == "doc":
+            ext = os.path.splitext(f)[1].lower()
+            if ext in (".txt", ".msg", ".xlsx"):
+                doc_id, msg = index_kb_document(full_path, ps_code=ps_code, category=category, lang=lang)
+                return {"type": "doc", "file": rel_path, "schematic_id": doc_id, "message": msg}
+            return {"type": "doc", "file": rel_path, "message": zsmsg("docRegistered", lang)}
+    except Exception as ex:
+        return {"type": "error", "file": rel_path, "message": str(ex)}
+
+
 def sync_all_knowledge_base(lang="pl"):
-    """Skanuje katalog Baza wiedzy (wraz z podfolderami) i importuje pliki XLSX oraz PDF."""
+    """Skanuje katalog Baza wiedzy (wraz z podfolderami-kategoriami) i importuje pliki."""
     init_zuken_tables()
     if not os.path.exists(BAZA_WIEDZY_DIR):
         return {"status": "error", "message": zsmsg("kbDirMissing", lang, v=BAZA_WIEDZY_DIR)}
 
     results = []
     for root, dirs, files in os.walk(BAZA_WIEDZY_DIR):
-        parent_dir = os.path.basename(root)
-        ps_code_hint = parent_dir if re.match(r"^PS\d+", parent_dir, re.I) else None
-
-        for f in files:
+        for f in sorted(files):
             full_path = os.path.join(root, f)
-            if f.endswith(".xlsx") and not f.startswith("~$"):
-                f_lower = f.lower()
-                if f_lower.startswith("bom") or "bom" in f_lower:
-                    items_cnt, devs_cnt, msg = import_zuken_bom_xlsx(full_path, ps_code=ps_code_hint, lang=lang)
-                    results.append({"type": "bom_xlsx", "file": f, "articles": items_cnt, "devices": devs_cnt, "message": msg})
-                else:
-                    count, msg = import_zuken_xlsx(full_path, lang=lang)
-                    results.append({"type": "xlsx", "file": f, "connections": count, "message": msg})
-            elif f.endswith(".pdf") and not f.startswith("~$"):
-                sch_id, sym_count, msg = index_zuken_pdf(full_path, ps_code=ps_code_hint, lang=lang)
-                results.append({"type": "pdf", "file": f, "schematic_id": sch_id, "symbols": sym_count, "message": msg})
+            rel = os.path.relpath(full_path, BAZA_WIEDZY_DIR)
+            parts = rel.split(os.sep)
+            # Pierwszy poziom = folder projektu PS; głębiej = kategoria dokumentu.
+            if parts[0].lower() == "zdjecia_komponentow":
+                continue
+            ps_hint = parts[0].upper() if len(parts) > 1 and re.match(r"^PS\d+", parts[0], re.I) else None
+            category = parts[1] if len(parts) > 2 else ""
+            results.append(_kb_process_file(full_path, rel, ps_hint, category, lang))
 
     return {"status": "success", "results": results}
 
@@ -3186,7 +3465,8 @@ def sync_all_knowledge_base(lang="pl"):
 # "ctrl" = raport konfiguracyjny sterownika (Carnation HTML, docelowo Acetech — format TBD).
 KB_FILE_TYPES = ("conn", "bom", "pdf", "e3s", "ctrl")
 KB_REQUIRED_TYPES = ("conn", "bom", "pdf")
-KB_ALLOWED_EXTENSIONS = (".xlsx", ".pdf", ".e3s", ".html", ".htm", ".xml", ".json", ".csv", ".txt")
+KB_ALLOWED_EXTENSIONS = (".xlsx", ".pdf", ".e3s", ".html", ".htm", ".xml", ".json", ".csv", ".txt",
+                         ".msg", ".png", ".jpg", ".jpeg", ".actp")
 
 # Wzorce w nazwach plików wskazujące na raport konfiguracyjny sterownika
 # (używane m.in. by PDF-y Acetech nie lądowały w slocie „schemat PDF").
@@ -3194,18 +3474,25 @@ _KB_CTRL_NAME_RE = re.compile(r"(acetech|carnation|genesis|evpss|config|konfigur
 
 
 def _kb_classify_file(filename):
-    """Klasyfikuje plik z folderu Bazy wiedzy do typu KB (conn/bom/pdf/e3s/ctrl)."""
+    """Klasyfikuje plik z folderu Bazy wiedzy do typu KB (conn/bom/pdf/e3s/ctrl/doc)."""
     if not filename or filename.startswith("~$"):
         return None
     f_lower = filename.lower()
     if f_lower.endswith(".xlsx"):
-        return "bom" if "bom" in f_lower else "conn"
+        if "bom" in f_lower:
+            return "bom"
+        if "connection" in f_lower or "_con" in f_lower or "conn" in f_lower:
+            return "conn"
+        # inne XLSX (np. WAS_ListOfOperations) = dokument projektu, nie lista połączeń
+        return "doc"
     if f_lower.endswith(".pdf"):
         return "ctrl" if _KB_CTRL_NAME_RE.search(f_lower) else "pdf"
     if f_lower.endswith(".e3s"):
         return "e3s"
-    if f_lower.endswith((".html", ".htm", ".xml", ".json", ".csv", ".txt")):
+    if f_lower.endswith((".html", ".htm", ".xml", ".json", ".csv")):
         return "ctrl"
+    if f_lower.endswith((".txt", ".msg", ".png", ".jpg", ".jpeg", ".actp")):
+        return "doc"
     return None
 
 
@@ -3217,26 +3504,47 @@ def get_ps_kb_files_status(ps_code, lang="pl"):
     """
     init_zuken_tables()
     ps_code = str(ps_code or "").strip().upper()
-    folder_path = os.path.join(BAZA_WIEDZY_DIR, ps_code) if ps_code else ""
+    folder_path = _kb_dir_for_ps(ps_code) if ps_code else ""
 
-    files = []
+    # Skan rekurencyjny — podfoldery pełnią rolę kategorii dokumentów projektu
+    all_files = []  # (rel_path, category, name, size)
     if ps_code and os.path.isdir(folder_path):
         try:
-            files = sorted(os.listdir(folder_path))
+            for full, rel, category in _kb_iter_files(folder_path):
+                try:
+                    size = os.path.getsize(full)
+                except OSError:
+                    size = 0
+                all_files.append((rel, category, os.path.basename(full), size))
         except Exception:
-            files = []
+            all_files = []
 
     by_type = {k: [] for k in KB_FILE_TYPES}
-    other_files = []
-    for f in files:
-        full = os.path.join(folder_path, f)
-        if os.path.isdir(full):
-            continue
-        tkey = _kb_classify_file(f)
-        if tkey:
-            by_type[tkey].append(f)
-        else:
-            other_files.append(f)
+    documents = []
+    for rel, category, name, size in all_files:
+        tkey = _kb_classify_file(name)
+        if tkey in by_type:
+            by_type[tkey].append(rel)
+        documents.append({
+            "name": name,
+            "rel": rel,
+            "category": category,
+            "kind": tkey or "file",
+            "size": size,
+            "indexed": False
+        })
+
+    # Oznacz pliki już zaindeksowane (schematy, manuale, dokumenty tekstowe)
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("SELECT filepath FROM zuken_pdf_schematics WHERE ps_code = ?", (ps_code,))
+        indexed_paths = {r[0] for r in cur.fetchall()}
+        conn.close()
+        for d in documents:
+            d["indexed"] = os.path.join(folder_path, d["rel"]) in indexed_paths
+    except Exception:
+        pass
 
     types = [{
         "key": key,
@@ -3273,54 +3581,38 @@ def get_ps_kb_files_status(ps_code, lang="pl"):
         "folder_path": folder_path,
         "folder_exists": bool(ps_code) and os.path.isdir(folder_path),
         "types": types,
-        "other_files": other_files,
+        "documents": documents,
         "ready": all(t["found"] for t in types if t["required"]),
         "has_summaries": has_summaries,
         "generated_at": generated_at,
-        "counts": counts
+        "counts": counts,
+        "controller": {
+            "settings": get_controller_settings(ps_code),
+            "candidates": kb_controller_candidates(ps_code)
+        }
     }
 
 
 def sync_ps_knowledge_base(ps_code, lang="pl"):
     """
-    Skanuje folder Bazy wiedzy jednego projektu PS i wykonuje:
-    import list połączeń (XLSX), import BOM (XLSX) oraz indeksację schematów PDF.
-    Zwraca listę wyników per plik (jak sync_all_knowledge_base, ale dla jednego PS).
+    Skanuje folder Bazy wiedzy jednego projektu PS (rekurencyjnie — podfoldery
+    pełnią rolę kategorii dokumentów) i wykonuje: import list połączeń (XLSX),
+    import BOM (XLSX), indeksację schematów PDF oraz indeksację dokumentów
+    tekstowych (.txt/.msg/.xlsx). Zwraca listę wyników per plik.
     """
     init_zuken_tables()
     ps_code = str(ps_code or "").strip().upper()
-    kb_dir = os.path.join(BAZA_WIEDZY_DIR, ps_code)
+    kb_dir = _kb_dir_for_ps(ps_code)
     if not ps_code or not os.path.isdir(kb_dir):
         return {"status": "error", "message": zsmsg("kbDirMissing", lang, v=kb_dir),
                 "message_key": "kbDirMissing", "results": []}
 
-    try:
-        files = sorted(os.listdir(kb_dir))
-    except Exception as e:
-        return {"status": "error", "message": str(e), "results": []}
-
     results = []
-    for f in files:
-        full_path = os.path.join(kb_dir, f)
-        if os.path.isdir(full_path):
-            continue
-        ftype = _kb_classify_file(f)
-        try:
-            if ftype == "bom":
-                items_cnt, devs_cnt, msg = import_zuken_bom_xlsx(full_path, ps_code=ps_code, lang=lang)
-                results.append({"type": "bom_xlsx", "file": f, "articles": items_cnt, "devices": devs_cnt, "message": msg})
-            elif ftype == "conn":
-                count, msg = import_zuken_xlsx(full_path, ps_code=ps_code, lang=lang)
-                results.append({"type": "xlsx", "file": f, "connections": count, "message": msg})
-            elif ftype == "pdf":
-                sch_id, sym_count, msg = index_zuken_pdf(full_path, ps_code=ps_code, lang=lang)
-                results.append({"type": "pdf", "file": f, "schematic_id": sch_id, "symbols": sym_count, "message": msg})
-            elif ftype == "e3s":
-                results.append({"type": "e3s", "file": f, "message": zsmsg("e3sRegistered", lang)})
-            elif ftype == "ctrl":
-                results.append({"type": "ctrl", "file": f, "message": zsmsg("ctrlRegistered", lang)})
-        except Exception as ex:
-            results.append({"type": "error", "file": f, "message": str(ex)})
+    try:
+        for full_path, rel, category in _kb_iter_files(kb_dir):
+            results.append(_kb_process_file(full_path, rel, ps_code, category, lang))
+    except Exception as e:
+        return {"status": "error", "message": str(e), "results": results}
 
     return {"status": "success", "results": results}
 
@@ -3328,8 +3620,9 @@ def sync_ps_knowledge_base(ps_code, lang="pl"):
 def process_ps_knowledge_base(ps_code, lang="pl"):
     """
     Pełny pipeline po dodaniu plików do Bazy wiedzy projektu PS:
-    1) import XLSX (połączenia + BOM) i indeksacja PDF (sync_ps_knowledge_base),
-    2) generowanie zestawień Asystenta (złącza z pinoutem, bezpieczniki, przekaźniki).
+    1) import XLSX (połączenia + BOM), indeksacja PDF i dokumentów (sync_ps_knowledge_base),
+    2) generowanie zestawień Asystenta (złącza z pinoutem, bezpieczniki, przekaźniki),
+    3) start masowego pobierania brakujących zdjęć komponentów (w tle).
     """
     sync_res = sync_ps_knowledge_base(ps_code, lang=lang)
     if sync_res.get("status") == "error":
@@ -3339,10 +3632,39 @@ def process_ps_knowledge_base(ps_code, lang="pl"):
                 "message_key": "kbNoFiles", "message_params": {}, "results": []}
 
     summ = generate_ps_technical_summaries(ps_code, lang=lang)
+
+    # Rozpoznanie sterownika projektu (deklaracja użytkownika lub auto-detekcja)
+    ctrl_info = None
+    try:
+        st = get_controller_settings(ps_code)
+        decl = (st.get("controller_type") or "").strip()
+        _ct, _cn, _cp = _controller_parsed(ps_code)
+        if decl.upper() in ("BRAK", "NONE"):
+            ctrl_info = {"status": "none", "name": ""}
+        elif _cp:
+            ctrl_info = {"status": "ok", "name": _cn, "file": _cp.get("filename", "")}
+        elif decl:
+            ctrl_info = {"status": "declared", "name": decl,
+                         "file": st.get("controller_file", "")}
+    except Exception:
+        pass
+
+    # Masowe pobieranie zdjęć dla złączy/bezpieczników/przekaźników tego PS —
+    # wątek w tle (BATCH_IMAGE_STATE), odpowiedź API nie czeka na zakończenie.
+    img_started, img_msg = False, ""
+    if summ.get("status") == "success":
+        try:
+            img_started, img_msg = start_batch_image_download(
+                ps_code=ps_code, scope="current_ps", only_missing=True, lang=lang)
+        except Exception as ex:
+            img_msg = str(ex)
+
     return {
         "status": "success" if summ.get("status") == "success" else "partial",
         "results": sync_res["results"],
         "summaries": summ,
+        "controller": ctrl_info,
+        "images": {"started": img_started, "message": img_msg},
         "message": summ.get("message"),
         "message_key": summ.get("message_key"),
         "message_params": summ.get("message_params") or {}
@@ -3403,7 +3725,7 @@ def explain_device_code(code, glossary_map=None, lang="pl"):
 # ═══════════════════════════════════════════════════════════════════
 # PARSER RAPORTÓW KONFIGURACYJNYCH STEROWNIKA CARNATION GENESIS (EVPSS)
 # ═══════════════════════════════════════════════════════════════════
-_CARNATION_CACHE = {}
+_CONTROLLER_CACHE = {}
 
 
 def parse_carnation_html(file_path):
@@ -3412,8 +3734,8 @@ def parse_carnation_html(file_path):
         return None
 
     mtime = os.path.getmtime(file_path)
-    if file_path in _CARNATION_CACHE and _CARNATION_CACHE[file_path].get("_mtime") == mtime:
-        return _CARNATION_CACHE[file_path]
+    if file_path in _CONTROLLER_CACHE and _CONTROLLER_CACHE[file_path].get("_mtime") == mtime:
+        return _CONTROLLER_CACHE[file_path]
 
     try:
         with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
@@ -3491,47 +3813,348 @@ def parse_carnation_html(file_path):
                 "actions": actions
             })
 
-        _CARNATION_CACHE[file_path] = info
+        _CONTROLLER_CACHE[file_path] = info
         return info
     except Exception as e:
         print(f"[CARNATION PARSER ERROR] Błąd parsowania {file_path}: {e}")
         return None
 
 
-def _carnation_html_path(ps_code=None):
-    """Ścieżka do pliku konfiguracyjnego Carnation Genesis (HTML) w Bazie wiedzy."""
-    html_files = []
-    if os.path.exists(BAZA_WIEDZY_DIR):
-        for root, _, files in os.walk(BAZA_WIEDZY_DIR):
-            for f in files:
-                if f.lower().endswith(".html"):
-                    html_files.append(os.path.join(root, f))
-    if not html_files:
-        return None
+def get_controller_settings(ps_code):
+    """Ustawienia sterownika dla PS: {'controller_type': 'AUTO'|'BRAK'|nazwa,
+    'controller_file': rel path w folderze PS lub ''}."""
+    init_zuken_tables()
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("SELECT controller_type, controller_file FROM zuken_controller_settings WHERE ps_code = ?",
+                    (str(ps_code or "").strip().upper(),))
+        row = cur.fetchone()
+        conn.close()
+        if row:
+            return {"controller_type": row[0] or "", "controller_file": row[1] or ""}
+    except Exception:
+        pass
+    return {"controller_type": "", "controller_file": ""}
+
+
+def set_controller_settings(ps_code, controller_type=None, controller_file=None):
+    """Częściowy upsert ustawień sterownika projektu (None = bez zmian)."""
+    init_zuken_tables()
+    ps = str(ps_code or "").strip().upper()
+    if not ps:
+        return
+    cur_st = get_controller_settings(ps)
+    new_type = cur_st["controller_type"] if controller_type is None else str(controller_type or "").strip()
+    new_file = cur_st["controller_file"] if controller_file is None else str(controller_file or "").strip()
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO zuken_controller_settings (ps_code, controller_type, controller_file)
+        VALUES (?, ?, ?)
+        ON CONFLICT(ps_code) DO UPDATE SET
+            controller_type = excluded.controller_type,
+            controller_file = excluded.controller_file;
+    """, (ps, new_type, new_file))
+    conn.commit()
+    conn.close()
+
+
+_REWORK_FIELDS = ("title", "description", "connector", "pin_changes",
+                  "vehicle_range", "attachment", "status")
+
+
+def _rework_row_dict(r):
+    d = dict(r)
+    try:
+        d["pin_changes"] = json.loads(d.get("pin_changes") or "[]")
+    except Exception:
+        d["pin_changes"] = []
+    return d
+
+
+def list_reworks(ps_code=None, status=None):
+    """Lista reworków projektu (domyślnie wszystkie statusy, najnowsze pierwsze)."""
+    init_zuken_tables()
+    conn = get_db()
+    cur = conn.cursor()
+    cond, params = [], []
     if ps_code:
-        for hf in html_files:
-            if str(ps_code).upper() in hf.upper():
-                return hf
-    return html_files[0]
+        cond.append("ps_code = ?")
+        params.append(str(ps_code).strip().upper())
+    if status:
+        cond.append("status = ?")
+        params.append(str(status).strip())
+    where = ("WHERE " + " AND ".join(cond)) if cond else ""
+    cur.execute(f"SELECT * FROM zuken_reworks {where} ORDER BY created_at DESC, id DESC;", params)
+    rows = [_rework_row_dict(r) for r in cur.fetchall()]
+    conn.close()
+    return rows
 
 
-def get_carnation_diagnostic_info(ps_code=None, query_text="", lang="pl"):
-    """
-    Odnajduje plik konfiguracyjny Carnation Genesis w Bazie wiedzy
-    i wyciąga z niego kontekstowe informacje dla podanego zapytania diagnostycznego.
-    """
-    selected_file = _carnation_html_path(ps_code)
-    if not selected_file:
+def create_rework(ps_code, title="", description="", connector="", pin_changes=None,
+                  vehicle_range="", attachment="", status="open"):
+    """Dodaje rework do projektu. Zwraca dict zapisanego wiersza."""
+    init_zuken_tables()
+    ps = str(ps_code or "").strip().upper()
+    now = datetime.now().isoformat()
+    changes = pin_changes if isinstance(pin_changes, list) else []
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO zuken_reworks (ps_code, title, description, connector, pin_changes,
+                                   vehicle_range, attachment, status, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+    """, (ps, str(title or "").strip(), str(description or "").strip(),
+          str(connector or "").strip().upper(), json.dumps(changes, ensure_ascii=False),
+          str(vehicle_range or "").strip(), str(attachment or "").strip(),
+          (str(status or "open").strip() or "open"), now, now))
+    rid = cur.lastrowid
+    conn.commit()
+    cur.execute("SELECT * FROM zuken_reworks WHERE id = ?;", (rid,))
+    row = cur.fetchone()
+    conn.close()
+    return _rework_row_dict(row) if row else {"id": rid}
+
+
+def update_rework(rework_id, **fields):
+    """Częściowa aktualizacja reworka (tylko pola z _REWORK_FIELDS)."""
+    init_zuken_tables()
+    sets, params = [], []
+    for k in _REWORK_FIELDS:
+        if k in fields:
+            v = fields[k]
+            if k == "pin_changes":
+                v = json.dumps(v if isinstance(v, list) else [], ensure_ascii=False)
+            elif k == "connector":
+                v = str(v or "").strip().upper()
+            else:
+                v = str(v or "").strip()
+            sets.append(f"{k} = ?")
+            params.append(v)
+    if not sets:
+        return None
+    sets.append("updated_at = ?")
+    params.append(datetime.now().isoformat())
+    params.append(int(rework_id))
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(f"UPDATE zuken_reworks SET {', '.join(sets)} WHERE id = ?;", params)
+    conn.commit()
+    cur.execute("SELECT * FROM zuken_reworks WHERE id = ?;", (int(rework_id),))
+    row = cur.fetchone()
+    conn.close()
+    return _rework_row_dict(row) if row else None
+
+
+def delete_rework(rework_id):
+    init_zuken_tables()
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM zuken_reworks WHERE id = ?;", (int(rework_id),))
+    cur.execute("DELETE FROM zuken_rework_photos WHERE rework_id = ?;", (int(rework_id),))
+    conn.commit()
+    conn.close()
+
+
+def get_rework_map(ps_code):
+    """Mapa {clean_kod_złącza: [rework, ...]} dla projektu — do badge ⚠️
+    w spisie złączy i na diagramach obwodów."""
+    out = {}
+    for rw in list_reworks(ps_code):
+        conn_code = (rw.get("connector") or "").strip()
+        if not conn_code:
+            continue
+        key = (clean_device_code(conn_code) or conn_code).upper()
+        out.setdefault(key, []).append(rw)
+    return out
+
+
+def kb_controller_candidates(ps_code):
+    """Pliki-kandydaci na raport logiki sterownika (ścieżki względne, HTML/PDF)."""
+    base = _kb_dir_for_ps(ps_code)
+    if not base or not os.path.isdir(base):
+        return []
+    out = []
+    for full, rel, _cat in _kb_iter_files(base):
+        if full.lower().endswith((".html", ".htm", ".pdf")):
+            out.append(rel.replace("\\", "/"))
+    return out
+
+
+def _controller_report_files(ps_code=None):
+    """Kandydaci na raport konfiguracyjny sterownika w folderze projektu (HTML/PDF)."""
+    base = _kb_dir_for_ps(ps_code) if ps_code else BAZA_WIEDZY_DIR
+    if not base or not os.path.isdir(base):
+        return []
+    out = []
+    for full, _rel, _cat in _kb_iter_files(base):
+        if full.lower().endswith((".html", ".htm", ".pdf")):
+            out.append(full)
+    return out
+
+
+def parse_acetech_pdf(file_path):
+    """Parsuje raport konfiguracyjny sterownika Acetech (PDF z mapą I/O).
+    Zwraca strukturę zgodną z parse_carnation_html (outputs/inputs/rules)."""
+    if not os.path.exists(file_path):
+        return None
+    mtime = os.path.getmtime(file_path)
+    if file_path in _CONTROLLER_CACHE and _CONTROLLER_CACHE[file_path].get("_mtime") == mtime:
+        return _CONTROLLER_CACHE[file_path]
+    try:
+        reader = pypdf.PdfReader(file_path)
+        text = "\n".join((pg.extract_text() or "") for pg in reader.pages[:10])
+    except Exception as e:
+        print(f"[ACETECH PARSER ERROR] Błąd odczytu {file_path}: {e}")
+        return None
+    if "ACETECH" not in text.upper():
         return None
 
-    parsed = parse_carnation_html(selected_file)
-    if not parsed:
-        return None
+    info = {
+        "_mtime": mtime,
+        "filename": os.path.basename(file_path),
+        "filepath": file_path,
+        "version": "",
+        "vehicle": "",
+        "outputs": {},
+        "inputs": {},
+        "notifications": {},
+        "rules": []
+    }
+
+    m_ver = re.search(r"Unique Number\s*:\s*([0-9A-Za-z]+)", text)
+    if m_ver:
+        info["version"] = m_ver.group(1).strip()
+    m_veh = re.search(r"\b([A-Z]{2}\d{4,})\s+Acetech", text)
+    if m_veh:
+        info["vehicle"] = m_veh.group(1).strip()
+
+    # Mapa I/O: sekcje '<moduł> - Physical Inputs / Vehicle CAN Inputs / Plug n'
+    section = None   # 'in' | 'out'
+    module = ""
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        hm = re.match(r"^(.+?)\s*-\s*(Physical Inputs|Vehicle CAN Inputs|Plug\s*\d+)\s*$", line)
+        if hm:
+            module = re.sub(r"^.*?\bLimit(?=[A-Z])", "", hm.group(1)).strip()
+            section = "out" if "Plug" in hm.group(2) else "in"
+            continue
+        if section == "out":
+            om = re.match(r"^O\.(\d+)\s+(.+?)\s+[+\-]\s*(?:(\d+(?:\.\d+)?)\s*A)?\s*-?\s*$", line)
+            if om:
+                num, func, cur = om.group(1), om.group(2), om.group(3)
+                code = f"O.{num}"
+                info["outputs"][f"{module}|{code}"] = {
+                    "code": code,
+                    "full_name": f"{code} {func}",
+                    "function": func,
+                    "max_current": f"{cur}A" if cur else "",
+                    "module": module
+                }
+        elif section == "in":
+            im = re.match(r"^([IV])\.(\d+)\s+(.+?)(?:\s+[+\-])?\s*$", line)
+            if im:
+                pref, num, func = im.group(1), im.group(2), im.group(3)
+                code = f"{pref}.{num}"
+                info["inputs"][f"{module}|{code}"] = {
+                    "num": num,
+                    "code": code,
+                    "full_name": f"{code} {func}",
+                    "function": func,
+                    "module": module
+                }
+
+    # Funkcje automatyki: nagłówki 'N.N Tytuł' + opis (Non Panel Switched Function Explanation)
+    in_rules = False
+    rule = None
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if "Function Explanation" in line:
+            in_rules = True
+            continue
+        if in_rules and (re.search(r"I/O\s*(List|Map)", line)
+                         or re.match(r"^(.+?)\s*-\s*(Physical Inputs|Vehicle CAN Inputs|Plug\s*\d+)\s*$", line)):
+            in_rules = False
+        if not in_rules:
+            continue
+        rm = re.match(r"^(\d+\.\d+)\s+([A-Z].{3,60}?)\s*$", line)
+        if rm:
+            if rule:
+                info["rules"].append(rule)
+            rule = {"index": rm.group(1), "name": f"{rm.group(1)} {rm.group(2)}", "actions": []}
+            continue
+        if rule and line and not re.match(r"^Page \d+/\d+", line) and not re.match(r"^[A-Z]{2}\d+ -", line):
+            rule["actions"].append(line)
+    if rule:
+        info["rules"].append(rule)
+
+    _CONTROLLER_CACHE[file_path] = info
+    return info
+
+
+_CTRL_TYPE_NAMES = {"carnation": "Carnation Genesis EVPSS", "acetech": "Acetech"}
+
+
+def _controller_parsed(ps_code=None):
+    """Wykrywa i parsuje raport sterownika projektu, honorując ustawienia
+    użytkownika (zadeklarowany typ / wskazany plik / BRAK).
+    Zwraca (typ, nazwa, parsed): 'carnation'|'acetech'|'declared' — parsed
+    w formacie parse_carnation_html albo None gdy brak parsowalnego raportu."""
+    st = get_controller_settings(ps_code)
+    decl = (st.get("controller_type") or "").strip()
+    if decl.upper() in ("BRAK", "NONE"):
+        return None, "", None
+    forced_file = (st.get("controller_file") or "").strip()
+    low = decl.lower()
+    forced_type = ""
+    if "carnation" in low or "evpss" in low or "genesis" in low:
+        forced_type = "carnation"
+    elif "acetech" in low:
+        forced_type = "acetech"
+
+    def _try_file(f, want=""):
+        fl = f.lower()
+        if want in ("", "carnation") and fl.endswith((".html", ".htm")):
+            c = parse_carnation_html(f)
+            if c and (c.get("outputs") or c.get("inputs") or c.get("rules")):
+                return "carnation", c
+        if want in ("", "acetech") and fl.endswith(".pdf"):
+            c = parse_acetech_pdf(f)
+            if c and (c.get("outputs") or c.get("inputs")):
+                return "acetech", c
+        return None, None
+
+    if forced_file:
+        path = os.path.join(_kb_dir_for_ps(ps_code), forced_file)
+        if os.path.exists(path):
+            ct, p = _try_file(path, forced_type)
+            if p:
+                return ct, _CTRL_TYPE_NAMES[ct], p
+        # wskazany plik nieparsowalny — honoruj deklarację bez I/O
+        return (forced_type or "declared"), decl or "", None
+
+    best = None
+    for f in _controller_report_files(ps_code):
+        ct, p = _try_file(f, forced_type)
+        if p:
+            score = len(p.get("outputs") or {}) + len(p.get("inputs") or {})
+            if best is None or score > best[3]:
+                best = (ct, _CTRL_TYPE_NAMES[ct], p, score)
+    if best:
+        return best[0], best[1], best[2]
+    return (forced_type or ("declared" if decl else None)), decl or "", None
+
+
+def _build_carnation_info(parsed, query_text="", lang="pl"):
+    """Wyciąga z parsowanego raportu Carnation kontekstowe informacje
+    dla podanego zapytania diagnostycznego."""
 
     q_upper = (query_text or "").upper()
     tokens = re.findall(r"[A-Za-z0-9_]+(?:\.[0-9]+)?", q_upper)
 
     result = {
+        "controller": "Carnation Genesis EVPSS",
         "version": parsed.get("version", ""),
         "filename": parsed.get("filename", ""),
         "vehicle": parsed.get("vehicle", ""),
@@ -3828,6 +4451,142 @@ def get_carnation_diagnostic_info(ps_code=None, query_text="", lang="pl"):
 
     result["diagnostic_summary"] = " ".join(summary_parts)
     return result
+
+
+def _io_token_score(func_name, q_toks):
+    """Punkty dopasowania nazwy funkcji I/O do tokenów zapytania (z synonimami PL/EN)."""
+    f_up = (func_name or "").upper()
+    if not f_up:
+        return 0
+    score = 0
+    for tk in q_toks:
+        variants = {tk} | _CIRCUIT_SYNONYMS.get(tk, set())
+        if any(v in f_up for v in variants):
+            score += 2 if len(tk) >= 4 else 1
+    return score
+
+
+def _build_acetech_info(parsed, query_text="", lang="pl"):
+    """Kontekstowe informacje z raportu Acetech dla zapytania diagnostycznego.
+    Dopasowanie generyczne: tokeny zapytania (+synonimy) vs nazwy I/O."""
+    q_upper = (query_text or "").upper()
+    q_toks = _circuit_tokens(query_text)
+
+    result = {
+        "controller": "Acetech",
+        "version": parsed.get("version", ""),
+        "filename": parsed.get("filename", ""),
+        "vehicle": parsed.get("vehicle", ""),
+        "relevant_outputs": [],
+        "relevant_inputs": [],
+        "controlling_rules": [],
+        "audio_messages": [],
+        "battery_thresholds": [],
+        "diagnostic_summary": ""
+    }
+
+    def _add_matches(items_dict, dest):
+        scored = []
+        for item in items_dict.values():
+            sc = _io_token_score(item.get("function") or "", q_toks)
+            if sc >= 2:
+                scored.append((sc, item))
+        for _sc, item in sorted(scored, key=lambda x: -x[0])[:8]:
+            if item not in dest:
+                dest.append(item)
+
+    _add_matches(parsed.get("outputs") or {}, result["relevant_outputs"])
+    _add_matches(parsed.get("inputs") or {}, result["relevant_inputs"])
+
+    # Bezpośrednie kody: O.15 / I.5 / V.8 (dowolny moduł) oraz O2.15 (CP20-O2 O.15)
+    for tok in re.findall(r"[A-Z]{1,3}\.?[0-9]+(?:\.[0-9]+)?", q_upper):
+        m_mod = re.match(r"^O([1-3])\.(\d+)$", tok)
+        m_io = re.match(r"^([OIV])\.(\d+)$", tok)
+        if m_mod:
+            want_mod, want_code = f"CP20-O{m_mod.group(1)}", f"O.{m_mod.group(2)}"
+            for it in (parsed.get("outputs") or {}).values():
+                if it.get("code") == want_code and (it.get("module") or "").startswith(want_mod):
+                    if it not in result["relevant_outputs"]:
+                        result["relevant_outputs"].append(it)
+        elif m_io:
+            want_code = f"{m_io.group(1)}.{m_io.group(2)}"
+            src = parsed.get("outputs") if m_io.group(1) == "O" else parsed.get("inputs")
+            dest = result["relevant_outputs"] if m_io.group(1) == "O" else result["relevant_inputs"]
+            for it in (src or {}).values():
+                if it.get("code") == want_code and it not in dest:
+                    dest.append(it)
+
+    # Reguły automatyki (np. Low Power Mode) dopasowane do zapytania
+    for r in parsed.get("rules") or []:
+        txt = f"{r.get('name') or ''} {' '.join(r.get('actions') or [])}"
+        if _io_token_score(txt, q_toks) >= 2:
+            result["controlling_rules"].append({
+                "rule": r.get("name") or "",
+                "actions": (r.get("actions") or [])[:3]
+            })
+
+    # Progi baterii z opisów funkcji (np. '< 6 volts' → pełne odcięcie)
+    is_battery_query = any(k in q_upper for k in ["AKUMULATOR", "BATERIA", "BATTERY", "NAPIĘCIE", "NAPIECIE", "LOW POWER", "ODCIĘCIE", "ODCIECIE"])
+    if is_battery_query:
+        rules_txt = " ".join((r.get("name") or "") + " " + " ".join(r.get("actions") or [])
+                             for r in parsed.get("rules") or [])
+        for b in dict.fromkeys(re.findall(r"<\s*\d+(?:\.\d+)?\s*volts?", rules_txt, re.I)):
+            result["battery_thresholds"].append({
+                "name": zsmsg("batAux", lang),
+                "cutoff": b.upper().replace("VOLTS", "V").replace(" ", "")
+            })
+
+    # Podsumowanie
+    parts = []
+    if result["relevant_outputs"]:
+        outs_desc = ", ".join(
+            f"{o['code']} ({o['function']}{', ' + o['max_current'] if o.get('max_current') else ''})"
+            for o in result["relevant_outputs"][:4])
+        parts.append(zsmsg("carnOuts", lang, v=outs_desc))
+    if result["relevant_inputs"]:
+        ins_desc = ", ".join(f"{i['code']} ({i['function']})" for i in result["relevant_inputs"][:4])
+        parts.append(zsmsg("carnIns", lang, v=ins_desc))
+    if result["controlling_rules"]:
+        rules_desc = ", ".join(r["rule"][:40] for r in result["controlling_rules"][:3])
+        parts.append(zsmsg("carnRules", lang, v=rules_desc))
+    if not parts:
+        modules = {((o.get("module") or "").split(" - ")[0]) for o in (parsed.get("outputs") or {}).values()}
+        parts.append(zsmsg("acetechFull", lang, v=parsed.get("version", ""),
+                           o=len(parsed.get("outputs") or {}), om=len(modules),
+                           i=len(parsed.get("inputs") or {}), r=len(parsed.get("rules") or [])))
+    result["diagnostic_summary"] = " ".join(parts)
+    return result
+
+
+def get_controller_diagnostic_info(ps_code=None, query_text="", lang="pl"):
+    """Wykrywa raport sterownika w folderze projektu (Carnation HTML,
+    Acetech PDF, ...) i zwraca kontekstowe informacje dla zapytania.
+    Dla zadeklarowanego, lecz nieparsowanego typu (np. Inomatic) zwraca
+    kartę informacyjną z nazwą i plikiem."""
+    ctype, cname, parsed = _controller_parsed(ps_code)
+    if parsed:
+        if ctype == "carnation":
+            return _build_carnation_info(parsed, query_text, lang)
+        if ctype == "acetech":
+            return _build_acetech_info(parsed, query_text, lang)
+        return None
+    st = get_controller_settings(ps_code)
+    decl = (st.get("controller_type") or "").strip()
+    if decl and decl.upper() not in ("AUTO", "BRAK", "NONE"):
+        fn = (st.get("controller_file") or "").strip()
+        return {
+            "controller": decl,
+            "version": "",
+            "filename": fn,
+            "vehicle": str(ps_code or ""),
+            "relevant_outputs": [],
+            "relevant_inputs": [],
+            "controlling_rules": [],
+            "audio_messages": [],
+            "battery_thresholds": [],
+            "diagnostic_summary": zsmsg("ctrlDeclared", lang, n=decl, f=fn or "—")
+        }
+    return None
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -4265,10 +5024,18 @@ def diagnose_defect(element="", typ="", opisProblem="", ps_code=None, client=Non
     # ANALIZA RÓŻNIC REWIZJI (REVISION DIFF)
     # ═══════════════════════════════════════════════════════════════
     revision_notes = []
-    if len(candidate_projects) > 1:
+    # Rewizja = odrębny project_name (pliki Connection/BOM tej samej rewizji tworzą osobne wiersze)
+    distinct_revs = {}
+    for p in candidate_projects:
+        key = p.get("project_name") or p.get("filename") or p.get("id")
+        cur_rev = distinct_revs.get(key)
+        if cur_rev is None or (p.get("revision_date") or "") < (cur_rev.get("revision_date") or ""):
+            distinct_revs[key] = p
+    rev_projects = list(distinct_revs.values())
+    if len(rev_projects) > 1:
         # Sprawdzamy czy są różne rewizje (np. 2025 vs 2026 poprawka drzwi)
-        p_base = min(candidate_projects, key=lambda x: x.get("revision_date") or "")
-        p_new = max(candidate_projects, key=lambda x: x.get("revision_date") or "")
+        p_base = min(rev_projects, key=lambda x: x.get("revision_date") or "")
+        p_new = max(rev_projects, key=lambda x: x.get("revision_date") or "")
         
         # Jeśli usterka dotyczy drzwi lub styków
         if any(k in search_text.upper() for k in ["DRZWI", "DOOR", "DPR", "DPL", "PRZESUW", "KRAŃCÓW", "KRANCOW"]):
@@ -4423,13 +5190,36 @@ def diagnose_defect(element="", typ="", opisProblem="", ps_code=None, client=Non
 
     bom_components = find_bom_components_for_devices(list(bom_dev_codes), ps_code=ps_code, lang=lang)
 
-    # Informacje logiczne z kontrolera Carnation Genesis EVPSS (jeśli dostępne)
-    carnation_logic = get_carnation_diagnostic_info(ps_code=ps_code, query_text=search_text, lang=lang)
+    # Informacje logiczne ze sterownika projektu (Carnation/Acetech/... — jeśli dostępne)
+    controller_logic = get_controller_diagnostic_info(ps_code=ps_code, query_text=search_text, lang=lang)
+
+    # Reworki projektu: ostrzeżenie, gdy zapytanie/obwód dotyczy złącza
+    # objętego reworkiem (pinout na produkcji może odbiegać od schematu).
+    rework_map = get_rework_map(ps_code) if ps_code else {}
+    hit_reworks = []
+    if rework_map:
+        for c in matched_connections:
+            for dev in (c.get("from_device"), c.get("to_device")):
+                key = (clean_device_code(dev or "") or "").upper()
+                for rw in rework_map.get(key, []):
+                    if rw not in hit_reworks:
+                        hit_reworks.append(rw)
+        for tok in tokens:
+            key = (clean_device_code(tok) or tok).upper()
+            for rw in rework_map.get(key, []):
+                if rw not in hit_reworks:
+                    hit_reworks.append(rw)
 
     # Podsumowanie i wygenerowanie zaleceń krok po kroku
     recommendations = []
-    if carnation_logic and carnation_logic.get("diagnostic_summary"):
-        recommendations.append(zsmsg("carnationRec", lang, v=carnation_logic["diagnostic_summary"]))
+    for rw in hit_reworks[:3]:
+        recommendations.append(zsmsg("reworkHit", lang,
+                                     n=rw.get("connector") or "",
+                                     v=rw.get("title") or ""))
+    if controller_logic and controller_logic.get("diagnostic_summary"):
+        recommendations.append(zsmsg("controllerRec", lang,
+                                     n=controller_logic.get("controller", ""),
+                                     v=controller_logic["diagnostic_summary"]))
 
     if focused_solution:
         recommendations.append(zsmsg("recFocusVariant", lang, n=focused_solution.get("numer", ""), t=focused_solution.get("tytul", "")))
@@ -4470,7 +5260,8 @@ def diagnose_defect(element="", typ="", opisProblem="", ps_code=None, client=Non
         "focused_solution": focused_solution,
         "schema_pdf_references": schema_pdf_references,
         "revision_notes": revision_notes,
-        "carnation_logic": carnation_logic,
+        "controller_logic": controller_logic,
+        "reworks": hit_reworks,
         "recommendations": recommendations
     }
 
@@ -4529,13 +5320,14 @@ def get_available_ps_projects(lang="pl"):
         for entry in os.listdir(BAZA_WIEDZY_DIR):
             folder_path = os.path.join(BAZA_WIEDZY_DIR, entry)
             if os.path.isdir(folder_path) and entry != "zdjecia_komponentow":
-                ps_code = entry.upper()
+                m_ps = re.search(r"PS\d{4,}", entry, re.I)
+                ps_code = (m_ps.group(0) if m_ps else entry).upper()
                 try:
-                    files = os.listdir(folder_path)
+                    files = [os.path.basename(p) for p, _, _ in _kb_iter_files(folder_path)]
                 except Exception:
                     files = []
-                has_bom = any(f.lower().startswith("bom") and f.endswith(".xlsx") for f in files)
-                has_conn = any(("connection" in f.lower() or f.lower().endswith("_con.xlsx")) and f.endswith(".xlsx") for f in files)
+                has_bom = any("bom" in f.lower() and f.lower().endswith(".xlsx") for f in files)
+                has_conn = any(_kb_classify_file(f) == "conn" for f in files)
                 has_pdf = any(f.lower().endswith(".pdf") for f in files)
                 has_e3s = any(f.lower().endswith(".e3s") for f in files)
 
@@ -4604,19 +5396,12 @@ def generate_ps_technical_summaries(ps_code, lang="pl"):
     init_zuken_tables()
 
     # Sprawdź czy pliki dla tego PS są w katalogu Baza wiedzy i zaimportuj jeśli potrzeba
-    kb_ps_dir = os.path.join(BAZA_WIEDZY_DIR, ps_code)
+    # (rekurencyjnie — pliki mogą leżeć w podfolderach-kategoriach dokumentów)
+    kb_ps_dir = _kb_dir_for_ps(ps_code)
     if os.path.exists(kb_ps_dir):
         try:
-            for f in os.listdir(kb_ps_dir):
-                full_path = os.path.join(kb_ps_dir, f)
-                if f.endswith(".xlsx") and not f.startswith("~$"):
-                    f_lower = f.lower()
-                    if f_lower.startswith("bom") or "bom" in f_lower:
-                        import_zuken_bom_xlsx(full_path, ps_code=ps_code, lang=lang)
-                    else:
-                        import_zuken_xlsx(full_path, ps_code=ps_code, lang=lang)
-                elif f.endswith(".pdf") and not f.startswith("~$"):
-                    index_zuken_pdf(full_path, ps_code=ps_code, lang=lang)
+            for full_path, rel, category in _kb_iter_files(kb_ps_dir):
+                _kb_process_file(full_path, rel, ps_code, category, lang)
         except Exception as ex:
             print(f"[ZUKEN IMPORT WARNING] Błąd skanowania katalogu {kb_ps_dir}: {ex}")
 
@@ -5819,8 +6604,8 @@ def _circuit_extend_adjacency(cur, adj, ps_code):
     return adj, internal_devs
 
 
-def _evpss_signal_label(sig, parsed):
-    """Nazwa sygnału -> wyjście/wejście EVPSS Carnation (dopasowanie przez
+def _evpss_signal_label(sig, parsed, controller="Carnation"):
+    """Nazwa sygnału -> wyjście/wejście sterownika (dopasowanie przez
     synonimy nazw). Zwraca dict {code, kind, module, function, max_current}."""
     if not sig or not parsed:
         return None
@@ -5844,8 +6629,8 @@ def _evpss_signal_label(sig, parsed):
         score = len(f_toks & sig_toks) * 100 + min(len(f_toks), len(sig_toks))
         if best is None or score > best[0]:
             m = re.match(r"O(\d)\.", code)
-            best = (score, {"code": code, "kind": "output",
-                            "module": f"Carnation {m.group(1)}" if m else "Carnation",
+            best = (score, {"code": out.get("code") or code, "kind": "output",
+                            "module": out.get("module") or (f"{controller} {m.group(1)}" if m else controller),
                             "function": out.get("function") or "",
                             "max_current": out.get("max_current") or ""})
     for code, inp in (parsed.get("inputs") or {}).items():
@@ -5854,8 +6639,8 @@ def _evpss_signal_label(sig, parsed):
             continue
         score = len(f_toks & sig_toks) * 100 + min(len(f_toks), len(sig_toks))
         if best is None or score > best[0]:
-            best = (score, {"code": code, "kind": "input",
-                            "module": "Carnation ECU",
+            best = (score, {"code": inp.get("code") or code, "kind": "input",
+                            "module": inp.get("module") or f"{controller} ECU",
                             "function": inp.get("function") or "",
                             "max_current": ""})
     return best[1] if best else None
@@ -5909,7 +6694,7 @@ def trace_circuit(ps_code, query, lang="pl"):
     dev_funcs = _device_function_map(cur, bom_ids)
     bom_names = _device_bom_name_map(cur, bom_ids)
     sig_nodes = _signal_node_map(cur, conn_ids)
-    carn = get_carnation_diagnostic_info(ps_code, q, lang=lang) or {}
+    ctrl = get_controller_diagnostic_info(ps_code, q, lang=lang) or {}
 
     def _is_pass(nd):
         c = clean_device_code(nd[0]) or ""
@@ -5979,8 +6764,8 @@ def trace_circuit(ps_code, query, lang="pl"):
             if sig_matches:
                 via_dev = dev_q
         if not sig_matches:
-            evpss_items = (carn.get("relevant_outputs") or []) + \
-                          (carn.get("relevant_inputs") or [])
+            evpss_items = (ctrl.get("relevant_outputs") or []) + \
+                          (ctrl.get("relevant_inputs") or [])
             for out in evpss_items:
                 for s in _match_signals(out.get("function") or "", sig_nodes):
                     if s not in sig_matches:
@@ -5992,7 +6777,7 @@ def trace_circuit(ps_code, query, lang="pl"):
             return {"ok": True, "query": q, "resolved": resolved,
                     "loads": [], "candidates": []}
 
-        evpss = _circuit_evpss_for_signal(sig_matches[0], carn)
+        evpss = _circuit_evpss_for_signal(sig_matches[0], ctrl)
         used_sigs, load_devs, all_terms = [], [], []
         for sig in sig_matches[:4]:
             nodes = sig_nodes.get(sig) or set()
@@ -6079,11 +6864,10 @@ def trace_circuit(ps_code, query, lang="pl"):
                 "pins": pins_out,
             })
 
-    # ── 3. Etykiety modułów Carnation dla końców-źródeł ─────────
-    # A103/A104/A105 -> "Carnation 1/2/3 · O<n.m>", A15 (wejścia) ->
-    # "Carnation ECU · I1.m" — sygnał na krawędzi do modułu wskazuje wyjście.
-    carn_file = _carnation_html_path(ps_code)
-    carn_parsed = parse_carnation_html(carn_file) if carn_file else None
+    # ── 3. Etykiety modułów sterownika dla końców-źródeł ─────────
+    # A103/A104/A105 -> "Carnation 1/2/3 · O<n.m>", CP20-Ox -> "Acetech · O.n"
+    # — sygnał na krawędzi do modułu wskazuje wyjście/wejście sterownika.
+    _ctype, cname, ctrl_parsed = _controller_parsed(ps_code)
     for ld in loads_out:
         for p in ld["pins"]:
             for e in p["ends"]:
@@ -6093,7 +6877,7 @@ def trace_circuit(ps_code, query, lang="pl"):
                 if e["path"]:
                     for h in reversed(e["path"]):
                         if h.get("signal"):
-                            lbl = _evpss_signal_label(h["signal"], carn_parsed)
+                            lbl = _evpss_signal_label(h["signal"], ctrl_parsed, controller=cname or "Sterownik")
                             if lbl:
                                 break
                 if not lbl:
@@ -6122,7 +6906,7 @@ def trace_circuit(ps_code, query, lang="pl"):
         rules = []
         if code and len(code) > 1:
             pat = re.compile(r"(?<!\d)0?" + re.escape(code[1:]) + r"(?!\d)")
-            for r in carn.get("controlling_rules") or []:
+            for r in ctrl.get("controlling_rules") or []:
                 txt = (r.get("rule") or "") + " " + " ".join(r.get("actions") or [])
                 if code in txt or pat.search(txt):
                     rules.append(r)
@@ -6187,9 +6971,13 @@ def trace_circuit(ps_code, query, lang="pl"):
         except Exception:
             pass
 
-    return {"ok": True, "query": q, "resolved": resolved,
+    # Reworki projektu — frontend oznacza badge ⚠️ węzły-złącza objęte reworkiem
+    reworks = list_reworks(ps_code) if ps_code else []
+
+    return {"ok": True, "query": q, "resolved": resolved, "ps_code": ps_code,
             "evpss": evpss_out, "loads": loads_out,
-            "more_signals": more_signals, "conn_meta": conn_meta}
+            "more_signals": more_signals, "conn_meta": conn_meta,
+            "reworks": reworks}
 
 
 def get_ps_connectors(ps_code, search="", system_filter="", limit=100, offset=0, lang="pl"):
@@ -6240,12 +7028,16 @@ def get_ps_connectors(ps_code, search="", system_filter="", limit=100, offset=0,
     """, params + [limit, offset])
 
     rows = cur.fetchall()
+    rework_map = get_rework_map(ps_code)
     items = []
     for r in rows:
         d = dict(r)
         d["pins"] = json.loads(d.get("pins_json") or "[]")
         if not d.get("image_url") and d.get("article_number"):
             d["image_url"] = find_local_component_image(d.get("article_number")) or ""
+        rw = rework_map.get((d.get("device_clean") or d.get("device_code") or "").upper()) or []
+        d["reworks"] = [{"id": x["id"], "title": x["title"], "status": x["status"],
+                         "pin_changes": x["pin_changes"]} for x in rw]
         items.append(d)
 
     # "Drugi koniec przewodu" — przejdź grafem połączeń przez złącza/rozgałęźniki
@@ -6417,7 +7209,8 @@ def get_ps_fuses(ps_code, search="", limit=100, offset=0, lang="pl"):
     g_cnt, g_max = cur.fetchone()
     cur.execute("""
         SELECT id, file_mtime FROM zuken_pdf_schematics
-        WHERE is_active = 1 ORDER BY id DESC LIMIT 1;
+        WHERE is_active = 1 AND COALESCE(doc_kind, 'schematic') = 'schematic'
+        ORDER BY id DESC LIMIT 1;
     """)
     _s = cur.fetchone()
     img_sig = (0, 0.0)
@@ -6536,7 +7329,8 @@ def get_ps_fuses(ps_code, search="", limit=100, offset=0, lang="pl"):
     # Aktywny schemat PDF i strony, na których narysowano etykiety -F<n>
     cur.execute("""
         SELECT id, filepath, file_mtime FROM zuken_pdf_schematics
-        WHERE is_active = 1 ORDER BY id DESC LIMIT 1;
+        WHERE is_active = 1 AND COALESCE(doc_kind, 'schematic') = 'schematic'
+        ORDER BY id DESC LIMIT 1;
     """)
     _schem = cur.fetchone()
     schem_path = _schem["filepath"] if _schem else None

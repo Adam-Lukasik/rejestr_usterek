@@ -5,3 +5,4 @@ pillow==10.4.0
 pypdfium2>=5.0.0
 waitress>=3.0.0
 pywebview>=5.0.0
+extract-msg==0.56.1

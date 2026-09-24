@@ -2203,7 +2203,7 @@ def api_zuken_kb_upload(ps_code):
         return jsonify({"error": zuken_service.zsmsg("kbBadExt", lang, v=filename)}), 400
 
     try:
-        kb_dir = os.path.join(zuken_service.BAZA_WIEDZY_DIR, ps)
+        kb_dir = zuken_service._kb_dir_for_ps(ps)
         os.makedirs(kb_dir, exist_ok=True)
         dest = os.path.join(kb_dir, filename)
         f.save(dest)
@@ -2217,6 +2217,178 @@ def api_zuken_kb_upload(ps_code):
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/zuken/kb/<ps_code>/controller", methods=["GET"])
+def api_zuken_kb_controller_get(ps_code):
+    """Ustawienia sterownika projektu + kandydaci na plik raportu logiki."""
+    try:
+        return jsonify({
+            "ps_code": ps_code,
+            "settings": zuken_service.get_controller_settings(ps_code),
+            "candidates": zuken_service.kb_controller_candidates(ps_code)
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/zuken/kb/<ps_code>/controller", methods=["POST"])
+def api_zuken_kb_controller_set(ps_code):
+    """Zapisuje ustawienia sterownika projektu (typ i/lub plik raportu)."""
+    lang = _app_lang()
+    ps = (ps_code or "").strip().upper()
+    if not _valid_ps_code(ps):
+        return jsonify({"error": zuken_service.zsmsg("kbBadPs", lang, v=ps_code)}), 400
+    data = request.get_json(silent=True) or {}
+    try:
+        kwargs = {}
+        if "controller_type" in data:
+            kwargs["controller_type"] = data["controller_type"]
+        if "controller_file" in data:
+            kwargs["controller_file"] = data["controller_file"]
+        if not kwargs:
+            return jsonify({"error": "empty payload"}), 400
+        zuken_service.set_controller_settings(ps, **kwargs)
+        return jsonify({"status": "success",
+                        "settings": zuken_service.get_controller_settings(ps)})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/zuken/reworks", methods=["GET"])
+def api_zuken_reworks_list():
+    """Lista reworków projektu PS (opcjonalnie filtr statusu)."""
+    ps = (request.args.get("ps") or "").strip().upper()
+    status = (request.args.get("status") or "").strip() or None
+    try:
+        return jsonify({"reworks": zuken_service.list_reworks(ps, status=status)})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/zuken/reworks", methods=["POST"])
+def api_zuken_reworks_create():
+    """Tworzy rework dla projektu PS."""
+    lang = _app_lang()
+    data = request.get_json(silent=True) or {}
+    ps = (data.get("ps_code") or "").strip().upper()
+    if not _valid_ps_code(ps):
+        return jsonify({"error": zuken_service.zsmsg("kbBadPs", lang, v=ps)}), 400
+    if not (data.get("title") or "").strip():
+        return jsonify({"error": "title required"}), 400
+    try:
+        rw = zuken_service.create_rework(
+            ps,
+            title=data.get("title"),
+            description=data.get("description"),
+            connector=data.get("connector"),
+            pin_changes=data.get("pin_changes"),
+            vehicle_range=data.get("vehicle_range"),
+            attachment=data.get("attachment"),
+            status=data.get("status") or "open",
+        )
+        return jsonify({"status": "success", "rework": rw})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/zuken/reworks/<int:rid>", methods=["PUT"])
+def api_zuken_reworks_update(rid):
+    """Aktualizuje rework (pola częściowe, np. status)."""
+    data = request.get_json(silent=True) or {}
+    fields = {k: data[k] for k in
+              ("title", "description", "connector", "pin_changes",
+               "vehicle_range", "attachment", "status") if k in data}
+    try:
+        rw = zuken_service.update_rework(rid, **fields)
+        if not rw:
+            return jsonify({"error": smsg("notFound")}), 404
+        return jsonify({"status": "success", "rework": rw})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/zuken/reworks/<int:rid>", methods=["DELETE"])
+def api_zuken_reworks_delete(rid):
+    """Usuwa rework."""
+    try:
+        zuken_service.delete_rework(rid)
+        return jsonify({"status": "success"})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/zuken/reworks/<int:rid>/photos", methods=["GET"])
+def api_zuken_rework_photos_list(rid):
+    """Metadane zdjęć reworka (dwie sekcje: side='bad'/'good')."""
+    zuken_service.init_zuken_tables()
+    conn = get_db_connection()
+    try:
+        rows = conn.execute(
+            "SELECT id, filename, side, created FROM zuken_rework_photos "
+            "WHERE rework_id=? ORDER BY created", (rid,)).fetchall()
+        return jsonify({"photos": [dict(r) for r in rows]})
+    finally:
+        conn.close()
+
+
+@app.route("/api/zuken/reworks/<int:rid>/photos", methods=["POST"])
+def api_zuken_rework_photos_add(rid):
+    """Dodaje zdjęcie do reworka (side='bad' | 'good')."""
+    zuken_service.init_zuken_tables()
+    data = request.get_json(silent=True) or {}
+    raw_b64 = data.get("data") or ""
+    if not raw_b64:
+        return jsonify({"error": smsg("artNrPhotoRequired")}), 400
+    side = "good" if (data.get("side") == "good") else "bad"
+    try:
+        raw = base64.b64decode(raw_b64)
+        img_data = optimize_image_bytes(raw)
+    except Exception:
+        return jsonify({"error": smsg("fetchFail")}), 400
+    photo_id = str(_uuid.uuid4())
+    conn = get_db_connection()
+    try:
+        conn.execute(
+            "INSERT INTO zuken_rework_photos (id, rework_id, side, filename, data, created) "
+            "VALUES (?,?,?,?,?,?)",
+            (photo_id, rid, side, data.get("filename", "foto.jpg"),
+             img_data, _dt.now().isoformat(timespec="seconds")))
+        conn.commit()
+        checkpoint_wal(conn)
+    finally:
+        conn.close()
+    return jsonify({"id": photo_id, "side": side}), 201
+
+
+@app.route("/api/zuken/rework-photos/<photo_id>/raw", methods=["GET"])
+def api_zuken_rework_photo_raw(photo_id):
+    """Strumień obrazu do <img> (miniatury i podgląd)."""
+    conn = get_db_connection()
+    try:
+        row = conn.execute(
+            "SELECT filename, data FROM zuken_rework_photos WHERE id=?",
+            (photo_id,)).fetchone()
+    finally:
+        conn.close()
+    if not row:
+        return jsonify({"error": smsg("photoNotFound")}), 404
+    return Response(row["data"], mimetype="image/jpeg",
+                    headers={"Cache-Control": "public, max-age=3600"})
+
+
+@app.route("/api/zuken/rework-photos/<photo_id>", methods=["DELETE"])
+def api_zuken_rework_photo_delete(photo_id):
+    """Usuwa zdjęcie reworka."""
+    conn = get_db_connection()
+    try:
+        _mark_deleted(conn.cursor(), "zuken_rework_photos", photo_id)
+        conn.execute("DELETE FROM zuken_rework_photos WHERE id=?", (photo_id,))
+        conn.commit()
+        checkpoint_wal(conn)
+    finally:
+        conn.close()
+    return jsonify({"status": "ok"})
+
+
 @app.route("/api/zuken/kb/<ps_code>/open-folder", methods=["POST"])
 def api_zuken_kb_open_folder(ps_code):
     """Tworzy (jeśli trzeba) i otwiera folder Bazy wiedzy danego PS w Eksploratorze Windows."""
@@ -2225,13 +2397,36 @@ def api_zuken_kb_open_folder(ps_code):
     if not _valid_ps_code(ps):
         return jsonify({"error": zuken_service.zsmsg("kbBadPs", lang, v=ps_code)}), 400
     try:
-        kb_dir = os.path.join(zuken_service.BAZA_WIEDZY_DIR, ps)
+        kb_dir = zuken_service._kb_dir_for_ps(ps)
         os.makedirs(kb_dir, exist_ok=True)
         if hasattr(os, "startfile"):
             os.startfile(kb_dir)
         else:
             subprocess.Popen(["xdg-open", kb_dir])
         return jsonify({"status": "success", "folder": kb_dir})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/zuken/kb/<ps_code>/open-file", methods=["POST"])
+def api_zuken_kb_open_file(ps_code):
+    """Otwiera wskazany plik z drzewa Bazy wiedzy projektu w domyślnej aplikacji."""
+    lang = _app_lang()
+    ps = (ps_code or "").strip().upper()
+    if not _valid_ps_code(ps):
+        return jsonify({"error": zuken_service.zsmsg("kbBadPs", lang, v=ps_code)}), 400
+    data = request.get_json() or {}
+    rel = (data.get("path") or "").strip().replace("/", os.sep).replace("\\", os.sep)
+    base = os.path.normpath(zuken_service._kb_dir_for_ps(ps))
+    full = os.path.normpath(os.path.join(base, rel))
+    if not rel or rel.startswith("..") or not full.startswith(base + os.sep) or not os.path.isfile(full):
+        return jsonify({"error": smsg("notFound")}), 404
+    try:
+        if hasattr(os, "startfile"):
+            os.startfile(full)
+        else:
+            subprocess.Popen(["xdg-open", full])
+        return jsonify({"status": "success", "file": rel})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -2277,8 +2472,21 @@ def api_zuken_pdf_view(schematic_id):
 
         dir_path = os.path.dirname(filepath)
         file_name = os.path.basename(filepath)
-        response = send_from_directory(dir_path, file_name, mimetype="application/pdf", as_attachment=False)
-        response.headers["Content-Disposition"] = f'inline; filename="{file_name}"'
+        ext = os.path.splitext(file_name)[1].lower()
+        mime_map = {
+            ".pdf": "application/pdf",
+            ".txt": "text/plain; charset=utf-8",
+            ".png": "image/png",
+            ".jpg": "image/jpeg",
+            ".jpeg": "image/jpeg",
+            ".html": "text/html; charset=utf-8",
+            ".htm": "text/html; charset=utf-8",
+        }
+        mimetype = mime_map.get(ext, "application/octet-stream")
+        as_attachment = ext not in mime_map
+        response = send_from_directory(dir_path, file_name, mimetype=mimetype, as_attachment=as_attachment)
+        if not as_attachment:
+            response.headers["Content-Disposition"] = f'inline; filename="{file_name}"'
         return response
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -2316,6 +2524,17 @@ def api_zuken_pdf_open():
 
         filepath = row["filepath"]
         target = (data.get("target") or "").lower()
+
+        # Dokumenty projektu inne niż PDF (txt, msg, xlsx…) otwieramy w domyślnej aplikacji
+        if os.path.splitext(filepath)[1].lower() != ".pdf":
+            try:
+                if hasattr(os, "startfile"):
+                    os.startfile(filepath)
+                else:
+                    subprocess.Popen(["xdg-open", filepath])
+                return jsonify({"status": "success", "message": zuken_service.zsmsg("openedDefault", _app_lang())})
+            except Exception as e:
+                return jsonify({"error": str(e)}), 500
 
         if target == "pdf":
             ok, msg = zuken_service.open_pdf_in_system(filepath, page_number=page, lang=_app_lang())

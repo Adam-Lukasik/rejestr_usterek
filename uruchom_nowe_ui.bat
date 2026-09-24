@@ -40,7 +40,7 @@ if "%PYTHON%"=="" (
   exit /b 1
 )
 
-%PYTHON% -c "import flask, requests, webview, waitress, pypdfium2" >nul 2>&1
+%PYTHON% -c "import flask, requests, webview, waitress, pypdfium2, extract_msg" >nul 2>&1
 if errorlevel 1 (
   echo ========================================================
   echo   Instalowanie / aktualizacja bibliotek...

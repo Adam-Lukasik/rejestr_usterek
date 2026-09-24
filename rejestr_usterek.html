@@ -1404,9 +1404,9 @@
         <span data-i18n="nav.newDefect">Nowe zgłoszenie</span>
       </div>
 
-      <div class="nav-item" id="nav-zuken-menu" onclick="openAiDiagnosisModal({projekt: STATE.lastSelectedPS || ''})" title="Asystent Zuken E3 - Wyszukiwarka schematów, złączy i obwodów" data-i18n-title="js.nav.zukenItemTitle">
+      <div class="nav-item" id="nav-zuken-menu" onclick="openAiDiagnosisModal({projekt: STATE.lastSelectedPS || ''})" title="Asystent madA — wyszukiwarka schematów, złączy i obwodów" data-i18n-title="js.nav.zukenItemTitle">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
-        <span data-i18n="zuken.navItem">Asystent Zuken E3</span>
+        <span data-i18n="zuken.navItem">Asystent madA</span>
         <span class="nav-badge" style="background:linear-gradient(135deg, #0284c7, #2563eb); color:#fff; font-weight:700; font-size:9.5px; padding:1px 5px; border-radius:4px;">E3</span>
       </div>
 
@@ -1414,6 +1414,17 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
         <span data-i18n="zuken.navSummaries">Spis Złączy & Bezp.</span>
         <span class="nav-badge" style="background:linear-gradient(135deg, #10b981, #059669); color:#fff; font-weight:700; font-size:9.5px; padding:1px 5px; border-radius:4px;">PS</span>
+      </div>
+
+      <div class="nav-item" data-view="project-docs" id="nav-project-docs" title="Schematy i dokumenty projektu PS (Baza wiedzy)" data-i18n-title="nav.projectDocsTitle">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+        <span data-i18n="nav.projectDocs">Dokumenty projektu</span>
+      </div>
+
+      <div class="nav-item" data-view="reworks" id="nav-reworks" title="Lista reworków wiązki dla projektu PS" data-i18n-title="nav.reworksTitle">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+        <span data-i18n="nav.reworks">Reworki</span>
+        <span class="nav-badge alert" id="nav-badge-reworks" style="display:none;">0</span>
       </div>
 
 
@@ -1511,9 +1522,9 @@
             <svg id="icon-toggle-detail" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="15" y1="3" x2="15" y2="21"/></svg>
             <span id="text-toggle-detail" data-i18n="detail.togglePanelHide">Ukryj panel</span>
           </button>
-          <button class="btn-secondary-action" onclick="openAiDiagnosisModal({projekt: STATE.lastSelectedPS || ''})" style="border-color:var(--primary); color:var(--primary); font-weight:600; display:inline-flex; align-items:center; gap:6px;" title="Przeszukaj schematy Zuken E3, złącza, bezpieczniki i przewody" data-i18n-title="js.zuken.btnDiagnoseTitle2">
+          <button class="btn-secondary-action" onclick="openAiDiagnosisModal({projekt: STATE.lastSelectedPS || ''})" style="border-color:var(--primary); color:var(--primary); font-weight:600; display:inline-flex; align-items:center; gap:6px;" title="Przeszukaj schematy, złącza, bezpieczniki i przewody" data-i18n-title="js.zuken.btnDiagnoseTitle2">
             <span style="font-size:13px;">✨</span>
-            <span data-i18n="zuken.btnDiagnose">Asystent Zuken</span>
+            <span data-i18n="zuken.btnDiagnose">Asystent madA</span>
           </button>
           <button class="btn-secondary-action" id="btn-export-csv">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
@@ -1653,7 +1664,7 @@
                   <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:5px;">
                     <label for="f-opis-problem" style="margin-bottom:0;" data-i18n="ui.form.problemStar">Opis problemu *</label>
                     <button type="button" class="btn-secondary-action" style="padding:3px 10px; font-size:11.5px; border-color:var(--primary); color:var(--primary); font-weight:600; display:inline-flex; align-items:center; gap:5px;" onclick="runAiDiagnosisFromForm()" title="Sprawdź punkty pomiarowe, złącza i kolory kabli w schemacie Zuken" data-i18n-title="js.zuken.btnDiagnoseTitle" data-i18n="zuken.btnDiagnose">
-                      ✨ Asystent Zuken
+                      ✨ Asystent madA
                     </button>
                   </div>
                   <textarea id="f-opis-problem" data-i18n-placeholder="ui.form.problemPh" placeholder="Dokładny opis zaobserwowanej nieprawidłowości..." required style="min-height:90px;"></textarea>
@@ -2154,8 +2165,145 @@
       </div>
     </section>
 
+    <!-- ════════════ WIDOK: DOKUMENTY PROJEKTU (BAZA WIEDZY) ════════════ -->
+    <section class="view-panel" id="view-project-docs">
+      <div style="padding:20px; flex:1; overflow-y:auto; max-width:1100px; margin:0 auto; width:100%;">
+
+        <div style="background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius-lg); padding:16px 20px; margin-bottom:16px; box-shadow:var(--shadow-sm); display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:14px;">
+          <div style="display:flex; align-items:center; gap:12px; min-width:280px;">
+            <div style="width:40px; height:40px; border-radius:10px; background:linear-gradient(135deg, #0284c7 0%, #2563eb 100%); display:flex; align-items:center; justify-content:center; font-size:20px; color:#fff; box-shadow:0 3px 10px rgba(2,132,199,0.35); flex-shrink:0;">
+              📂
+            </div>
+            <div>
+              <h2 style="font-size:17px; font-weight:700; margin:0 0 2px 0;" data-i18n="ui.docs.title">Dokumenty projektu — Baza wiedzy</h2>
+              <p style="font-size:12px; color:var(--text-muted); margin:0;" data-i18n="ui.docs.subtitle">Schematy, instrukcje i dokumentacja przypisana do wybranego projektu PS</p>
+            </div>
+          </div>
+          <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+            <div style="display:flex; align-items:center; gap:6px;">
+              <label for="docs-ps-select" style="font-size:12px; font-weight:700; color:var(--text-muted);" data-i18n="zuken.selectProject">Projekt PS:</label>
+              <select id="docs-ps-select" style="padding:7px 12px; border-radius:var(--radius-md); border:1px solid var(--border); background:var(--bg-card-subtle); font-size:13px; font-weight:700; color:var(--text-main); cursor:pointer;" onchange="setCurrentPS(this.value); loadProjectDocs(this.value)"></select>
+            </div>
+            <button type="button" class="btn-secondary-action" style="padding:7px 12px; font-size:12.5px; display:inline-flex; align-items:center; gap:5px;" onclick="docsOpenFolder()" data-i18n-title="ui.docs.openFolderTitle" title="Otwórz folder Bazy wiedzy tego projektu w Eksploratorze">
+              <span>📂</span> <span data-i18n="ui.docs.openFolder">Otwórz folder</span>
+            </button>
+            <button type="button" class="btn-secondary-action" style="padding:7px 12px; font-size:12.5px; display:inline-flex; align-items:center; gap:5px;" onclick="openKbManager(DOCS_STATE.ps)" data-i18n-title="ui.projects.kbManageTitle" title="Otwórz menedżera plików Bazy wiedzy dla tego PS">
+              <span>📁</span> <span data-i18n="ui.projects.kbManage">Pliki Bazy wiedzy…</span>
+            </button>
+          </div>
+        </div>
+
+        <div id="docs-groups-container" style="display:flex; flex-direction:column; gap:14px;">
+          <!-- Renderowane w JS -->
+        </div>
+        <div id="docs-empty" style="display:none; text-align:center; padding:50px 20px; color:var(--text-muted);" data-i18n="ui.docs.empty">
+          Brak dokumentów dla wybranego projektu. Wrzuć pliki do folderu Bazy wiedzy lub użyj „Pliki Bazy wiedzy…".
+        </div>
+      </div>
+    </section>
+
+    <!-- ════════════ WIDOK: REWORKI WIĄZKI ════════════ -->
+    <section class="view-panel" id="view-reworks">
+      <div style="padding:20px; flex:1; overflow-y:auto; max-width:1100px; margin:0 auto; width:100%;">
+
+        <div style="background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius-lg); padding:16px 20px; margin-bottom:16px; box-shadow:var(--shadow-sm); display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:14px;">
+          <div style="display:flex; align-items:center; gap:12px; min-width:280px;">
+            <div style="width:40px; height:40px; border-radius:10px; background:linear-gradient(135deg, #d97706 0%, #b45309 100%); display:flex; align-items:center; justify-content:center; font-size:20px; color:#fff; box-shadow:0 3px 10px rgba(217,119,6,0.35); flex-shrink:0;">
+              🔧
+            </div>
+            <div>
+              <h2 style="font-size:17px; font-weight:700; margin:0 0 2px 0;" data-i18n="ui.reworks.title">Reworki wiązki</h2>
+              <p style="font-size:12px; color:var(--text-muted); margin:0;" data-i18n="ui.reworks.subtitle">Poprawki produkcyjne dla wybranego projektu PS (np. zamiana pinów w złączu)</p>
+            </div>
+          </div>
+          <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+            <div style="display:flex; align-items:center; gap:6px;">
+              <label for="reworks-ps-select" style="font-size:12px; font-weight:700; color:var(--text-muted);" data-i18n="zuken.selectProject">Projekt PS:</label>
+              <select id="reworks-ps-select" style="padding:7px 12px; border-radius:var(--radius-md); border:1px solid var(--border); background:var(--bg-card-subtle); font-size:13px; font-weight:700; color:var(--text-main); cursor:pointer;" onchange="setCurrentPS(this.value); loadReworks(this.value)"></select>
+            </div>
+            <button type="button" class="btn-primary-action" style="padding:7px 14px; font-size:12.5px; background:linear-gradient(135deg, #d97706, #b45309); border:none; display:inline-flex; align-items:center; gap:6px;" onclick="openReworkModal()">
+              <span>＋</span> <span data-i18n="ui.reworks.btnNew">Nowy rework</span>
+            </button>
+          </div>
+        </div>
+
+        <div id="reworks-list-container" style="display:flex; flex-direction:column; gap:12px;">
+          <!-- Renderowane w JS -->
+        </div>
+        <div id="reworks-empty" style="display:none; text-align:center; padding:50px 20px; color:var(--text-muted);" data-i18n="ui.reworks.empty">
+          Brak reworków dla wybranego projektu.
+        </div>
+      </div>
+    </section>
+
 
   </main>
+</div>
+
+<!-- ════════════ MODAL: REWORK (DODAJ / EDYTUJ) ════════════ -->
+<div class="modal-backdrop" id="modal-rework-edit" style="display:none;" onclick="if(event.target===this)closeModal('modal-rework-edit')">
+  <div class="modal-box" style="max-width:620px;" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <div style="display:flex; align-items:center; gap:10px;">
+        <span style="font-size:18px;">🔧</span>
+        <h3 id="modal-rework-title" style="margin:0; font-size:15px; font-weight:700;" data-i18n="ui.reworks.modalNew">Nowy rework</h3>
+      </div>
+      <button class="btn-icon" onclick="closeModal('modal-rework-edit')">✕</button>
+    </div>
+    <div class="modal-body" style="padding:16px 20px;">
+      <form id="form-rework-edit" onsubmit="return false;">
+        <input type="hidden" id="rw-id">
+        <input type="hidden" id="rw-ps">
+        <div class="form-group">
+          <label data-i18n="ui.reworks.fTitle">Tytuł *</label>
+          <input type="text" id="rw-title" required data-i18n-placeholder="ui.reworks.fTitlePh" placeholder="np. Zamiana pinów 16↔17 w X300 (zamek działa odwrotnie)">
+        </div>
+        <div class="form-group">
+          <label data-i18n="ui.reworks.fDesc">Opis</label>
+          <textarea id="rw-desc" rows="3" data-i18n-placeholder="ui.reworks.fDescPh" placeholder="Co i dlaczego poprawiamy, objawy, kto zgłosił…"></textarea>
+        </div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+          <div class="form-group">
+            <label data-i18n="ui.reworks.fConn">Złącze / urządzenie</label>
+            <input type="text" id="rw-connector" data-i18n-placeholder="ui.reworks.fConnPh" placeholder="np. X300">
+          </div>
+          <div class="form-group">
+            <label data-i18n="ui.reworks.fRange">Zakres aut (opcjonalnie)</label>
+            <input type="text" id="rw-range" data-i18n-placeholder="ui.reworks.fRangePh" placeholder="np. PS012999-001 – PS012999-035">
+          </div>
+        </div>
+        <div class="form-group">
+          <label data-i18n="ui.reworks.fPins">Zmiany pinów</label>
+          <div id="rw-pins-container" style="display:flex; flex-direction:column; gap:6px;"></div>
+          <button type="button" class="btn-secondary-action" style="padding:5px 10px; font-size:12px; align-self:flex-start;" onclick="addReworkPinRow()">＋ <span data-i18n="ui.reworks.addPin">Dodaj zmianę pinu</span></button>
+        </div>
+        <div class="form-group">
+          <label data-i18n="ui.reworks.fPhotos">Zdjęcia</label>
+          <div id="rw-photos-hint" style="font-size:11.5px; color:var(--text-muted); padding:6px 0;" data-i18n="ui.reworks.photosNeedSave">Zapisz rework, aby móc dodać zdjęcia.</div>
+          <div id="rw-photos-sections" style="display:none; grid-template-columns:1fr 1fr; gap:10px;">
+            <div style="border:1.5px solid rgba(239,68,68,0.4); border-radius:var(--radius-md); padding:8px 10px; background:rgba(239,68,68,0.04);">
+              <div style="font-size:11.5px; font-weight:800; color:#dc2626; margin-bottom:6px;" data-i18n="ui.reworks.photosBad">❌ Źle — stan błędny</div>
+              <div id="rw-photos-bad" style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:6px;"></div>
+              <button type="button" class="btn-secondary-action" style="padding:4px 10px; font-size:11px;" onclick="uploadReworkPhoto('bad')">📷 <span data-i18n="ui.reworks.addPhoto">Dodaj zdjęcie</span></button>
+            </div>
+            <div style="border:1.5px solid rgba(16,185,129,0.4); border-radius:var(--radius-md); padding:8px 10px; background:rgba(16,185,129,0.04);">
+              <div style="font-size:11.5px; font-weight:800; color:#059669; margin-bottom:6px;" data-i18n="ui.reworks.photosGood">✅ Dobrze — po reworku</div>
+              <div id="rw-photos-good" style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:6px;"></div>
+              <button type="button" class="btn-secondary-action" style="padding:4px 10px; font-size:11px;" onclick="uploadReworkPhoto('good')">📷 <span data-i18n="ui.reworks.addPhoto">Dodaj zdjęcie</span></button>
+            </div>
+          </div>
+        </div>
+        <div class="form-group">
+          <label data-i18n="ui.reworks.fAttach">Załącznik (dokument projektu)</label>
+          <select id="rw-attachment"></select>
+        </div>
+      </form>
+    </div>
+    <div class="modal-footer" style="display:flex; justify-content:flex-end; gap:8px; padding:12px 20px; border-top:1px solid var(--border);">
+      <button type="button" class="btn-secondary-action" onclick="closeModal('modal-rework-edit')" data-i18n="ui.common.cancel">Anuluj</button>
+      <button type="button" class="btn-primary-action" onclick="saveRework()" data-i18n="ui.common.save">Zapisz</button>
+    </div>
+  </div>
 </div>
 
 <!-- ════════════ MODAL: PEŁNY PODGLĄD USTERKI (DWUKLIK / PODGLĄD — PEŁNY EKRAN) ════════════ -->
@@ -2237,10 +2385,25 @@
             </div>
           </div>
         </div>
+        <div class="form-group">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:5px;">
+            <label style="margin-bottom:0;" data-i18n="ui.projects.controllerLabel">Sterownik główny</label>
+            <button type="button" class="btn-quick-add" onclick="toggleQuickAdd('sterownik')" data-i18n-title="ui.projects.addCtrlTitle" title="Dodaj nowy typ sterownika do listy" data-i18n="ui.form.btnNewController">＋ Nowy sterownik</button>
+          </div>
+          <select id="pe-sterownik" onchange="handleProjectDropdownChange('sterownik', this.value)"></select>
+          <div id="quick-add-sterownik-box" style="display:none; margin-top:8px; padding:10px 12px; background:var(--bg-card-subtle); border:1px solid var(--border); border-radius:var(--radius-md);">
+            <div style="font-size:12px; font-weight:600; color:var(--text-muted); margin-bottom:6px;" data-i18n="ui.projects.addCtrlLabel">Dodaj nowy typ sterownika:</div>
+            <div style="display:flex; gap:6px;">
+              <input type="text" id="quick-sterownik-input" data-i18n-placeholder="ui.projects.ctrlNamePh" placeholder="np. Inomatic iVE-200..." style="flex:1; padding:6px 10px; font-size:13px;" onkeydown="if(event.key==='Enter'){event.preventDefault();submitQuickAdd('sterownik');}if(event.key==='Escape'){event.preventDefault();toggleQuickAdd('sterownik',false);}">
+              <button type="button" class="btn-primary-action" style="padding:6px 12px; font-size:12px; white-space:nowrap;" onclick="submitQuickAdd('sterownik')" data-i18n="ui.common.save">Zapisz</button>
+              <button type="button" class="btn-secondary-action" style="padding:6px 10px; font-size:12px;" onclick="toggleQuickAdd('sterownik', false)">✕</button>
+            </div>
+          </div>
+        </div>
         <!-- ── Baza wiedzy — Asystent Zuken ── -->
         <div class="form-group" style="border-top:1px solid var(--border); padding-top:12px; margin-top:4px; margin-bottom:0;">
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-            <label style="margin-bottom:0;" data-i18n="ui.projects.kbTitle">📁 Baza wiedzy — Asystent Zuken</label>
+            <label style="margin-bottom:0;" data-i18n="ui.projects.kbTitle">📁 Baza wiedzy — Asystent madA</label>
             <button type="button" class="btn-quick-add" onclick="kbManageFromProjectModal()" data-i18n-title="ui.projects.kbManageTitle" title="Otwórz menedżera plików Bazy wiedzy dla tego PS" data-i18n="ui.projects.kbManage">📁 Pliki Bazy wiedzy…</button>
           </div>
           <div id="pe-kb-mini" style="font-size:12px; color:var(--text-muted); line-height:1.9;"></div>
@@ -2274,25 +2437,29 @@
       </div>
 
       <!-- Lista kontrolna wymaganych plików -->
-      <div style="font-size:12.5px; font-weight:700; margin-bottom:6px;" data-i18n="ui.kb.checklistTitle">Pliki potrzebne Asystentowi Zuken:</div>
+      <div style="font-size:12.5px; font-weight:700; margin-bottom:6px;" data-i18n="ui.kb.checklistTitle">Pliki potrzebne Asystentowi madA:</div>
       <div id="kb-checklist" style="display:flex; flex-direction:column; gap:8px; margin-bottom:8px;"></div>
       <div style="font-size:11.5px; color:var(--text-muted); margin-bottom:14px;" data-i18n="ui.kb.revisionsNote">Możesz dodać kilka rewizji każdego pliku — program rozpoznaje wersje po datach w nazwach.</div>
+
+      <!-- Dokumenty projektu — podfoldery w folderze PS pełnią rolę kategorii -->
+      <div style="font-size:12.5px; font-weight:700; margin-bottom:6px;" data-i18n="ui.kb.docsTitle">📄 Dokumenty projektu (podfoldery = kategorie):</div>
+      <div id="kb-docs" style="display:flex; flex-direction:column; gap:6px; margin-bottom:14px;"></div>
 
       <!-- Strefa wgrywania plików -->
       <div id="kb-dropzone" onclick="kbTriggerUpload()" ondragover="event.preventDefault(); this.style.borderColor='var(--primary)'; this.style.background='var(--bg-card-subtle)';" ondragleave="this.style.borderColor='var(--border)'; this.style.background='';" ondrop="event.preventDefault(); this.style.borderColor='var(--border)'; this.style.background=''; kbUploadFiles(Array.from(event.dataTransfer.files||[]));" style="border:2px dashed var(--border); border-radius:var(--radius-md); padding:16px; text-align:center; cursor:pointer; font-size:12.5px; color:var(--text-muted); margin-bottom:6px; transition:border-color .15s, background .15s;">
         <span style="font-size:18px;">📥</span>
         <span data-i18n-html="ui.kb.dropHint">Kliknij, aby wybrać pliki z dysku <b>lub przeciągnij je tutaj</b> (.xlsx, .pdf, .e3s, .html)</span>
       </div>
-      <input type="file" id="kb-file-input" multiple accept=".xlsx,.pdf,.e3s,.html,.htm,.xml,.json,.csv,.txt" style="display:none;" onchange="kbHandleFileInput(this)">
+      <input type="file" id="kb-file-input" multiple accept=".xlsx,.pdf,.e3s,.html,.htm,.xml,.json,.csv,.txt,.msg,.png,.jpg,.jpeg,.actp" style="display:none;" onchange="kbHandleFileInput(this)">
       <div id="kb-upload-log" style="display:none; font-size:12px; margin:8px 0 14px 0;"></div>
 
       <!-- Przetwarzanie po dodaniu plików -->
       <div style="border:1px solid var(--border); border-radius:var(--radius-md); padding:12px 14px; background:var(--bg-card-subtle); margin-top:14px;">
         <div style="font-size:12.5px; font-weight:700; margin-bottom:4px;" data-i18n="ui.kb.processTitle">⚙️ Przetwarzanie plików projektu</div>
         <div style="font-size:12px; color:var(--text-muted); line-height:1.5; margin-bottom:10px;" data-i18n-html="ui.kb.processDesc">
-          Po uzupełnieniu plików uruchom przetwarzanie — program automatycznie zaimportuje listy połączeń i BOM (XLSX) do bazy, zaindeksuje schematy PDF oraz wygeneruje zestawienia Asystenta (spis złączy z pinoutem, bezpieczniki, przekaźniki).
+          Po uzupełnieniu plików uruchom przetwarzanie — program automatycznie zaimportuje listy połączeń i BOM (XLSX) do bazy, zaindeksuje schematy PDF i dokumenty projektu, wygeneruje zestawienia Asystenta (spis złączy z pinoutem, bezpieczniki, przekaźniki) oraz pobierze w tle brakujące zdjęcia komponentów.
         </div>
-        <button type="button" class="btn-primary-action" id="btn-kb-process" style="background:linear-gradient(135deg,#10b981,#059669); border:none; font-size:12.5px; display:inline-flex; align-items:center; gap:6px;" onclick="kbProcessFiles()" data-i18n-title="ui.kb.processBtnTitle" title="Importuje XLSX, indeksuje PDF i generuje zestawienia Asystenta Zuken">
+        <button type="button" class="btn-primary-action" id="btn-kb-process" style="background:linear-gradient(135deg,#10b981,#059669); border:none; font-size:12.5px; display:inline-flex; align-items:center; gap:6px;" onclick="kbProcessFiles()" data-i18n-title="ui.kb.processBtnTitle" title="Importuje XLSX, indeksuje PDF i generuje zestawienia Asystenta madA">
           <span data-i18n="ui.kb.processBtn">⚡ Przetwórz pliki projektu</span>
         </button>
         <div id="kb-process-log" style="display:none; margin-top:10px; font-size:12px; max-height:180px; overflow-y:auto;"></div>
@@ -2604,7 +2771,7 @@
           ✨
         </div>
         <div>
-          <h3 style="font-size:16px; font-weight:700; margin:0; color:#fff;" data-i18n="zuken.modalTitle">Asystent Diagnostyczny Zuken E3 (Offline)</h3>
+          <h3 style="font-size:16px; font-weight:700; margin:0; color:#fff;" data-i18n="zuken.modalTitle">Asystent madA — Diagnostyka (Offline)</h3>
           <div style="font-size:11.5px; color:#94a3b8;" data-i18n="zuken.modalSubtitle">Lokalna analiza wiązek elektrycznych, punktów pomiarowych i historii napraw</div>
         </div>
       </div>
@@ -2715,7 +2882,7 @@
     <div style="padding:12px 20px; background:var(--bg-card); border-top:1px solid var(--border); display:flex; justify-content:space-between; align-items:center; flex-shrink:0;">
       <div style="font-size:11.5px; color:var(--text-muted); display:flex; align-items:center; gap:6px;">
         <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#10b981;"></span>
-        <span data-i18n="ui.zuken.offlineFooter">Lokalny silnik Zuken E3 & Raport BOM (100% Offline)</span>
+        <span data-i18n="ui.zuken.offlineFooter">Lokalny silnik madA & Raport BOM (100% Offline)</span>
       </div>
       <button type="button" class="btn-secondary-action" onclick="closeModal('modal-zuken-diagnose')" data-i18n="ui.common.close">Zamknij</button>
     </div>
@@ -2944,7 +3111,7 @@ const STATE = {
   selectedRecordId: null,
   editingRecordId: null,
   activeSolutionId: null,
-  lastSelectedPS: '',
+  lastSelectedPS: localStorage.getItem('ru_last_ps') || '',
   theme: localStorage.getItem('ru_theme') || 'light',
   pendingPhotos: [], // [{filename, data: base64, isNew: true}]
   pendingDocs: [],   // [{filename, data: base64, filesize: int, isNew: true}]
@@ -3226,6 +3393,8 @@ function switchView(viewName) {
   if (viewName === 'users') renderUsersTable();
   if (viewName === 'dashboard') renderDefectsTable();
   if (viewName === 'zuken-summaries') loadZukenSummariesView();
+  if (viewName === 'project-docs') loadProjectDocsView();
+  if (viewName === 'reworks') loadReworksView();
   if (viewName === 'backup') loadBackupStatus();
 }
 
@@ -3459,7 +3628,7 @@ async function selectRecord(recId) {
           ✏ ${t('table.btnEdit')}
         </button>
         <button class="btn-primary-action" style="padding:5px 12px; font-size:12px; background:linear-gradient(135deg, #0284c7 0%, #2563eb 100%); border:none; box-shadow:0 2px 8px rgba(37,99,235,0.3);" onclick="openAiDiagnosisForRecord('${r.id}')" title="${t('js.form.zukenHintTitle')}">
-          ✨ ${typeof t === 'function' ? t('zuken.btnDiagnose') : 'Asystent Zuken'}
+          ✨ ${typeof t === 'function' ? t('zuken.btnDiagnose') : 'Asystent madA'}
         </button>
         <button class="btn-secondary-action" style="color:var(--red);" onclick="deleteRecordConfirm('${r.id}')">
           🗑 ${t('table.btnDelete')}
@@ -4030,11 +4199,17 @@ function ensureOptionAndSet(selectEl, value) {
   selectEl.value = value;
 }
 
+function setCurrentPS(ps) {
+  STATE.lastSelectedPS = ps || '';
+  if (ps) localStorage.setItem('ru_last_ps', ps);
+  else localStorage.removeItem('ru_last_ps');
+}
+
 // Auto-uzupełnianie klienta i modelu po wyborze PS
 document.getElementById('f-projekt').addEventListener('change', (e) => {
   const ps = e.target.value;
   if (!ps) return;
-  STATE.lastSelectedPS = ps;
+  setCurrentPS(ps);
   fillClientAndModelFromPS(ps);
 });
 
@@ -4969,11 +5144,15 @@ function renderProjectsTable() {
   `).join('');
 }
 
-function renderProjectModalDropdowns(selectedKlient = '', selectedModel = '') {
+const DEFAULT_CONTROLLER_TYPES = ['Acetech CP20', 'Carnation Genesis EVPSS', 'Inomatic'];
+
+function renderProjectModalDropdowns(selectedKlient = '', selectedModel = '', selectedCtrl = 'AUTO') {
   const kSel = document.getElementById('pe-klient');
   const mSel = document.getElementById('pe-model');
+  const cSel = document.getElementById('pe-sterownik');
   const klienci = STATE.lists.klienci || [];
   const modele = STATE.lists.modele || [];
+  const ctrls = STATE.lists.sterowniki || DEFAULT_CONTROLLER_TYPES;
 
   let kHtml = `<option value="">${t('ui.projects.selectClient')}</option>` +
     klienci.map(k => `<option value="${escapeHtml(k)}" ${k === selectedKlient ? 'selected' : ''}>${escapeHtml(k)}</option>`).join('') +
@@ -4984,6 +5163,16 @@ function renderProjectModalDropdowns(selectedKlient = '', selectedModel = '') {
     modele.map(m => `<option value="${escapeHtml(m)}" ${m === selectedModel ? 'selected' : ''}>${escapeHtml(m)}</option>`).join('') +
     `<option value="__NEW_MODEL__" style="color:var(--primary); font-weight:600;">${t('ui.projects.addNewModel')}</option>`;
   mSel.innerHTML = mHtml;
+
+  if (cSel) {
+    cSel.innerHTML =
+      `<option value="AUTO" ${selectedCtrl === 'AUTO' || !selectedCtrl ? 'selected' : ''}>${t('ui.projects.ctrlAuto')}</option>` +
+      `<option value="BRAK" ${selectedCtrl === 'BRAK' ? 'selected' : ''}>${t('ui.projects.ctrlNone')}</option>` +
+      ctrls.map(c => `<option value="${escapeHtml(c)}" ${c === selectedCtrl ? 'selected' : ''}>${escapeHtml(c)}</option>`).join('');
+    if (selectedCtrl && !['AUTO', 'BRAK'].includes(selectedCtrl) && !ctrls.includes(selectedCtrl)) {
+      cSel.innerHTML += `<option value="${escapeHtml(selectedCtrl)}" selected>${escapeHtml(selectedCtrl)}</option>`;
+    }
+  }
 
   if (selectedKlient) kSel.value = selectedKlient;
   if (selectedModel) mSel.value = selectedModel;
@@ -5003,11 +5192,17 @@ function handleProjectDropdownChange(type, value) {
   }
 }
 
+const QUICK_ADD_CFG = {
+  client:    { box: 'quick-add-client-box',    inp: 'quick-client-input',    key: 'klienci' },
+  model:     { box: 'quick-add-model-box',     inp: 'quick-model-input',     key: 'modele' },
+  sterownik: { box: 'quick-add-sterownik-box', inp: 'quick-sterownik-input', key: 'sterowniki' }
+};
+
 function toggleQuickAdd(type, show) {
-  const boxId = type === 'client' ? 'quick-add-client-box' : 'quick-add-model-box';
-  const inpId = type === 'client' ? 'quick-client-input' : 'quick-model-input';
-  const box = document.getElementById(boxId);
-  const inp = document.getElementById(inpId);
+  const cfg = QUICK_ADD_CFG[type];
+  if (!cfg) return;
+  const box = document.getElementById(cfg.box);
+  const inp = document.getElementById(cfg.inp);
   if (!box) return;
 
   const isVisible = show !== undefined ? show : (box.style.display === 'none' || !box.style.display);
@@ -5019,38 +5214,38 @@ function toggleQuickAdd(type, show) {
 }
 
 async function submitQuickAdd(type) {
-  const isClient = type === 'client';
-  const key = isClient ? 'klienci' : 'modele';
-  const inpId = isClient ? 'quick-client-input' : 'quick-model-input';
-  const inp = document.getElementById(inpId);
+  const cfg = QUICK_ADD_CFG[type];
+  if (!cfg) return;
+  const inp = document.getElementById(cfg.inp);
   const val = (inp ? inp.value : '').trim();
 
   if (!val) {
-    showToast(isClient ? t('js.dict.enterClientName') : t('js.dict.enterModelName'), 'warning');
+    showToast(t('js.dict.enterName'), 'warning');
     if (inp) inp.focus();
     return;
   }
 
-  STATE.lists[key] = STATE.lists[key] || [];
-  if (!STATE.lists[key].includes(val)) {
-    STATE.lists[key].push(val);
-    STATE.lists[key].sort((a, b) => a.localeCompare(b));
+  STATE.lists[cfg.key] = STATE.lists[cfg.key] || (type === 'sterownik' ? [...DEFAULT_CONTROLLER_TYPES] : []);
+  if (!STATE.lists[cfg.key].includes(val)) {
+    STATE.lists[cfg.key].push(val);
+    STATE.lists[cfg.key].sort((a, b) => a.localeCompare(b));
     try {
       await apiCall('/api/lists', 'PUT', STATE.lists);
-      showToast(isClient ? t('js.dict.addedClient', { v: val }) : t('js.dict.addedModel', { v: val }), 'success');
+      showToast(t('js.dict.addedName', { v: val }), 'success');
     } catch(err) {
       showToast(t('ui.dict.saveError', { v: err.message }), 'error');
       return;
     }
   } else {
-    showToast(t(isClient ? 'js.dict.clientExists' : 'js.dict.modelExists', { v: val }), 'info');
+    showToast(t('js.dict.nameExists', { v: val }), 'info');
   }
 
   toggleQuickAdd(type, false);
 
-  const curKlient = isClient ? val : document.getElementById('pe-klient').value;
-  const curModel = isClient ? document.getElementById('pe-model').value : val;
-  renderProjectModalDropdowns(curKlient, curModel);
+  const curKlient = type === 'client' ? val : document.getElementById('pe-klient').value;
+  const curModel = type === 'model' ? val : document.getElementById('pe-model').value;
+  const curCtrl = type === 'sterownik' ? val : (document.getElementById('pe-sterownik')?.value || 'AUTO');
+  renderProjectModalDropdowns(curKlient, curModel, curCtrl);
 
   renderFormDropdowns();
   renderDictionaries();
@@ -5062,22 +5257,30 @@ function openNewProjectDialog() {
   document.getElementById('pe-ps').value = '';
   toggleQuickAdd('client', false);
   toggleQuickAdd('model', false);
+  toggleQuickAdd('sterownik', false);
 
-  renderProjectModalDropdowns('', '');
+  renderProjectModalDropdowns('', '', 'AUTO');
   openModal('modal-project-edit');
   kbRefreshMiniChecklist();
   setTimeout(() => document.getElementById('pe-ps')?.focus(), 60);
 }
 
-function editProjectDialog(ps) {
+async function editProjectDialog(ps) {
   const meta = (STATE.lists.projekty || {})[ps] || {};
   document.getElementById('modal-project-title').textContent = t('ui.projects.modalEdit', { v: ps });
   document.getElementById('pe-old-ps').value = ps;
   document.getElementById('pe-ps').value = ps;
   toggleQuickAdd('client', false);
   toggleQuickAdd('model', false);
+  toggleQuickAdd('sterownik', false);
 
-  renderProjectModalDropdowns(meta.klient || '', meta.model || '');
+  let ctrlType = 'AUTO';
+  try {
+    const cs = await apiCall(`/api/zuken/kb/${encodeURIComponent(ps)}/controller`);
+    ctrlType = (cs.settings && cs.settings.controller_type) || 'AUTO';
+  } catch(e) { /* starszy backend lub brak ustawień — Auto */ }
+
+  renderProjectModalDropdowns(meta.klient || '', meta.model || '', ctrlType);
   openModal('modal-project-edit');
   kbRefreshMiniChecklist();
   setTimeout(() => document.getElementById('pe-ps')?.focus(), 60);
@@ -5112,8 +5315,14 @@ document.getElementById('form-project-edit').addEventListener('submit', async (e
   }
   STATE.lists.projektyByKlient = pbk;
 
+  const ctrlType = document.getElementById('pe-sterownik')?.value || 'AUTO';
+
   try {
     await apiCall('/api/lists', 'PUT', STATE.lists);
+    // Ustawienia sterownika projektu (typ; plik wskazuje się w modalu Bazy wiedzy)
+    try {
+      await apiCall(`/api/zuken/kb/${encodeURIComponent(newPs)}/controller`, 'POST', { controller_type: ctrlType });
+    } catch(e) { /* backend bez obsługi — pomijamy */ }
     showToast(t('js.projects.saved'), 'success');
     closeModal('modal-project-edit');
     renderProjectsTable();
@@ -5123,7 +5332,7 @@ document.getElementById('form-project-edit').addEventListener('submit', async (e
     const projSel = document.getElementById('f-projekt');
     if (projSel) {
       ensureOptionAndSet(projSel, newPs);
-      STATE.lastSelectedPS = newPs;
+      setCurrentPS(newPs);
       fillClientAndModelFromPS(newPs);
     }
 
@@ -5239,13 +5448,500 @@ function renderKbChecklist(res) {
       <span style="color:var(--text-muted);">·</span>
       ${summLine}
     </div>`;
+
+  // Wybór pliku logiki sterownika (typ ustawia się w edycji projektu)
+  const ctrl = res.controller || {};
+  const cands = ctrl.candidates || [];
+  const curFile = (ctrl.settings && ctrl.settings.controller_file) || '';
+  if (cands.length || curFile) {
+    const opts = [`<option value="">${t('ui.kb.ctrlFileAuto')}</option>`]
+      .concat(cands.map(c => `<option value="${escapeHtml(c)}" ${c === curFile ? 'selected' : ''}>${escapeHtml(c)}</option>`));
+    if (curFile && !cands.includes(curFile)) {
+      opts.push(`<option value="${escapeHtml(curFile)}" selected>${escapeHtml(curFile)} ⚠️</option>`);
+    }
+    box.innerHTML += `
+      <div style="display:flex; gap:8px; align-items:center; padding:8px 11px; border-radius:var(--radius-md); font-size:12px; background:var(--bg-card); border:1px solid var(--border);">
+        <span style="font-weight:700; color:var(--text-main); white-space:nowrap;">🧠 ${t('ui.kb.ctrlFileLabel')}:</span>
+        <select style="flex:1; min-width:0; font-size:12px;" onchange="kbSaveControllerFile('${escapeHtml(res.ps_code)}', this.value)">${opts.join('')}</select>
+      </div>`;
+  }
+
+  renderKbDocuments(res.documents || []);
+}
+
+async function kbSaveControllerFile(ps, file) {
+  try {
+    await apiCall(`/api/zuken/kb/${encodeURIComponent(ps)}/controller`, 'POST', { controller_file: file });
+    showToast(t('ui.kb.ctrlFileSaved'), 'success');
+  } catch(err) {
+    showToast(t('js.common.error', { v: err.message }), 'error');
+  }
+}
+
+function kbDocIcon(name) {
+  const ext = (name.split('.').pop() || '').toLowerCase();
+  const map = { pdf: '📕', xlsx: '📊', e3s: '🔧', txt: '📄', msg: '✉️',
+                png: '🖼️', jpg: '🖼️', jpeg: '🖼️', html: '🌐', htm: '🌐',
+                actp: '⚙️', csv: '📋', json: '📋', xml: '📋' };
+  return map[ext] || '📄';
+}
+
+function renderKbDocuments(docs) {
+  const box = document.getElementById('kb-docs');
+  if (!box) return;
+  KB_STATE.docs = docs;
+  if (!docs.length) {
+    box.innerHTML = `<div style="font-size:11.5px; color:var(--text-muted); padding:6px 2px;">${t('ui.kb.docsEmpty')}</div>`;
+    return;
+  }
+  const groups = {};
+  docs.forEach((d, i) => {
+    const cat = d.category || '';
+    (groups[cat] = groups[cat] || []).push(i);
+  });
+  const cats = Object.keys(groups).sort((a, b) => (a === '' ? -1 : b === '' ? 1 : a.localeCompare(b)));
+  box.innerHTML = cats.map(cat => {
+    const rows = groups[cat].map(i => {
+      const d = docs[i];
+      const sizeKb = d.size ? ` <span style="color:var(--text-muted); font-size:10px;">(${Math.max(1, Math.round(d.size / 1024))} KB)</span>` : '';
+      const indexedBadge = d.indexed ? ` <span style="font-size:9.5px; font-weight:700; color:#059669; background:rgba(16,185,129,0.12); padding:0 5px; border-radius:6px;" title="${t('ui.kb.docIndexedTitle')}">✓ AI</span>` : '';
+      return `<div style="display:flex; align-items:center; gap:8px; padding:3px 4px; border-radius:6px;" onmouseover="this.style.background='var(--bg-card-subtle)'" onmouseout="this.style.background=''">
+        <span style="flex-shrink:0;">${kbDocIcon(d.name)}</span>
+        <span style="flex:1; min-width:0; font-size:12px; color:var(--text-main); word-break:break-all;" title="${escapeHtml(d.rel)}">${escapeHtml(d.name)}${indexedBadge}${sizeKb}</span>
+        <button type="button" class="btn-secondary-action" style="padding:2px 9px; font-size:11px; white-space:nowrap; flex-shrink:0;" onclick="kbOpenDoc(${i})">${t('ui.kb.docOpen')}</button>
+      </div>`;
+    }).join('');
+    const catLabel = cat || t('ui.kb.catMain');
+    return `<div style="border:1px solid var(--border); border-radius:var(--radius-md); padding:7px 10px; background:var(--bg-card);">
+      <div style="font-size:10.5px; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:.4px; margin-bottom:3px;">📁 ${escapeHtml(catLabel)}</div>
+      ${rows}
+    </div>`;
+  }).join('');
+}
+
+async function kbOpenDoc(idx) {
+  const d = (KB_STATE.docs || [])[idx];
+  const ps = KB_STATE.ps;
+  if (!d || !ps) return;
+  try {
+    await apiCall(`/api/zuken/kb/${encodeURIComponent(ps)}/open-file`, 'POST', { path: d.rel });
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   DOKUMENTY PROJEKTU (widok) + REWORKI (widok + CRUD)
+   ═══════════════════════════════════════════════════════════════════ */
+const DOCS_STATE = { ps: '', docs: [] };
+const REWORKS_STATE = { ps: '', items: [], docs: [] };
+
+async function _psProjectsOptions() {
+  const res = await apiCall('/api/zuken/ps-projects');
+  const list = (res.projects || []).map(p => p.ps_code || p).filter(Boolean);
+  return [...new Set(list)];
+}
+
+async function _fillPsSelect(selId, preferredPs) {
+  const sel = document.getElementById(selId);
+  if (!sel) return '';
+  const codes = await _psProjectsOptions();
+  sel.innerHTML = codes.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
+  const want = preferredPs || sel.value || STATE.lastSelectedPS || codes[0] || '';
+  if (want && codes.includes(want)) sel.value = want;
+  else if (codes.length) sel.value = codes[0];
+  return sel.value || '';
+}
+
+/* ── Dokumenty projektu ── */
+async function loadProjectDocsView(preferredPs) {
+  const ps = await _fillPsSelect('docs-ps-select', preferredPs);
+  DOCS_STATE.ps = ps;
+  if (ps) await loadProjectDocs(ps);
+}
+
+async function loadProjectDocs(ps) {
+  DOCS_STATE.ps = ps || DOCS_STATE.ps;
+  const box = document.getElementById('docs-groups-container');
+  const empty = document.getElementById('docs-empty');
+  if (!box) return;
+  if (!DOCS_STATE.ps) { box.innerHTML = ''; if (empty) empty.style.display = 'block'; return; }
+  box.innerHTML = `<div style="color:var(--text-muted); font-size:12.5px; padding:20px; text-align:center;">⏳ ${t('js.common.loading')}</div>`;
+  try {
+    const res = await apiCall(`/api/zuken/kb/${encodeURIComponent(DOCS_STATE.ps)}/files`);
+    DOCS_STATE.docs = res.documents || [];
+    if (!DOCS_STATE.docs.length) {
+      box.innerHTML = '';
+      if (empty) empty.style.display = 'block';
+      return;
+    }
+    if (empty) empty.style.display = 'none';
+    const groups = {};
+    DOCS_STATE.docs.forEach((d, i) => {
+      (groups[d.category || ''] = groups[d.category || ''] || []).push(i);
+    });
+    const cats = Object.keys(groups).sort((a, b) => (a === '' ? -1 : b === '' ? 1 : a.localeCompare(b)));
+    box.innerHTML = cats.map(cat => {
+      const rows = groups[cat].map(i => {
+        const d = DOCS_STATE.docs[i];
+        const sizeKb = d.size ? ` <span style="color:var(--text-muted); font-size:10.5px;">${Math.max(1, Math.round(d.size / 1024))} KB</span>` : '';
+        const ai = d.indexed ? ` <span style="font-size:9.5px; font-weight:700; color:#059669; background:rgba(16,185,129,0.12); padding:0 6px; border-radius:6px;" title="${escapeHtml(t('ui.kb.docIndexedTitle'))}">✓ AI</span>` : '';
+        return `<div style="display:flex; align-items:center; gap:10px; padding:7px 10px; border-radius:8px; border:1px solid var(--border); background:var(--bg-card-subtle);">
+          <span style="font-size:17px; flex-shrink:0;">${kbDocIcon(d.name)}</span>
+          <div style="flex:1; min-width:0;">
+            <div style="font-size:12.5px; font-weight:600; color:var(--text-main); word-break:break-all;">${escapeHtml(d.name)}${ai}</div>
+            <div style="font-size:10.5px; color:var(--text-muted);">${escapeHtml(d.rel)}${sizeKb}</div>
+          </div>
+          <button type="button" class="btn-secondary-action" style="padding:4px 12px; font-size:11.5px; white-space:nowrap; flex-shrink:0;" onclick="docsOpenFile(${i})">${t('ui.docs.open')}</button>
+        </div>`;
+      }).join('');
+      const catLabel = cat || t('ui.kb.catMain');
+      return `<div style="background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius-lg); padding:12px 16px; box-shadow:var(--shadow-sm);">
+        <div style="font-size:12px; font-weight:800; color:var(--text-main); margin-bottom:8px; display:flex; align-items:center; gap:6px;">📁 ${escapeHtml(catLabel)} <span style="color:var(--text-muted); font-weight:600;">(${groups[cat].length})</span></div>
+        <div style="display:flex; flex-direction:column; gap:6px;">${rows}</div>
+      </div>`;
+    }).join('');
+  } catch (err) {
+    box.innerHTML = `<div style="color:var(--red); font-size:12.5px; padding:14px;">❌ ${escapeHtml(err.message)}</div>`;
+  }
+}
+
+async function docsOpenFile(idx) {
+  const d = (DOCS_STATE.docs || [])[idx];
+  if (!d || !DOCS_STATE.ps) return;
+  try {
+    await apiCall(`/api/zuken/kb/${encodeURIComponent(DOCS_STATE.ps)}/open-file`, 'POST', { path: d.rel });
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+}
+
+async function docsOpenFolder() {
+  if (!DOCS_STATE.ps) return;
+  try {
+    await apiCall(`/api/zuken/kb/${encodeURIComponent(DOCS_STATE.ps)}/open-folder`, 'POST', {});
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+}
+
+/* ── Reworki ── */
+async function loadReworksView(preferredPs) {
+  const ps = await _fillPsSelect('reworks-ps-select', preferredPs);
+  REWORKS_STATE.ps = ps;
+  if (ps) await loadReworks(ps);
+  updateReworkNavBadge();
+}
+
+async function loadReworks(ps) {
+  REWORKS_STATE.ps = ps || REWORKS_STATE.ps;
+  const box = document.getElementById('reworks-list-container');
+  const empty = document.getElementById('reworks-empty');
+  if (!box) return;
+  if (!REWORKS_STATE.ps) { box.innerHTML = ''; if (empty) empty.style.display = 'block'; return; }
+  try {
+    const res = await apiCall(`/api/zuken/reworks?ps=${encodeURIComponent(REWORKS_STATE.ps)}`);
+    REWORKS_STATE.items = res.reworks || [];
+    renderReworksList();
+    updateReworkNavBadge();
+    // Odśwież badge 🔧 w ostatnio wygenerowanym diagramie obwodu (cache wyniku trace)
+    const lc = ZUKEN_STATE.lastCircuit;
+    if (lc && lc.ok && (!lc.ps_code || lc.ps_code === REWORKS_STATE.ps)) {
+      lc.reworks = REWORKS_STATE.items;
+    }
+  } catch (err) {
+    box.innerHTML = `<div style="color:var(--red); font-size:12.5px; padding:14px;">❌ ${escapeHtml(err.message)}</div>`;
+  }
+}
+
+async function updateReworkNavBadge() {
+  const badge = document.getElementById('nav-badge-reworks');
+  if (!badge || !REWORKS_STATE.ps) return;
+  try {
+    const res = await apiCall(`/api/zuken/reworks?ps=${encodeURIComponent(REWORKS_STATE.ps)}`);
+    const n = (res.reworks || []).length;
+    badge.style.display = n > 0 ? '' : 'none';
+    badge.textContent = n;
+  } catch (e) { /* ignore */ }
+}
+
+function renderReworksList() {
+  const box = document.getElementById('reworks-list-container');
+  const empty = document.getElementById('reworks-empty');
+  if (!box) return;
+  const items = REWORKS_STATE.items;
+  if (!items.length) {
+    box.innerHTML = '';
+    if (empty) empty.style.display = 'block';
+    return;
+  }
+  if (empty) empty.style.display = 'none';
+  box.innerHTML = items.map(rw => {
+    const pins = (rw.pin_changes || []).map(p =>
+      `<span style="font-family:var(--font-mono,monospace); font-size:11px; font-weight:700; color:#7c3aed; background:rgba(124,58,237,0.10); border:1px solid rgba(124,58,237,0.25); padding:1px 8px; border-radius:5px;">${escapeHtml(p.a || '')} ⇄ ${escapeHtml(p.b || '')}${p.note ? ` <span style="font-weight:600; color:var(--text-muted);">(${escapeHtml(p.note)})</span>` : ''}</span>`
+    ).join(' ');
+    const dateStr = (rw.created_at || '').slice(0, 10);
+    return `<div style="background:var(--bg-card); border:1px solid var(--border); border-left:4px solid #d97706; border-radius:var(--radius-lg); padding:13px 16px; box-shadow:var(--shadow-sm);">
+      <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px; flex-wrap:wrap;">
+        <div style="flex:1; min-width:220px;">
+          <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:4px;">
+            ${rw.connector ? `<span style="font-family:var(--font-mono,monospace); font-size:13px; font-weight:800; color:var(--primary);">${escapeHtml(rw.connector)}</span>` : ''}
+            <span style="font-size:13.5px; font-weight:700; color:var(--text-main);">${escapeHtml(rw.title)}</span>
+          </div>
+          ${rw.description ? `<div style="font-size:12px; color:var(--text-main); margin-bottom:5px; white-space:pre-wrap;">${escapeHtml(rw.description)}</div>` : ''}
+          <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+            ${pins}
+            ${rw.vehicle_range ? `<span style="font-size:11px; color:var(--text-muted);">🚗 ${escapeHtml(rw.vehicle_range)}</span>` : ''}
+            ${rw.attachment ? `<a href="#" onclick="reworkOpenAttachment(${rw.id}); return false;" style="font-size:11px; color:var(--primary);">📎 ${escapeHtml(rw.attachment.split(/[\\/]/).pop())}</a>` : ''}
+            <span style="font-size:10.5px; color:var(--text-muted);">${dateStr}</span>
+          </div>
+          <div id="rw-card-photos-${rw.id}" style="display:flex; gap:6px; flex-wrap:wrap; margin-top:7px;"></div>
+        </div>
+        <div style="display:flex; gap:6px; flex-shrink:0; flex-wrap:wrap;">
+          ${rw.connector ? `<button type="button" class="btn-secondary-action" style="padding:4px 10px; font-size:11.5px;" onclick="showReworkConnFace('${escapeHtml(rw.connector)}', ${rw.id})" title="${escapeHtml(t('ui.reworks.showConnTitle'))}">🔌 ${t('ui.reworks.showConn')}</button>` : ''}
+          <button type="button" class="btn-secondary-action" style="padding:4px 10px; font-size:11.5px;" onclick="openReworkModal(${rw.id})">✏️ ${t('ui.common.edit')}</button>
+          <button type="button" class="btn-secondary-action" style="padding:4px 10px; font-size:11.5px; color:var(--red);" onclick="deleteRework(${rw.id})">🗑</button>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+  items.forEach(rw => loadReworkCardPhotos(rw.id));
+}
+
+/* Miniatury zdjęć na karcie reworka: najpierw ❌ (źle), potem ✅ (dobrze). */
+async function loadReworkCardPhotos(rwId) {
+  const slot = document.getElementById(`rw-card-photos-${rwId}`);
+  if (!slot) return;
+  try {
+    const res = await apiCall(`/api/zuken/reworks/${rwId}/photos`);
+    const photos = res.photos || [];
+    if (!photos.length) return;
+    const bad = photos.filter(p => p.side !== 'good'), good = photos.filter(p => p.side === 'good');
+    const urls = [...bad, ...good].map(p => `/api/zuken/rework-photos/${p.id}/raw`);
+    const thumb = (p, i, isBad) =>
+      `<img src="/api/zuken/rework-photos/${p.id}/raw" onclick='openLightboxGallery(${JSON.stringify(urls)}, ${i}, ${JSON.stringify(t('ui.reworks.badgeTitle'))})'
+        style="width:44px; height:44px; object-fit:cover; border-radius:6px; cursor:pointer; border:2px solid ${isBad ? 'rgba(239,68,68,0.55)' : 'rgba(16,185,129,0.55)'};"
+        title="${escapeHtml(p.filename || '')} — ${isBad ? t('ui.reworks.photosBad') : t('ui.reworks.photosGood')}">`;
+    let i = 0;
+    slot.innerHTML = bad.map(p => thumb(p, i++, true)).join('') + good.map(p => thumb(p, i++, false)).join('');
+  } catch (e) { /* zdjęcia opcjonalne */ }
+}
+
+
+async function reworkOpenAttachment(id) {
+  const rw = (REWORKS_STATE.items || []).find(x => x.id === id);
+  if (!rw || !rw.attachment || !REWORKS_STATE.ps) return;
+  try {
+    await apiCall(`/api/zuken/kb/${encodeURIComponent(REWORKS_STATE.ps)}/open-file`, 'POST', { path: rw.attachment });
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+}
+
+function addReworkPinRow(a = '', b = '', note = '') {
+  const box = document.getElementById('rw-pins-container');
+  if (!box) return;
+  const row = document.createElement('div');
+  row.style.cssText = 'display:flex; gap:6px; align-items:center;';
+  row.innerHTML = `
+    <input type="text" class="rw-pin-a" value="${escapeHtml(a)}" placeholder="16" style="width:64px; padding:5px 8px; font-size:12px; text-align:center; font-family:var(--font-mono,monospace);">
+    <span style="color:var(--text-muted); font-weight:700;">⇄</span>
+    <input type="text" class="rw-pin-b" value="${escapeHtml(b)}" placeholder="17" style="width:64px; padding:5px 8px; font-size:12px; text-align:center; font-family:var(--font-mono,monospace);">
+    <input type="text" class="rw-pin-note" value="${escapeHtml(note)}" placeholder="${escapeHtml(t('ui.reworks.pinNotePh'))}" style="flex:1; padding:5px 8px; font-size:12px;">
+    <button type="button" class="btn-secondary-action" style="padding:4px 8px; font-size:11px;" onclick="this.parentElement.remove()">✕</button>`;
+  box.appendChild(row);
+}
+
+async function openReworkModal(id) {
+  const rw = id ? (REWORKS_STATE.items || []).find(x => x.id === id) : null;
+  document.getElementById('modal-rework-title').textContent = rw ? t('ui.reworks.modalEdit') : t('ui.reworks.modalNew');
+  document.getElementById('rw-id').value = rw ? rw.id : '';
+  document.getElementById('rw-ps').value = REWORKS_STATE.ps;
+  document.getElementById('rw-title').value = rw ? rw.title || '' : '';
+  document.getElementById('rw-desc').value = rw ? rw.description || '' : '';
+  document.getElementById('rw-connector').value = rw ? rw.connector || '' : '';
+  document.getElementById('rw-range').value = rw ? rw.vehicle_range || '' : '';
+  const pinsBox = document.getElementById('rw-pins-container');
+  pinsBox.innerHTML = '';
+  (rw && rw.pin_changes && rw.pin_changes.length ? rw.pin_changes : [null])
+    .forEach(p => addReworkPinRow(p ? p.a : '', p ? p.b : '', p ? (p.note || '') : ''));
+
+  // załączniki — dokumenty projektu z Bazy wiedzy
+  const attach = document.getElementById('rw-attachment');
+  attach.innerHTML = `<option value="">${t('ui.reworks.noAttachment')}</option>`;
+  try {
+    const res = await apiCall(`/api/zuken/kb/${encodeURIComponent(REWORKS_STATE.ps)}/files`);
+    REWORKS_STATE.docs = res.documents || [];
+    attach.innerHTML += REWORKS_STATE.docs
+      .map(d => `<option value="${escapeHtml(d.rel)}" ${rw && rw.attachment === d.rel ? 'selected' : ''}>${escapeHtml(d.rel)}</option>`)
+      .join('');
+  } catch (e) { /* brak dokumentów — zostaje opcja pusta */ }
+
+  // zdjęcia źle/dobrze — dostępne dla zapisanego reworka
+  const hint = document.getElementById('rw-photos-hint');
+  const sect = document.getElementById('rw-photos-sections');
+  if (hint) hint.style.display = rw ? 'none' : '';
+  if (sect) sect.style.display = rw ? 'grid' : 'none';
+  if (rw) loadReworkPhotos(rw.id);
+  openModal('modal-rework-edit');
+}
+
+async function loadReworkPhotos(rwId) {
+  const badBox = document.getElementById('rw-photos-bad');
+  const goodBox = document.getElementById('rw-photos-good');
+  if (!badBox || !goodBox) return;
+  try {
+    const res = await apiCall(`/api/zuken/reworks/${rwId}/photos`);
+    const photos = res.photos || [];
+    const render = p => `<span style="position:relative; display:inline-block;">
+      <img src="/api/zuken/rework-photos/${p.id}/raw" onclick="openLightboxGallery(['/api/zuken/rework-photos/${p.id}/raw'], 0, '${escapeHtml(p.filename || '')}')"
+        style="width:56px; height:56px; object-fit:cover; border-radius:6px; cursor:pointer; border:1px solid var(--border);">
+      <button type="button" onclick="deleteReworkPhoto('${p.id}', ${rwId})" title="${escapeHtml(t('ui.reworks.delPhoto'))}"
+        style="position:absolute; top:-6px; right:-6px; width:18px; height:18px; border-radius:50%; border:none; background:var(--red,#dc2626); color:#fff; font-size:10px; line-height:1; cursor:pointer;">✕</button>
+    </span>`;
+    badBox.innerHTML = photos.filter(p => p.side !== 'good').map(render).join('');
+    goodBox.innerHTML = photos.filter(p => p.side === 'good').map(render).join('');
+  } catch (e) { /* ignoruj */ }
+}
+
+function uploadReworkPhoto(side) {
+  const rwId = document.getElementById('rw-id').value;
+  if (!rwId) return;
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'image/*';
+  input.onchange = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const b64 = reader.result.split(',')[1];
+      try {
+        await apiCall(`/api/zuken/reworks/${rwId}/photos`, 'POST', { filename: file.name, data: b64, side });
+        showToast(t('ui.reworks.photoAdded'), 'success');
+        loadReworkPhotos(rwId);
+      } catch (err) {
+        showToast(t('js.common.error', { v: err.message }), 'error');
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+  input.click();
+}
+
+async function deleteReworkPhoto(photoId, rwId) {
+  if (!confirm(t('ui.reworks.confirmDelPhoto'))) return;
+  try {
+    await apiCall(`/api/zuken/rework-photos/${photoId}`, 'DELETE');
+    loadReworkPhotos(rwId);
+  } catch (err) {
+    showToast(t('js.common.error', { v: err.message }), 'error');
+  }
+}
+
+async function saveRework() {
+  const id = document.getElementById('rw-id').value;
+  const ps = document.getElementById('rw-ps').value || REWORKS_STATE.ps;
+  const pin_changes = [...document.querySelectorAll('#rw-pins-container > div')]
+    .map(row => ({
+      a: row.querySelector('.rw-pin-a').value.trim(),
+      b: row.querySelector('.rw-pin-b').value.trim(),
+      note: row.querySelector('.rw-pin-note').value.trim()
+    }))
+    .filter(p => p.a || p.b);
+  const payload = {
+    ps_code: ps,
+    title: document.getElementById('rw-title').value.trim(),
+    description: document.getElementById('rw-desc').value.trim(),
+    connector: document.getElementById('rw-connector').value.trim(),
+    vehicle_range: document.getElementById('rw-range').value.trim(),
+    attachment: document.getElementById('rw-attachment').value,
+    pin_changes
+  };
+  if (!payload.title) {
+    showToast(t('ui.reworks.titleRequired'), 'warning');
+    return;
+  }
+  try {
+    if (id) {
+      await apiCall(`/api/zuken/reworks/${id}`, 'PUT', payload);
+      closeModal('modal-rework-edit');
+      showToast(t('ui.reworks.saved'), 'success');
+      await loadReworks();
+    } else {
+      const res = await apiCall('/api/zuken/reworks', 'POST', payload);
+      // Po utworzeniu modal zostaje otwarty w trybie edycji — od razu można dodać zdjęcia
+      const newId = res.rework && res.rework.id;
+      document.getElementById('rw-id').value = newId || '';
+      document.getElementById('modal-rework-title').textContent = t('ui.reworks.modalEdit');
+      const hint = document.getElementById('rw-photos-hint');
+      const sect = document.getElementById('rw-photos-sections');
+      if (hint) hint.style.display = 'none';
+      if (sect) sect.style.display = 'grid';
+      showToast(t('ui.reworks.savedAddPhotos'), 'success');
+      await loadReworks();
+    }
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+}
+
+async function deleteRework(id) {
+  if (!confirm(t('ui.reworks.confirmDelete'))) return;
+  try {
+    await apiCall(`/api/zuken/reworks/${id}`, 'DELETE');
+    await loadReworks();
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+}
+
+/* Standalone widok obudowy złącza dla reworka — bez kontekstu obwodu. */
+async function showReworkConnFace(connector, reworkId) {
+  const rw = (REWORKS_STATE.items || []).find(x => x.id === reworkId) || {};
+  const pins = (rw.pin_changes || []).flatMap(p => [p.a, p.b]).filter(Boolean);
+  let item = null;
+  try {
+    const res = await apiCall(`/api/zuken/summaries/connectors?ps=${encodeURIComponent(REWORKS_STATE.ps)}&q=${encodeURIComponent(connector)}&limit=20`);
+    const want = connector.toUpperCase();
+    item = (res.items || []).find(x => (x.device_clean || '').toUpperCase() === want)
+        || (res.items || []).find(x => (x.device_code || '').toUpperCase() === want)
+        || (res.items || [])[0];
+  } catch (e) { /* brak zestawień */ }
+  const L = item ? connFaceLayout({ article: item.article_number || '', desc: item.description || '', pins: item.pin_count || (item.pins || []).length }) : null;
+  closeConnFace();
+  const overlay = document.createElement('div');
+  overlay.id = 'conn-face-overlay';
+  overlay.style.cssText = 'position:fixed; inset:0; background:rgba(0,0,0,0.35); z-index:10010; display:flex; align-items:center; justify-content:center; padding:20px;';
+  overlay.onclick = (ev) => { if (ev.target === overlay) closeConnFace(); };
+  const pinsChips = pins.length
+    ? `<div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:8px;">${pins.map(p => `<span style="font-family:var(--font-mono,monospace); font-size:11px; font-weight:700; color:#b45309; background:rgba(217,119,6,0.12); border:1px solid rgba(217,119,6,0.3); padding:1px 8px; border-radius:5px;">⚠️ pin ${escapeHtml(p)}</span>`).join('')}</div>`
+    : '';
+  const faceHtml = L
+    ? connFaceSvg(L, pins)
+    : `<div style="padding:14px; font-size:12px; color:var(--text-muted);">${t('ui.reworks.noConnLayout')}</div>`;
+  overlay.innerHTML = `
+    <div style="background:var(--bg-card,#fff); border-radius:12px; max-width:560px; width:100%; max-height:80vh; display:flex; flex-direction:column; box-shadow:0 20px 50px rgba(0,0,0,0.3); border:1px solid var(--border);">
+      <div style="padding:12px 18px; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; gap:10px;">
+        <div style="font-weight:800; font-size:14px; color:var(--text-main);">⚠️ ${escapeHtml(connector)} — ${escapeHtml(t('js.zuken.connViewTitle'))}</div>
+        <button onclick="closeConnFace()" style="background:none; border:none; font-size:18px; cursor:pointer; color:var(--text-muted); line-height:1;">✕</button>
+      </div>
+      <div style="padding:14px 18px; overflow-y:auto;">
+        ${rw.title ? `<div style="font-size:12px; font-weight:600; color:var(--text-main); margin-bottom:8px;">${escapeHtml(rw.title)}</div>` : ''}
+        ${item ? `<div style="font-size:11px; color:var(--text-muted); margin-bottom:6px;">${escapeHtml(item.article_number || '')} ${escapeHtml(item.description || '')}</div>` : ''}
+        ${faceHtml}
+        ${pinsChips}
+        <div style="margin-top:10px; font-size:11px; color:var(--text-muted);">${escapeHtml(t('js.zuken.connWireSide'))}</div>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
 }
 
 function kbTriggerUpload(accept) {
   const inp = document.getElementById('kb-file-input');
   if (!inp) return;
   inp.value = '';
-  inp.accept = accept || '.xlsx,.pdf,.e3s,.html,.htm,.xml,.json,.csv,.txt';
+  inp.accept = accept || '.xlsx,.pdf,.e3s,.html,.htm,.xml,.json,.csv,.txt,.msg,.png,.jpg,.jpeg,.actp';
   inp.click();
 }
 
@@ -5310,6 +6006,19 @@ async function kbProcessFiles() {
       const s = res.summaries;
       const sMsg = (s.message_key ? t('js.zuken.' + s.message_key, s.message_params || {}) : '') || s.message || '';
       html += `<div style="margin-top:6px; padding-top:6px; border-top:1px solid var(--border); font-weight:700; color:${s.status === 'success' ? '#059669' : 'var(--red)'};">⚡ ${escapeHtml(sMsg)}</div>`;
+    }
+    if (res.controller) {
+      const c = res.controller;
+      if (c.status === 'ok') {
+        html += `<div style="padding:2px 0; color:#4f46e5;">🧠 ${t('ui.kb.ctrlDetected', { n: c.name, f: c.file || '' })}</div>`;
+      } else if (c.status === 'declared') {
+        html += `<div style="padding:2px 0; color:#d97706;">⚠️ ${t('ui.kb.ctrlDeclaredWarn', { n: c.name })}</div>`;
+      } else if (c.status === 'none') {
+        html += `<div style="padding:2px 0; color:var(--text-muted);">🧠 ${t('ui.kb.ctrlNoneMsg')}</div>`;
+      }
+    }
+    if (res.images && res.images.message) {
+      html += `<div style="padding:2px 0; color:${res.images.started ? '#059669' : 'var(--text-muted)'};">📷 ${escapeHtml(res.images.message)}</div>`;
     }
     if (log) log.innerHTML = html || `<div>${t('ui.kb.processDone')}</div>`;
     showToast(t('ui.kb.processDone'), res.status === 'success' ? 'success' : 'warning');
@@ -6723,23 +7432,10 @@ function openAiDiagnosisModal(ctx = {}) {
   const input = document.getElementById('zuken-search-input');
   const projSelect = document.getElementById('zuken-context-project-select');
 
-  // Wypełnij listę dostępnych projektów PS
+  // Wypełnij listę dostępnych projektów PS (rejestr + foldery Bazy wiedzy)
   if (projSelect) {
     const activeVal = ctx.projekt || STATE.lastSelectedPS || '';
-    let options = `<option value="">${t('js.zuken.allSchematics')}</option>`;
-    
-    const psList = new Set();
-    (STATE.projects || []).forEach(p => {
-      if (p.numer) psList.add(p.numer);
-      if (p.kod) psList.add(p.kod);
-    });
-    psList.add('PS011871');
-
-    Array.from(psList).filter(Boolean).sort().forEach(ps => {
-      const isSel = (ps.toUpperCase() === (activeVal || '').toUpperCase()) ? 'selected' : '';
-      options += `<option value="${escapeHtml(ps)}" ${isSel}>${escapeHtml(ps)}</option>`;
-    });
-    projSelect.innerHTML = options;
+    fillZukenProjectSelect(projSelect, activeVal);
   }
 
   updateZukenContextBadge();
@@ -6761,6 +7457,35 @@ function openAiDiagnosisModal(ctx = {}) {
       </div>
     `;
     if (input) input.focus();
+  }
+}
+
+async function fillZukenProjectSelect(projSelect, activeVal) {
+  const psList = new Set();
+  (STATE.projects || []).forEach(p => {
+    if (p.numer) psList.add(p.numer);
+    if (p.kod) psList.add(p.kod);
+  });
+  try {
+    const res = await apiCall('/api/zuken/ps-projects');
+    (res.projects || []).forEach(p => { if (p.ps_code) psList.add(p.ps_code); });
+  } catch (e) { /* fallback: tylko projekty z rejestru */ }
+  psList.add('PS011871');
+
+  let options = `<option value="">${t('js.zuken.allSchematics')}</option>`;
+  Array.from(psList).filter(Boolean).sort().forEach(ps => {
+    const isSel = (ps.toUpperCase() === (activeVal || '').toUpperCase()) ? 'selected' : '';
+    options += `<option value="${escapeHtml(ps)}" ${isSel}>${escapeHtml(ps)}</option>`;
+  });
+  projSelect.innerHTML = options;
+
+  // Jeśli aktywny projekt nie figuruje na liście — dopisz go, żeby nie stracić kontekstu
+  if (activeVal && ![...projSelect.options].some(o => o.value.toUpperCase() === activeVal.toUpperCase())) {
+    const opt = document.createElement('option');
+    opt.value = activeVal;
+    opt.textContent = activeVal;
+    opt.selected = true;
+    projSelect.appendChild(opt);
   }
 }
 
@@ -6799,6 +7524,7 @@ function clearZukenSolutionFilter() {
 function onZukenProjectSelectChange(val) {
   if (!ZUKEN_STATE.currentContext) ZUKEN_STATE.currentContext = {};
   ZUKEN_STATE.currentContext.projekt = val;
+  setCurrentPS(val);
   const input = document.getElementById('zuken-search-input');
   if (input && input.value.trim()) {
     runAiDiagnosisSearch();
@@ -7009,22 +7735,23 @@ function renderDiagnosisResults(data) {
     `;
   }
 
-  // 2a. Dedykowana karta kontrolera logicznego Carnation Genesis EVPSS
-  if (data.carnation_logic && (
-    (data.carnation_logic.relevant_outputs && data.carnation_logic.relevant_outputs.length > 0) ||
-    (data.carnation_logic.relevant_inputs && data.carnation_logic.relevant_inputs.length > 0) ||
-    (data.carnation_logic.battery_thresholds && data.carnation_logic.battery_thresholds.length > 0) ||
-    (data.carnation_logic.audio_messages && data.carnation_logic.audio_messages.length > 0)
+  // 2a. Dedykowana karta sterownika projektu (Carnation/Acetech/...)
+  if (data.controller_logic && (
+    (data.controller_logic.relevant_outputs && data.controller_logic.relevant_outputs.length > 0) ||
+    (data.controller_logic.relevant_inputs && data.controller_logic.relevant_inputs.length > 0) ||
+    (data.controller_logic.battery_thresholds && data.controller_logic.battery_thresholds.length > 0) ||
+    (data.controller_logic.audio_messages && data.controller_logic.audio_messages.length > 0) ||
+    data.controller_logic.diagnostic_summary
   )) {
-    const cl = data.carnation_logic;
+    const cl = data.controller_logic;
     html += `
       <div style="padding:14px 16px; background:linear-gradient(135deg, rgba(99, 102, 241, 0.08) 0%, rgba(139, 92, 246, 0.05) 100%); border:1.5px solid rgba(99, 102, 241, 0.35); border-radius:var(--radius-md); display:flex; flex-direction:column; gap:10px;">
         <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
           <div style="display:flex; align-items:center; gap:8px;">
             <span style="font-size:22px;">🧠</span>
             <div>
-              <div style="font-size:12.5px; font-weight:800; color:#4f46e5; text-transform:uppercase; letter-spacing:0.5px;">${t('js.zuken.carnationTitle', { v: escapeHtml(cl.version || '1.81a') })}</div>
-              <div style="font-size:11.5px; color:var(--text-muted);">${t('js.zuken.cfgFile')} <strong>${escapeHtml(cl.filename || 'v1.81a - 21 Mar 2025.html')}</strong> (${escapeHtml(cl.vehicle || 'WAS PL EoE Box')}) • ${t('js.zuken.ioSummary')}</div>
+              <div style="font-size:12.5px; font-weight:800; color:#4f46e5; text-transform:uppercase; letter-spacing:0.5px;">${t('js.zuken.controllerTitle', { v: escapeHtml((cl.controller || '') + (cl.version ? ' v' + cl.version : '')) })}</div>
+              <div style="font-size:11.5px; color:var(--text-muted);">${t('js.zuken.cfgFile')} <strong>${escapeHtml(cl.filename || '—')}</strong> (${escapeHtml(cl.vehicle || '—')}) • ${t('js.zuken.ioSummary')}</div>
             </div>
           </div>
           <span style="font-size:11px; font-weight:700; padding:2px 8px; border-radius:4px; background:rgba(99, 102, 241, 0.15); color:#4f46e5; border:1px solid rgba(99, 102, 241, 0.3);">
@@ -7051,7 +7778,7 @@ function renderDiagnosisResults(data) {
             <div style="display:flex; gap:8px; flex-wrap:wrap;">
               ${cl.relevant_inputs.map(inp => `
                 <div style="padding:4px 10px; background:var(--bg-card); border:1px solid var(--border); border-radius:6px; font-family:var(--font-mono, monospace); font-size:12px;">
-                  <strong style="color:#0284c7;">${escapeHtml(inp.full_name || inp.code)}</strong> <span style="color:var(--text-muted); font-size:11px;">(${t('js.zuken.pinLine')} ${escapeHtml(inp.num)})</span>
+                  <strong style="color:#0284c7;">${escapeHtml(inp.full_name || inp.code)}</strong> ${inp.num ? `<span style="color:var(--text-muted); font-size:11px;">(${t('js.zuken.pinLine')} ${escapeHtml(inp.num)})</span>` : ''}
                 </div>
               `).join('')}
             </div>
@@ -8451,11 +9178,10 @@ async function loadZukenSummariesView(preferredPs) {
       ZUKEN_SUMM_STATE.psProjects = res.projects;
       const select = document.getElementById('zuken-summ-ps-select');
       if (select) {
+        const wantPs = preferredPs || ZUKEN_SUMM_STATE.currentPs || STATE.lastSelectedPS || 'PS011871';
         let html = '';
         res.projects.forEach(p => {
-          const isSel = (preferredPs && p.ps_code.toUpperCase() === preferredPs.toUpperCase()) ||
-                        (!preferredPs && !ZUKEN_SUMM_STATE.currentPs && p.ps_code === 'PS011871') ||
-                        (ZUKEN_SUMM_STATE.currentPs && p.ps_code.toUpperCase() === ZUKEN_SUMM_STATE.currentPs.toUpperCase());
+          const isSel = p.ps_code.toUpperCase() === wantPs.toUpperCase();
           html += `<option value="${escapeHtml(p.ps_code)}" ${isSel ? 'selected' : ''}>${escapeHtml(p.ps_code)} — ${escapeHtml(p.project_name || p.client || '')}</option>`;
         });
         select.innerHTML = html;
@@ -8474,6 +9200,7 @@ async function loadZukenSummariesView(preferredPs) {
 
 function onZukenSummariesPsChange(ps) {
   ZUKEN_SUMM_STATE.currentPs = ps;
+  setCurrentPS(ps);
   updateZukenSummariesHeaderInfo();
   refreshZukenActiveSummaryTab();
 }
@@ -8651,6 +9378,7 @@ async function loadZukenConnectorsList() {
                   <span style="font-size:15px; font-weight:800; color:var(--text-main); font-family:var(--font-mono, monospace);">${escapeHtml(item.device_code)}</span>
                   ${item.device_clean !== item.device_code ? `<span class="badge" style="font-size:11px; font-weight:700; background:rgba(2,132,199,0.12); color:#0284c7;">${escapeHtml(item.device_clean)}</span>` : ''}
                   <span class="badge" style="font-size:11px; font-weight:700; background:rgba(16,185,129,0.12); color:#059669;">${t('ui.zuken.pinCount', { n: item.pin_count })}</span>
+                  ${(item.reworks || []).length ? `<span class="badge" style="font-size:11px; font-weight:700; background:rgba(217,119,6,0.14); color:#b45309; cursor:pointer;" title="${escapeHtml((item.reworks || []).map(r => r.title).join('\n'))}" onclick="switchView('reworks')">🔧 ${t('ui.reworks.badge', { n: item.reworks.length })}</span>` : ''}
                 </div>
                 <div style="font-size:12px; color:var(--text-muted); margin-top:3px;">
                   <span>📍 ${escapeHtml(item.system || '')} ${escapeHtml(item.location || '')} ${item.location_desc ? '— ' + escapeHtml(item.location_desc) : ''}</span>
@@ -9106,17 +9834,22 @@ function showWirePath(el) {
 
 function jumpToWireDevice(clean) {
   closeWirePath();
+  closeCircuitOverlay();
+  closeModal('modal-zuken-diagnose');
   const c = (clean || '').toUpperCase().replace(/'/g, '');
   let tab = 'connectors';
   if (/^(RT|K)\d/.test(c)) tab = 'relays';
   else if (/^FH?\d/.test(c)) tab = 'fuses';
-  switchZukenSummaryTab(tab);
+  const ps = (ZUKEN_STATE.currentContext && ZUKEN_STATE.currentContext.projekt) || '';
+  if (ps) ZUKEN_SUMM_STATE.currentPs = ps;
   const ids = { connectors: 'zuken-conn-search', fuses: 'zuken-fuse-search', relays: 'zuken-relay-search' };
   const inp = document.getElementById(ids[tab]);
   if (inp) inp.value = c;
-  if (tab === 'connectors') { ZUKEN_SUMM_STATE.connectorsSearch = c; loadZukenConnectorsList(); }
-  else if (tab === 'fuses') { ZUKEN_SUMM_STATE.fusesSearch = c; loadZukenFusesList(); }
-  else { ZUKEN_SUMM_STATE.relaysSearch = c; loadZukenRelaysList(); }
+  if (tab === 'connectors') ZUKEN_SUMM_STATE.connectorsSearch = c;
+  else if (tab === 'fuses') ZUKEN_SUMM_STATE.fusesSearch = c;
+  else ZUKEN_SUMM_STATE.relaysSearch = c;
+  switchView('zuken-summaries');
+  switchZukenSummaryTab(tab);
 }
 
 // Karta "Ścieżka sygnału" w wynikach asystenta — sieć połączeń od pinu do końców
@@ -9453,6 +10186,7 @@ function connFacePinAt(L, r, c) {
 }
 
 function connFaceSvg(L, pin) {
+  const pinSet = new Set([].concat(pin == null ? [] : pin).map(String));
   const cw = 30, ch = 24, pad = 7, latchH = 13;
   const W = pad * 2 + L.cols * cw, H = latchH + pad * 2 + L.rows * ch;
   const latchTop = L.gender !== 'M'; // męska rysowana obrócona o 180°
@@ -9463,7 +10197,7 @@ function connFaceSvg(L, pin) {
   for (let r = 0; r < L.rows; r++)
     for (let c = 0; c < L.cols; c++) {
       const p = connFacePinAt(L, r, c);
-      const hot = String(p) === String(pin);
+      const hot = pinSet.has(String(p));
       const x = pad + c * cw, y = boxY + pad + r * ch;
       s += `<rect x="${x + 1}" y="${y + 1}" width="${cw - 2}" height="${ch - 2}" rx="3" fill="${hot ? '#0284c7' : 'var(--bg-card-subtle,#f1f5f9)'}" stroke="${hot ? '#0284c7' : 'var(--border,#cbd5e1)'}" stroke-width="${hot ? 2 : 1}"/>`;
       s += `<text x="${x + cw / 2}" y="${y + ch / 2 + 3.5}" text-anchor="middle" font-size="${L.cols > 6 ? 8.5 : 10}" font-weight="${hot ? 800 : 600}" fill="${hot ? '#fff' : 'var(--text-muted,#475569)'}" font-family="monospace">${p}</text>`;
@@ -9600,6 +10334,13 @@ function circuitSvgForLoad(ld, connMeta) {
   };
   const trunk2 = mergeMates(trunk), gndChain2 = mergeMates(gndChain);
 
+  // Złącza objęte reworkiem projektu → badge 🔧 na węźle diagramu
+  const rwTitles = {};
+  ((ZUKEN_STATE.lastCircuit || {}).reworks || []).forEach(rw => {
+    const key = (rw.connector || '').toUpperCase();
+    if (key) (rwTitles[key] = rwTitles[key] || []).push(rw.title || '');
+  });
+
   const rowOf = {};
   trunk2.forEach((nd, i) => { rowOf[nd.dev + ':' + nd.pin] = i; });
   gndChain2.forEach((nd, j) => { rowOf[nd.dev + ':' + nd.pin] = trunk2.length + j; });
@@ -9682,6 +10423,8 @@ function circuitSvgForLoad(ld, connMeta) {
       : [nd.info, pinFrac, cm.type || cm.article || cm.supplier || ''].filter(Boolean).join(' · ');
     svg += `<text x="${x + 8}" y="${y + 15}" font-size="11" font-weight="700" fill="${fg}" font-family="monospace">${rs.icon ? rs.icon + ' ' : ''}${escapeHtml(nodeTitle)}</text>`;
     if (nodeInfo) svg += `<text x="${x + 8}" y="${y + 28}" font-size="9" fill="${nd.role === 'gnd' ? '#cbd5e1' : 'var(--text-muted, #64748b)'}">${escapeHtml(String(nodeInfo).slice(0, 46))}</text>`;
+    const rwT = rwTitles[(nd.clean || '').toUpperCase()];
+    if (rwT) svg += `<text x="${x + boxW - 16}" y="${y + 15}" font-size="11" style="cursor:help">🔧<title>${escapeHtml(t('ui.reworks.badgeTitle'))}: ${escapeHtml(rwT.join(' | '))}</title></text>`;
     if (canFace) svg += '</g>';
   });
 
