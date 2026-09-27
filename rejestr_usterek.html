@@ -3311,6 +3311,7 @@ async function loadAllData() {
     if (STATE.currentView === 'projects') renderProjectsTable();
     if (STATE.currentView === 'dictionaries') renderDictionaries();
     if (STATE.currentView === 'users') renderUsersTable();
+    maybeSuggestDefaultPS();
   } catch (err) {
     updateConnectionStatus(false);
   }
@@ -4203,6 +4204,25 @@ function setCurrentPS(ps) {
   STATE.lastSelectedPS = ps || '';
   if (ps) localStorage.setItem('ru_last_ps', ps);
   else localStorage.removeItem('ru_last_ps');
+}
+
+// Raz po pierwszym wczytaniu danych: gdy nie ma zapamiętanego projektu PS,
+// ustaw go automatycznie (gdy jest tylko jeden) albo poinformuj o wyborze.
+async function maybeSuggestDefaultPS() {
+  if (STATE._defaultPsChecked) return;
+  STATE._defaultPsChecked = true;
+  if (STATE.lastSelectedPS) return;
+  const codes = new Set(Object.keys(STATE.lists.projekty || {}));
+  try {
+    const res = await apiCall('/api/zuken/ps-projects');
+    (res.projects || []).forEach(p => { const c = p.ps_code || p; if (c) codes.add(c); });
+  } catch (e) { /* podpowiedź to dodatek — błąd pomijamy */ }
+  const list = [...codes];
+  if (list.length === 1) {
+    setCurrentPS(list[0]);
+  } else if (list.length > 1) {
+    showToast(t('js.zuken.defaultPsHint'), 'info');
+  }
 }
 
 // Auto-uzupełnianie klienta i modelu po wyborze PS
@@ -7433,9 +7453,11 @@ function openAiDiagnosisModal(ctx = {}) {
   const input = document.getElementById('zuken-search-input');
   const projSelect = document.getElementById('zuken-context-project-select');
 
+  const activeVal = ctx.projekt || STATE.lastSelectedPS || '';
+  ZUKEN_STATE.currentContext.projekt = activeVal;
+
   // Wypełnij listę dostępnych projektów PS (rejestr + foldery Bazy wiedzy)
   if (projSelect) {
-    const activeVal = ctx.projekt || STATE.lastSelectedPS || '';
     fillZukenProjectSelect(projSelect, activeVal);
   }
 
@@ -7525,7 +7547,7 @@ function clearZukenSolutionFilter() {
 function onZukenProjectSelectChange(val) {
   if (!ZUKEN_STATE.currentContext) ZUKEN_STATE.currentContext = {};
   ZUKEN_STATE.currentContext.projekt = val;
-  setCurrentPS(val);
+  if (val) setCurrentPS(val);
   const input = document.getElementById('zuken-search-input');
   if (input && input.value.trim()) {
     runAiDiagnosisSearch();
@@ -7538,7 +7560,7 @@ function runAiDiagnosisFromForm() {
   const opis = (document.getElementById('f-opis-problem') ? document.getElementById('f-opis-problem').value : '').trim();
   const klient = (document.getElementById('f-klient') ? document.getElementById('f-klient').value : '').trim();
   const vin = (document.getElementById('f-vin') ? document.getElementById('f-vin').value : '').trim();
-  const proj = STATE.lastSelectedPS || '';
+  const proj = (document.getElementById('f-projekt') ? document.getElementById('f-projekt').value : '') || STATE.lastSelectedPS || '';
 
   openAiDiagnosisModal({
     element: element,
@@ -7619,7 +7641,7 @@ async function runAiDiagnosisSearch() {
       element: query,
       opisProblem: ZUKEN_STATE.currentContext.opisProblem || query,
       typ: ZUKEN_STATE.currentContext.typ || '',
-      projekt: ZUKEN_STATE.currentContext.projekt || STATE.lastSelectedPS || '',
+      projekt: ZUKEN_STATE.currentContext.projekt || '',
       klient: ZUKEN_STATE.currentContext.klient || '',
       vin: ZUKEN_STATE.currentContext.vin || '',
       record_id: ZUKEN_STATE.currentContext.record_id || '',
@@ -10618,7 +10640,7 @@ async function runCircuitTrace() {
   const resBody = document.getElementById('zuken-results-body');
   if (!query) { inp.focus(); return; }
   resBody.innerHTML = `<div style="text-align:center; padding:40px 20px; color:var(--text-muted);"><div class="spinner" style="width:28px; height:28px; border:3px solid var(--border); border-top-color:var(--primary); border-radius:50%; animation:spin 0.8s linear infinite; margin:0 auto 12px auto;"></div>${escapeHtml(t('js.zuken.analyzing'))}</div>`;
-  const ps = ZUKEN_STATE.currentContext.projekt || (typeof STATE !== 'undefined' ? STATE.lastSelectedPS : '') || '';
+  const ps = ZUKEN_STATE.currentContext.projekt || '';
   try {
     const cp = await apiCall(`/api/zuken/circuit-path?ps=${encodeURIComponent(ps)}&q=${encodeURIComponent(query)}`);
     ZUKEN_STATE.lastCircuit = cp;
