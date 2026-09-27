@@ -21,6 +21,9 @@ ENV/
 .vscode/
 .idea/
 
+# Ustawienia lokalne okna/UI (różne na każdej maszynie)
+desktop_config.json
+
 # Pliki tymczasowe i logi
 *.log
 *.tmp
