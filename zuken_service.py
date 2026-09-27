@@ -4660,7 +4660,7 @@ def _build_acetech_info(parsed, query_text="", lang="pl"):
     """Kontekstowe informacje z raportu Acetech dla zapytania diagnostycznego.
     Dopasowanie generyczne: tokeny zapytania (+synonimy) vs nazwy I/O."""
     q_upper = (query_text or "").upper()
-    q_toks = _circuit_tokens(query_text)
+    q_toks = list(dict.fromkeys(_circuit_tokens(query_text)))
 
     result = {
         "controller": "Acetech",
@@ -4681,6 +4681,9 @@ def _build_acetech_info(parsed, query_text="", lang="pl"):
             sc = _io_token_score(item.get("function") or "", q_toks)
             if sc >= 2:
                 scored.append((sc, item))
+        # słabsze trafienia (np. samo 'Defi' przy 'Defi Bulkhead') odrzucamy
+        best = max((sc for sc, _ in scored), default=0)
+        scored = [(sc, it) for sc, it in scored if sc >= best - 1]
         for _sc, item in sorted(scored, key=lambda x: -x[0])[:8]:
             if item not in dest:
                 dest.append(item)
@@ -4914,6 +4917,37 @@ def diagnose_defect(element="", typ="", opisProblem="", ps_code=None, client=Non
         clean_vs = vs.lstrip("-+=:")
         if clean_vs not in tokens:
             tokens.append(clean_vs)
+
+    # Urządzenia obwodu: kody z zapytania obecne w wiązce oraz odbiorniki
+    # rozpoznane po funkcji BOM ('gniazdo 7/12V' -> X192 -> X193/X194).
+    # Ich sygnały zasilają kontekst sterownika zamiast luźnych słów zapytania.
+    circuit_sig_names = []
+    r_conn_ids, r_bom_ids = _ps_project_ids(cur, ps_code) if ps_code else ([], [])
+    if r_conn_ids:
+        ph = ",".join("?" for _ in r_conn_ids)
+        wired = {}
+        for r in cur.execute(f"""
+            SELECT from_device FROM zuken_connections WHERE project_id IN ({ph})
+            UNION SELECT to_device FROM zuken_connections WHERE project_id IN ({ph});
+        """, r_conn_ids * 2):
+            if r[0]:
+                wired.setdefault((clean_device_code(r[0]) or r[0]).upper(), set()).add(r[0])
+        r_devs = [c for c in dict.fromkeys((clean_device_code(t.split(":")[0]) or t).upper()
+                                           for t in tokens) if c in wired]
+        if not r_devs:
+            f_hits, r_devs = _match_devices_by_function(
+                element or base_search, _device_function_map(cur, r_bom_ids), wired)
+            if r_devs:
+                variant_symbols.update(c for c, _ in f_hits)
+                variant_symbols.update(r_devs)
+        full = [d for c in r_devs for d in wired[c]]
+        if full:
+            fph = ",".join("?" for _ in full)
+            circuit_sig_names = [r[0] for r in cur.execute(f"""
+                SELECT DISTINCT TRIM(signal_name) FROM zuken_connections
+                WHERE project_id IN ({ph}) AND COALESCE(TRIM(signal_name), '') != ''
+                  AND (from_device IN ({fph}) OR to_device IN ({fph}));
+            """, r_conn_ids + full + full)]
     
     # Słowa kluczowe i mapowania na sygnały/aparaty Zuken
     SIGNAL_SYNONYMS = {
@@ -5382,7 +5416,8 @@ def diagnose_defect(element="", typ="", opisProblem="", ps_code=None, client=Non
     bom_components = find_bom_components_for_devices(list(bom_dev_codes), ps_code=ps_code, lang=lang)
 
     # Informacje logiczne ze sterownika projektu (Carnation/Acetech/... — jeśli dostępne)
-    controller_logic = get_controller_diagnostic_info(ps_code=ps_code, query_text=search_text, lang=lang)
+    controller_logic = get_controller_diagnostic_info(
+        ps_code=ps_code, query_text=" ".join(circuit_sig_names) or search_text, lang=lang)
 
     # Reworki projektu: ostrzeżenie, gdy zapytanie/obwód dotyczy złącza
     # objętego reworkiem (pinout na produkcji może odbiegać od schematu).
@@ -6659,6 +6694,43 @@ def _tokens_match(a, b):
     return len(a) >= 4 and len(b) >= 4 and (a.startswith(b) or b.startswith(a))
 
 
+def _match_devices_by_function(query, dev_funcs, wired_cleans, limit=3):
+    """Zapytanie opisowe ('gniazdo 7/12V') -> urządzenia po nazwie funkcji
+    BOM (X192 'Socket 7/12V DEFI'): każdy token zapytania musi trafić
+    w token funkcji (dokładnie, synonim, przedrostek). Urządzenie spoza
+    raportu połączeń (gniazdo z samymi konektorami w wiązce) mostkujemy
+    do urządzeń w wiązce, których funkcja jest podzbiorem jego funkcji
+    (X193 'Socket Defi +', X194 'Socket Defi -').
+    Zwraca (hits [(clean, funkcja)], wired [clean])."""
+    q_toks = _circuit_tokens(query)
+    if not q_toks or all(t.isdigit() for t in q_toks):
+        return [], []
+    funcs = {}
+    for k, f in (dev_funcs or {}).items():
+        c = (clean_device_code(k) or k).upper()
+        if f and c not in funcs:
+            funcs[c] = f
+    ftoks = {c: set(_circuit_tokens(f)) for c, f in funcs.items()}
+    scored = sorted((len(ft) - len(q_toks), _natural_sort_key(c), c)
+                    for c, ft in ftoks.items()
+                    if ft and all(any(_tokens_match(q, t) for t in ft) for q in q_toks))
+    hits = [(c, funcs[c]) for _, _, c in scored[:limit]]
+    wired = []
+    for c, _f in hits:
+        if c in wired_cleans:
+            cands = [c]
+        else:
+            ft = ftoks[c]
+            cands = sorted((d for d in wired_cleans
+                            if len(ftoks.get(d, ())) >= 2
+                            and all(any(_tokens_match(x, t) for t in ft) for x in ftoks[d])),
+                           key=_natural_sort_key)
+        for d in cands:
+            if d not in wired:
+                wired.append(d)
+    return hits, wired
+
+
 def _bom_device_descriptions(cur, bom_ids, dev_clean):
     """Opis+kategoria pozycji BOM dla kodu urządzenia nieobecnego
     w raporcie połączeń (np. A313 -> 'ProCar Power USB-C/A ...')."""
@@ -6819,9 +6891,14 @@ def _circuit_extend_adjacency(cur, adj, ps_code):
     return adj, internal_devs
 
 
-def _evpss_signal_label(sig, parsed, controller="Carnation"):
+def _evpss_signal_label(sig, parsed, controller="Carnation", module_hint="", phase="", kind_hint=""):
     """Nazwa sygnału -> wyjście/wejście sterownika (dopasowanie przez
     synonimy nazw, z fuzzy-matchingiem dla sufiksów faz .A/.B/.C).
+    module_hint: numer modułu z funkcji złącza ('ACETECH OXP3 #1' -> '1'),
+    phase: litera z kodu sygnału ('193A' -> 'A') — rozstrzygają remisy
+    między równoległymi wyjściami (Defib Bulkhead.A/.B/.C/.D, moduły O1..O3).
+    kind_hint: 'input'/'output' z funkcji złącza ('INPUT IXP3' / 'OXP3') —
+    złącze wejść nie może być opisane wyjściem o podobnej nazwie.
     Zwraca dict {code, kind, module, function, max_current}."""
     if not sig or not parsed:
         return None
@@ -6834,17 +6911,35 @@ def _evpss_signal_label(sig, parsed, controller="Carnation"):
         # 'Heater Perm Feed' pasowało do 'Heater Feed.A'.
         return {t for t in toks if not re.match(r"^[A-Z]$|^[A-Z]\d+$", t)}
 
-    def _sig_covered_by(f_toks):
-        return all((({tk} | _CIRCUIT_SYNONYMS.get(tk, set())) & f_toks)
-                   for tk in sig_toks)
-
-    def _f_covered_by_sig(f_toks):
-        return all((({tk} | _CIRCUIT_SYNONYMS.get(tk, set())) & sig_toks)
-                   for tk in f_toks)
+    def _tm(a, b):
+        # dodatkowo skróty z raportów sterownika: 'Cam.' ~ 'Camera'
+        if _tokens_match(a, b):
+            return True
+        s, l = sorted((a, b), key=len)
+        return len(s) >= 3 and len(l) >= 5 and not s.isdigit() and l.startswith(s)
 
     def _covers(a, b):
-        return all((({tk} | _CIRCUIT_SYNONYMS.get(tk, set())) & b)
-                   for tk in a)
+        # pusty zbiór (np. funkcja 'D+' po odrzuceniu liter) niczego nie pokrywa
+        return bool(a) and all(any(_tm(tk, x) for x in b) for tk in a)
+
+    def _sig_covered_by(f_toks):
+        return _covers(sig_toks, f_toks)
+
+    def _f_covered_by_sig(f_toks):
+        return _covers(f_toks, sig_toks)
+
+    def _overlap(f_toks):
+        return sum(1 for t in f_toks if any(_tm(t, s) for s in sig_toks))
+
+    def _bonus(raw_toks, raw_module):
+        b = 0
+        if module_hint:
+            m = re.search(r"\bO(\d+)\b", raw_module or "")
+            if m and m.group(1) == module_hint:
+                b += 50
+        if phase and phase in raw_toks:
+            b += 20
+        return b
 
     def _fmt_module(raw_module, code, kind):
         # CP20-O3 -> Acetech OUTPUT 3; A103 -> Carnation 1; puste -> controller.
@@ -6855,10 +6950,14 @@ def _evpss_signal_label(sig, parsed, controller="Carnation"):
         m_carn = re.search(r"\bA?10?(\d)\b", mod)
         if m_carn:
             return f"{controller} {m_carn.group(1)}"
+        if mod.upper() in ("INPUT", "INPUTS", "OUTPUT", "OUTPUTS"):
+            return f"{controller} {mod.upper().rstrip('S')}"
         return mod if mod else controller
 
     best = None
-    for code, out in (parsed.get("outputs") or {}).items():
+    outputs = {} if kind_hint == "input" else (parsed.get("outputs") or {})
+    inputs = {} if kind_hint == "output" else (parsed.get("inputs") or {})
+    for code, out in outputs.items():
         raw_toks = set(_circuit_tokens(out.get("function") or ""))
         if not raw_toks:
             continue
@@ -6868,13 +6967,14 @@ def _evpss_signal_label(sig, parsed, controller="Carnation"):
         core_match = _covers(f_toks, sig_toks) or _covers(sig_toks, f_toks)
         if not (strict or core_match):
             continue
-        score = len(f_toks & sig_toks) * 100 + min(len(f_toks), len(sig_toks))
+        score = (_overlap(f_toks) * 100 + min(len(f_toks), len(sig_toks))
+                 + _bonus(raw_toks, out.get("module")))
         if best is None or score > best[0]:
             best = (score, {"code": out.get("code") or code, "kind": "output",
                             "module": _fmt_module(out.get("module"), code, "output"),
                             "function": out.get("function") or "",
                             "max_current": out.get("max_current") or ""})
-    for code, inp in (parsed.get("inputs") or {}).items():
+    for code, inp in inputs.items():
         raw_toks = set(_circuit_tokens(inp.get("function") or ""))
         if not raw_toks:
             continue
@@ -6883,7 +6983,8 @@ def _evpss_signal_label(sig, parsed, controller="Carnation"):
         core_match = _covers(f_toks, sig_toks) or _covers(sig_toks, f_toks)
         if not (strict or core_match):
             continue
-        score = len(f_toks & sig_toks) * 100 + min(len(f_toks), len(sig_toks))
+        score = (_overlap(f_toks) * 100 + min(len(f_toks), len(sig_toks))
+                 + _bonus(raw_toks, inp.get("module")))
         if best is None or score > best[0]:
             best = (score, {"code": inp.get("code") or code, "kind": "input",
                             "module": _fmt_module(inp.get("module"), code, "input"),
@@ -6904,11 +7005,15 @@ def _module_label_from_function(func_text, controller="Sterownik"):
         brand = "Carnation EVPSS"
     # Próba wyciągnięcia numeru wyjścia/wejścia, np. OXP3 #3
     out_m = re.search(r"OXP\d*\s*#?\s*(\d+)", txt) or re.search(r"OUTPUT\s*(\d+)", txt)
-    code = f"O.{out_m.group(1)}" if out_m else ""
+    # '#1' w 'OXP3 #1' to numer modułu, nie wyjścia — kodu O.x nie zgadujemy
+    code = ""
     module = controller if controller.upper() == brand.upper() else f"{controller} {brand}"
+    is_input = not out_m and re.search(r"\bINPUTS?\b|\bIXP", txt)
     if out_m:
         module += f" OUTPUT {out_m.group(1)}"
-    return {"code": code, "kind": "output", "module": module,
+    elif is_input:
+        module += " INPUT"
+    return {"code": code, "kind": "input" if is_input else "output", "module": module,
             "function": "", "max_current": ""}
 
 
@@ -7009,6 +7114,23 @@ def trace_circuit(ps_code, query, lang="pl"):
                     dev_nodes.setdefault(ndev, set()).add(npin)
             if alt and dev_nodes:
                 pin_q = ""
+    # opis odbiornika bez kodu i bez pasującego sygnału ('gniazdo 7/12V'):
+    # szukaj po funkcji urządzenia z BOM (X192 'Socket 7/12V DEFI' -> X193/X194)
+    func_label = ""
+    if not dev_nodes and not _match_signals(q, sig_nodes):
+        by_clean = {}
+        for (ndev, npin) in adj:
+            by_clean.setdefault((clean_device_code(ndev) or ndev).upper(), {}) \
+                    .setdefault(ndev, set()).add(npin)
+        f_hits, f_wired = _match_devices_by_function(q, dev_funcs, by_clean)
+        for c in f_wired:
+            for ndev, pins in by_clean[c].items():
+                dev_nodes.setdefault(ndev, set()).update(pins)
+        if dev_nodes:
+            pin_q = ""
+            func_label = ", ".join(f"{c} ({f})" for c, f in f_hits)
+            if set(f_wired) - {c for c, _ in f_hits}:
+                func_label += " \u2192 " + ", ".join(f_wired)
     # urządzenie spoza raportu połączeń (=BOM-...): opis BOM jako
     # dodatkowy trop do sygnału (np. A313 -> 'ProCar ... USB socket')
     bom_descs = []
@@ -7023,7 +7145,7 @@ def trace_circuit(ps_code, query, lang="pl"):
 
     if dev_nodes:
         resolved = {"kind": "device",
-                    "label": dev_q + ((":" + pin_q) if pin_q else "")}
+                    "label": func_label or (dev_q + ((":" + pin_q) if pin_q else ""))}
         for ndev in sorted(dev_nodes, key=_natural_sort_key):
             pins = sorted(dev_nodes[ndev], key=_natural_sort_key)
             if pin_q:
@@ -7132,6 +7254,8 @@ def trace_circuit(ps_code, query, lang="pl"):
                 continue
             if "gnd" in roles:
                 role = "gnd"
+                # inne odbiorniki na tej samej masie to szum — zostają punkty masy
+                ends_out = [e for e in ends_out if e["role"] == "gnd"]
             elif roles & {"source", "terminal", "fuse", "relay"}:
                 role = "feed"
             else:
@@ -7161,12 +7285,20 @@ def trace_circuit(ps_code, query, lang="pl"):
                 if not is_module and not is_ctrl_conn:
                     continue
                 lbl = None
+                m_mod = re.search(r"#\s*(\d+)", func_text) if is_ctrl_conn else None
+                ft_up = func_text.upper() if is_ctrl_conn else ""
+                kind_hint = ("input" if re.search(r"\bINPUTS?\b|\bIXP", ft_up)
+                             else "output" if re.search(r"\bOUTPUTS?\b|\bOXP", ft_up) else "")
                 if e["path"]:
                     for h in reversed(e["path"]):
                         sig_text = h.get("signal_name") or h.get("signal") or ""
                         if sig_text:
+                            m_ph = re.match(r"^\d+([A-Z])$", (h.get("signal") or "").upper())
                             lbl = _evpss_signal_label(sig_text, ctrl_parsed,
-                                                      controller=cname or "Sterownik")
+                                                      controller=cname or "Sterownik",
+                                                      module_hint=m_mod.group(1) if m_mod else "",
+                                                      phase=m_ph.group(1) if m_ph else "",
+                                                      kind_hint=kind_hint)
                             if lbl:
                                 break
                 # Fallback: nazwa wyjścia/wejścia wywnioskowana z funkcji BOM
