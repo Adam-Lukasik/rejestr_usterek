@@ -73,34 +73,53 @@ class SplashScreen:
         try:
             import tkinter as tk
             from tkinter import ttk
-            
+
+            # DPI-awareness: bez tego na monitorze 4K (skalowanie 150-200%)
+            # okno ma sztywne piksele i jest mikroskopijne
+            try:
+                import ctypes
+                try:
+                    ctypes.windll.shcore.SetProcessDpiAwareness(2)  # PER_MONITOR_DPI_AWARE
+                except Exception:
+                    ctypes.windll.user32.SetProcessDPIAware()
+            except Exception:
+                pass
+
             root = tk.Tk()
             root.overrideredirect(True)
             root.attributes('-topmost', True)
             root.configure(bg="#0F172A", cursor="watch")
-            
-            w, h = 420, 200
+
+            try:
+                dpi_scale = float(root.winfo_fpixels('1i')) / 96.0
+            except Exception:
+                dpi_scale = 1.0
+            dpi_scale = max(1.0, min(dpi_scale, 3.0))
+            def S(v):
+                return int(round(v * dpi_scale))
+
+            w, h = S(420), S(200)
             sw = root.winfo_screenwidth()
             sh = root.winfo_screenheight()
             x = (sw - w) // 2
             y = (sh - h) // 2
             root.geometry(f"{w}x{h}+{x}+{y}")
-            
+
             frame = tk.Frame(root, bg="#0F172A", highlightbackground="#3B82F6", highlightthickness=1, cursor="watch")
             frame.pack(fill="both", expand=True)
-            
+
             lbl_title = tk.Label(frame, text="⚡ Rejestr Usterek", font=("Segoe UI", 16, "bold"), fg="#F8FAFC", bg="#0F172A")
-            lbl_title.pack(pady=(26, 4))
-            
+            lbl_title.pack(pady=(S(26), S(4)))
+
             lbl_sub = tk.Label(frame, text="Panel Diagnostyki i Serwisu", font=("Segoe UI", 10), fg="#94A3B8", bg="#0F172A")
-            lbl_sub.pack(pady=(0, 18))
-            
+            lbl_sub.pack(pady=(0, S(18)))
+
             style = ttk.Style()
             style.theme_use('clam')
             style.configure("Custom.Horizontal.TProgressbar", foreground='#3B82F6', background='#3B82F6', troughcolor='#1E293B', bordercolor='#0F172A')
-            
-            progress = ttk.Progressbar(frame, style="Custom.Horizontal.TProgressbar", mode="indeterminate", length=320)
-            progress.pack(pady=(0, 10))
+
+            progress = ttk.Progressbar(frame, style="Custom.Horizontal.TProgressbar", mode="indeterminate", length=S(320))
+            progress.pack(pady=(0, S(10)))
             progress.start(15)
             
             self.lbl_status = tk.Label(frame, text="Trwa uruchamianie aplikacji...", font=("Segoe UI", 10), fg="#60A5FA", bg="#0F172A")
@@ -357,7 +376,11 @@ def main():
 
         logging.info("Start webview.start()")
         # EdgeChromium jako domyślny silnik WebView2 na Windows
-        webview.start(on_started, debug=("--debug" in sys.argv), gui="edgechromium")
+        # private_mode=False + własny profil: localStorage (ostatni projekt PS,
+        # motyw, aktywny użytkownik) przetrwa restart — w trybie prywatnym
+        # (domyślnym w pywebview) był czyszczony przy każdym zamknięciu okna
+        webview.start(on_started, debug=("--debug" in sys.argv), gui="edgechromium",
+                      private_mode=False, storage_path=str(BASE_DIR / "webview_profile"))
         logging.info("Zamknięto okno webview")
 
     except Exception as ex:

@@ -23,6 +23,8 @@ ENV/
 
 # Ustawienia lokalne okna/UI (różne na każdej maszynie)
 desktop_config.json
+# Profil WebView2 (localStorage, cache) — tworzony przy starcie okna
+webview_profile/
 
 # Pliki tymczasowe i logi
 *.log

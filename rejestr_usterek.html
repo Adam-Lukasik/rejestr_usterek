@@ -10011,17 +10011,22 @@ function circuitCardHtml(cp, query) {
       ${pinsHtml}
     </div>`;
   }).join('');
+  // diagram od razu w karcie — widoczny po zakończeniu pracy asystenta bez klikania
+  const diagramHtml = circuitDiagramPartsHtml(cp);
 
   return `<div style="padding:12px 16px; background:linear-gradient(135deg, rgba(2,132,199,0.08), rgba(22,163,74,0.06)); border:1px solid rgba(2,132,199,0.35); border-radius:var(--radius-md);">
     <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; margin-bottom:8px;">
       <div style="font-size:12px; font-weight:800; color:#0284c7; text-transform:uppercase; letter-spacing:0.5px;">⚡ ${escapeHtml(t('js.zuken.circuitTitle'))}: ${escapeHtml((cp.resolved && cp.resolved.label) || query)}${evHtml}${rulesHtml}</div>
       <div style="display:flex; gap:6px;">
         <button type="button" onclick="showCircuitChecklist()" style="padding:5px 11px; font-size:11.5px; font-weight:700; border:1px solid var(--border); border-radius:8px; background:var(--bg-card); color:var(--text-main); cursor:pointer;">📋 ${escapeHtml(t('js.zuken.checklistBtn'))}</button>
-        <button type="button" onclick="showCircuitDiagram()" style="padding:5px 11px; font-size:11.5px; font-weight:700; border:1px solid var(--border); border-radius:8px; background:var(--bg-card); color:var(--text-main); cursor:pointer;">📊 ${escapeHtml(t('js.zuken.diagramBtn'))}</button>
+        <button type="button" onclick="showCircuitDiagram()" style="padding:5px 11px; font-size:11.5px; font-weight:700; border:1px solid var(--border); border-radius:8px; background:var(--bg-card); color:var(--text-main); cursor:pointer;">⤢ ${escapeHtml(t('js.zuken.diagramEnlarge'))}</button>
       </div>
     </div>
     ${moreHtml ? `<div style="margin-bottom:6px; font-size:11px; color:var(--text-muted);">${escapeHtml(t('js.zuken.moreSignals'))}:${moreHtml}</div>` : ''}
-    ${loadsHtml}
+    ${diagramHtml ? `<div style="background:var(--bg-card, #fff); border:1px solid var(--border); border-radius:8px; padding:10px 12px; margin-bottom:8px;">${diagramHtml}</div>` : ''}
+    ${diagramHtml
+      ? `<details><summary style="cursor:pointer; font-size:11.5px; font-weight:700; color:var(--text-muted); padding:3px 0;">${escapeHtml(t('js.zuken.pathDetails'))}</summary>${loadsHtml}</details>`
+      : loadsHtml}
   </div>`;
 }
 
@@ -10134,6 +10139,7 @@ function connHalfInfo(connMeta, clean, devSfx) {
   return {
     article: (h && h.article) || cm.article || '',
     desc: (h && h.desc) || cm.desc || cm.type || '',
+    image: (h && h.image) || '',
     pins: cm.pins || 0
   };
 }
@@ -10146,7 +10152,7 @@ function connFaceLayout(info) {
   let gender = '', fam = '', rows = 0, cols = 0;
   let n = parseInt(info.pins, 10) || 0;
   const cn = desc.match(/(\d+)\s*circuits?/i) || desc.match(/PIN:\s*(\d+)/i)
-          || desc.match(/(\d+)\s*pos/i) || desc.match(/(\d+)\s*pole/i);
+          || desc.match(/(\d+)\s*pos/i) || desc.match(/(\d+)\s*pole/i) || desc.match(/(\d+)[\s-]*way/i);
   if (cn) n = +cn[1];
 
   if (/junior\s*(power\s*)?timer/i.test(desc) || /^(\d+-)?92950[45]-/.test(art)) {
@@ -10183,6 +10189,9 @@ function connFaceLayout(info) {
     if (/receptacle/i.test(blob)) gender = 'F';
     else if (/tab/i.test(blob) || /\bplug\b|wtyk/i.test(blob)) gender = 'M';
     if (!gender) gender = 'F'; // domyślnie gniazdo, gdy opis niejasny
+  } else if (/terminal\s*block.*pluggable|pluggable.*terminal\s*block/i.test(desc) || /^TBP\d/i.test(art)) {
+    // Wtyczki sterownika Acetech (CUI TBP01P1-508-18BE): kostka 1-rzędowa, raster 5.08
+    fam = 'TBP'; rows = 1; cols = n; gender = 'F';
   }
   if (!fam || !gender || !cols || !rows || cols !== Math.floor(cols) || rows !== Math.floor(rows)) return null;
   return { fam, gender, cols, rows, n };
@@ -10215,6 +10224,11 @@ function connFacePinAt(L, r, c) {
                               : (r === 0 ? cols - c : n - c);
     case 'SUPERSEAL':
       return n - c;
+    case 'TBP':
+      // TBP (Acetech): kostka krawędziowa — od modułu wpięta w listwę, przewody
+      // wsuwane w otwory z drugiej strony i przykręcane. Wg schematu pin 1 z lewej
+      // patrząc od strony otworów na przewody.
+      return c + 1;
     case 'MATENLOK':
       return L.gender === 'F' ? 2 * (L.rows - 1 - r) + 1 + c : 2 * r + 1 + c;
     case 'FASTIN':
@@ -10232,10 +10246,12 @@ function connFaceSvg(L, pin, opt) {
   opt = opt || {};
   const mini = !!opt.mini;
   const pinSet = new Set([].concat(pin == null ? [] : pin).map(String));
-  const cw = mini ? 13 : 30, ch = mini ? 10 : 24, pad = mini ? 3 : 7, latchH = mini ? 6 : 13;
+  const cw = mini ? 13 : 30, ch = mini ? 10 : 24, pad = mini ? 3 : 7;
+  // kostka zaciskowa: bez zatrzasku; w pełnym widoku nad otworami rząd śrub zacisków
+  const latchH = L.fam === 'TBP' ? (mini ? 0 : 16) : (mini ? 6 : 13);
   const W = pad * 2 + L.cols * cw, H = latchH + pad * 2 + L.rows * ch;
   const latchTop = L.gender !== 'M'; // męska rysowana obrócona o 180°
-  const boxY = latchTop ? latchH : 1, latchY = latchTop ? 1 : H - latchH + 2;
+  const boxY = latchTop ? Math.max(latchH, 1) : 1, latchY = latchTop ? 1 : H - latchH + 2;
   const nest = opt.nested ? `x="${opt.x || 0}" y="${opt.y || 0}" width="${opt.width || W}" height="${opt.height || H}"` : '';
   const lw = mini ? 20 : 48;
   let s = `<svg ${nest} viewBox="0 0 ${W} ${H}" style="${mini ? '' : 'width:100%; '}display:block;" xmlns="http://www.w3.org/2000/svg">`;
@@ -10275,7 +10291,15 @@ function connFaceSvg(L, pin, opt) {
     return sF + '</svg>';
   }
 
-  s += `<rect x="${W / 2 - lw / 2}" y="${latchY}" width="${lw}" height="${latchH - 3}" rx="3" fill="var(--bg-card-subtle,#e2e8f0)" stroke="var(--border,#94a3b8)"/>`;
+  if (L.fam === 'TBP' && latchH) {
+    // śruby zacisków nad otworami na przewody (ta sama kolumna = ten sam pin)
+    for (let c = 0; c < L.cols; c++) {
+      const hot = pinSet.has(String(connFacePinAt(L, 0, c)));
+      const sx = pad + c * cw + cw / 2, sy = latchH / 2 + 1, sr = 6;
+      s += `<circle cx="${sx}" cy="${sy}" r="${sr}" fill="var(--bg-card-subtle,#e2e8f0)" stroke="${hot ? '#0284c7' : 'var(--border,#94a3b8)'}" stroke-width="${hot ? 2 : 1}"/>`;
+      s += `<line x1="${sx - sr + 2}" y1="${sy}" x2="${sx + sr - 2}" y2="${sy}" stroke="${hot ? '#0284c7' : 'var(--text-muted,#64748b)'}" stroke-width="1.4"/>`;
+    }
+  } else if (latchH) s += `<rect x="${W / 2 - lw / 2}" y="${latchY}" width="${lw}" height="${latchH - 3}" rx="3" fill="var(--bg-card-subtle,#e2e8f0)" stroke="var(--border,#94a3b8)"/>`;
   s += `<rect x="1" y="${boxY}" width="${W - 2}" height="${H - latchH - 1}" rx="4" fill="var(--bg-card,#fff)" stroke="var(--border,#94a3b8)" stroke-width="1.2"/>`;
   for (let r = 0; r < L.rows; r++)
     for (let c = 0; c < L.cols; c++) {
@@ -10331,7 +10355,7 @@ async function showConnFace(el) {
       if (!conns.length)
         return `<tr style="${hot ? 'background:rgba(2,132,199,0.12); font-weight:700;' : 'color:var(--text-muted);'}">
           <td style="padding:1px 6px; font-family:var(--font-mono,monospace); font-weight:700;">${escapeHtml(String(p.pin))}</td>
-          <td colspan="4" style="padding:1px 6px; font-size:10px; color:var(--text-muted);">—</td></tr>`;
+          <td colspan="5" style="padding:1px 6px; font-size:10px; color:var(--text-muted);">—</td></tr>`;
       return conns.map(c => {
         const cs = (c.cross_section || '').replace(/\s*mm²?$/i, '');
         const tgt = ((c.target_device || '').split('-').pop() || '') + (c.target_pin ? ':' + c.target_pin : '');
@@ -10341,6 +10365,7 @@ async function showConnFace(el) {
           <td style="padding:1px 6px; font-family:var(--font-mono,monospace); white-space:nowrap;"><span style="display:inline-block; width:11px; height:4px; border-radius:2px; background:${circuitWireStroke(c.wire_color)}; margin-right:4px; vertical-align:middle;"></span>${escapeHtml(c.wire_number || c.signal || '')}</td>
           <td style="padding:1px 6px; font-size:10px; white-space:nowrap;">${escapeHtml(c.signal_name || '')}</td>
           <td style="padding:1px 6px; font-size:9.5px; color:var(--text-muted); white-space:nowrap;">${escapeHtml([c.wire_color, cs ? cs + ' mm²' : ''].filter(Boolean).join(' · '))}</td>
+          <td style="padding:1px 6px; font-family:var(--font-mono,monospace); font-size:10px; white-space:nowrap; text-align:right;">${(c.length && c.length !== '0') ? escapeHtml(fmtWireLength(c.length)) : ''}</td>
           <td style="padding:1px 6px; font-family:var(--font-mono,monospace); font-size:10px; white-space:nowrap;">→ ${escapeHtml(tgt)}${tgtDesc ? ` <span style="color:var(--text-muted); font-family:inherit; font-size:9px;">${escapeHtml(tgtDesc)}</span>` : ''}</td>
         </tr>`;
       }).join('');
@@ -10352,6 +10377,7 @@ async function showConnFace(el) {
           <th style="padding:1px 6px;">${t('zuken.pinoutColWire')}</th>
           <th style="padding:1px 6px;">${t('zuken.pinoutColSignal')}</th>
           <th style="padding:1px 6px;">${t('zuken.pinoutColColor')} / ${t('zuken.pinoutColCross')}</th>
+          <th style="padding:1px 6px; text-align:right;">${t('zuken.pinoutColLength')}</th>
           <th style="padding:1px 6px;">${t('zuken.pinoutColTarget')}</th>
         </tr></thead>
         <tbody>${rows}</tbody>
@@ -10405,7 +10431,10 @@ async function showConnFace(el) {
     return `<div style="width:100%; max-width:640px; margin:0 auto;">
       <div style="font-family:var(--font-mono,monospace); font-weight:800; font-size:13px; color:var(--text-main);">${escapeHtml(info.sfx)}${d.pin ? ':' + escapeHtml(d.pin) : ''}</div>
       <div style="font-size:11px; color:var(--text-muted); margin:2px 0 6px;">${escapeHtml(gen)}${art ? ' · ' + escapeHtml(art) : ''}</div>
-      <div style="max-width:340px; margin:0 auto;">${connFaceSvg(L, d.pin)}</div>
+      <div style="display:flex; gap:12px; align-items:center; justify-content:center; flex-wrap:wrap;">
+        <div style="flex:1 1 280px; max-width:340px;">${connFaceSvg(L, d.pin)}</div>
+        ${info.image ? `<img src="${escapeHtml(info.image)}" alt="${escapeHtml(info.article || '')}" style="max-width:220px; max-height:130px; object-fit:contain; border:1px solid var(--border); border-radius:6px; background:#fff;">` : ''}
+      </div>
       ${wires ? `<div style="margin-top:6px; border-top:1px dashed var(--border); padding-top:5px;">${wires}</div>` : ''}
       ${pinTable(info.sfx)}
     </div>`;
@@ -10433,44 +10462,105 @@ async function showConnFace(el) {
 }
 
 function circuitSvgForLoad(ld, connMeta) {
-  const feedPin = (ld.pins || []).find(p => p.role === 'feed') || (ld.pins || [])[0];
   const gndPin = (ld.pins || []).find(p => p.role === 'gnd');
-  if (!feedPin) return '';
-  const src = (feedPin.ends || []).find(e => e.role === 'source' || e.role === 'terminal') || (feedPin.ends || [])[0];
-  if (!src) return '';
-
-  const trunk = [{ dev: src.device, pin: src.pin, clean: src.clean, edge: null, role: src.role,
-                   info: src.function || src.desc || '', ml: src.module_label || null }];
-  [...(src.path || [])].reverse().forEach(h =>
-    trunk.push({ dev: h.from, pin: h.from_pin, clean: h.from_clean, edge: h, role: '', info: '' }));
-  const trunkLast = trunk.length - 1;
-  trunk[trunkLast].role = 'load';
-  trunk[trunkLast].info = ld.function || ld.desc || '';
-
-  const gndChain = [];
+  // odbiornik z samym pinem masy (X194 'Socket Defi -') rysujemy tylko torem masy
+  const feedPin = (ld.pins || []).find(p => p.role === 'feed') || (ld.pins || []).find(p => p !== gndPin);
+  // tor główny woli ścieżkę przez styk przekaźnika — wtedy symbol K jest
+  // na diagramie, a nie schowany w dymku odnogi
+  const pickEnd = list => list.find(e => e.via_relay && (e.role === 'source' || e.role === 'terminal'))
+    || list.find(e => e.role === 'source' || e.role === 'terminal')
+    || list.find(e => e.via_relay)
+    || list[0];
+  // przelotowe złącze (para wtyk-gniazdo X300/X300'): tor sklejamy z dwóch
+  // końców po OBNYCH stronach pary — mate-side u góry, own-side u dołu,
+  // para złączy pośrodku diagramu (odwrócone dla drugiej połówki)
+  const isMateHop = h => h && h.from_clean === h.to_clean && h.from_pin === h.to_pin && h.from !== h.to;
+  const endsF = feedPin ? (feedPin.ends || []) : [];
+  const mateEnds = endsF.filter(e => isMateHop((e.path || [])[0]));
+  const directEnds = endsF.filter(e => !isMateHop((e.path || [])[0]));
+  let src = null, thruEnd = null;
+  if (mateEnds.length && directEnds.length) {
+    // stała kolejność pary: połówka bazowa (X300) nad primem (X300').
+    // Dla bazy jej własne przewody idą w górę, dla prima w górę idzie
+    // strona za matem (tam leży baza).
+    const primeLoad = /'$/.test((ld.device || '').split('-').pop() || '');
+    src = pickEnd(primeLoad ? mateEnds : directEnds);
+    thruEnd = pickEnd(primeLoad ? directEnds : mateEnds);
+  } else {
+    src = endsF.length ? pickEnd(endsF) : null;
+  }
   const g = gndPin ? ((gndPin.ends || []).find(e => e.role === 'gnd') || (gndPin.ends || [])[0]) : null;
-  if (g) {
-    gndChain.push({ dev: ld.device, pin: gndPin.pin, clean: ld.clean, edge: null, role: 'load', info: '' });
-    (g.path || []).forEach((h, i) => gndChain.push({
-      dev: h.to, pin: h.to_pin, clean: h.to_clean, edge: h,
-      role: i === g.path.length - 1 ? g.role : '', info: ''
-    }));
+  if (!src && !g) return '';
+
+  // funkcja i liczba przewodów w węzłach pośrednich (łączenia/Splice)
+  const hopMeta = {};
+  [feedPin, gndPin].forEach(p => ((p && p.ends) || []).forEach(e => (e.path || []).forEach(h => {
+    hopMeta[h.to + ':' + h.to_pin] = { fn: h.to_function || '', deg: h.to_degree || 0 };
+  })));
+
+  const trunk = [];
+  if (src) {
+    trunk.push({ dev: src.device, pin: src.pin, clean: src.clean, edge: null, role: src.role,
+                 info: src.function || src.desc || '', ml: src.module_label || null });
+    [...(src.path || [])].reverse().forEach(h =>
+      trunk.push({ dev: h.from, pin: h.from_pin, clean: h.from_clean, edge: h, role: '', info: '' }));
+    if (thruEnd) {
+      // węzeł złącza w środku — bez roli odbiornika, za nim biegnie dalej
+      // ścieżka drugiego końca (X300' -> U82 -> ... -> RT122)
+      const mid = trunk[trunk.length - 1];
+      mid.role = ''; mid.info = ld.function || ld.desc || '';
+      (thruEnd.path || []).forEach(h =>
+        trunk.push({ dev: h.to, pin: h.to_pin, clean: h.to_clean, edge: h, role: '', info: '' }));
+      const last = trunk[trunk.length - 1];
+      last.role = thruEnd.role; last.info = thruEnd.function || thruEnd.desc || '';
+    } else {
+      const trunkLast = trunk.length - 1;
+      trunk[trunkLast].role = 'load';
+      trunk[trunkLast].info = ld.function || ld.desc || '';
+    }
   }
 
-  // scal pary wtyk<->wtyczka (X26 -> X26'): ten sam pin, inna strona zlacza
-  const mergeMates = arr => {
+  const gndChain = [];
+  if (g) {
+    gndChain.push({ dev: ld.device, pin: gndPin.pin, clean: ld.clean, edge: null, role: 'load',
+                    info: src ? '' : (ld.function || ld.desc || '') });
+    (g.path || []).forEach((h, i) => {
+      const last = i === g.path.length - 1;
+      gndChain.push({ dev: h.to, pin: h.to_pin, clean: h.to_clean, edge: h,
+                      role: last ? g.role : '', info: last ? (g.function || g.desc || '') : '' });
+    });
+  }
+
+
+  // para styków roboczych -> węzeł-symbol przekaźnika WSTAWIONY między
+  // zaciski/złącza styków (jak na schemacie): tor przechodzi przez symbol,
+  // po obu stronach zostają węzły styków (RT/X), a obok glif cewki
+  const withRelays = arr => {
     const out = [];
     arr.forEach(nd => {
       const prev = out[out.length - 1];
-      if (prev && prev.clean === nd.clean && prev.pin === nd.pin) {
-        prev.mate = (nd.dev || '').split('-').pop();
-      } else {
-        out.push(nd);
+      if (nd.edge && nd.edge.internal === 'relay') {
+        const h = nd.edge;
+        const rc = (ld.relay_coils || []).find(c => c.device === (h.relay_dev || ''));
+        out.push({
+          dev: h.relay_dev || '', pin: '',
+          clean: (rc && rc.clean) || (h.internal_label || '').split(' ')[0] || nd.clean,
+          edge: h, role: 'relay',
+          info: (rc && rc.function) || '',
+          _relay: {
+            // a = węzeł nad symbolem, b = pod symbolem (strony styku)
+            a: { dev: prev ? prev.dev : '', clean: prev ? prev.clean : '', pin: prev ? prev.pin : '' },
+            b: { dev: nd.dev, clean: nd.clean, pin: nd.pin },
+            label: h.internal_label || '', coil: rc || null,
+            pin_names: h.pin_names || {},
+          },
+        });
       }
+      out.push(nd);
     });
     return out;
   };
-  const trunk2 = mergeMates(trunk), gndChain2 = mergeMates(gndChain);
+  const trunk2 = withRelays(trunk), gndChain2 = withRelays(gndChain);
 
   // Złącza objęte reworkiem projektu → badge 🔧 na węźle diagramu
   const rwTitles = {};
@@ -10482,35 +10572,55 @@ function circuitSvgForLoad(ld, connMeta) {
   const rowOf = {};
   trunk2.forEach((nd, i) => { rowOf[nd.dev + ':' + nd.pin] = i; });
   gndChain2.forEach((nd, j) => { rowOf[nd.dev + ':' + nd.pin] = trunk2.length + j; });
+  // aliasy: odnogi czepiające się węzła-symbolu kotwiczymy do niego
+  trunk2.concat(gndChain2).forEach((nd, i) => {
+    if (nd._relay) rowOf[nd.dev + ':' + nd.pin] = i;
+  });
 
   const stubs = [];
   const addStub = e => {
-    let at = trunk2.length - 1;
+    let at = Math.max(0, trunk2.length - 1);
     (e.path || []).forEach(h => { const k = h.to + ':' + h.to_pin; if (k in rowOf) at = rowOf[k]; });
     stubs.push({ e, at });
   };
-  (feedPin.ends || []).forEach(e => { if (e !== src) addStub(e); });
-  if (gndPin) (gndPin.ends || []).forEach(e => { if (e !== g) addStub(e); });
+  if (src) (feedPin.ends || []).forEach(e => { if (e !== src && e !== thruEnd) addStub(e); });
+  if (g) (gndPin.ends || []).forEach(e => { if (e !== g) addStub(e); });
 
-  const rows = trunk2.length + gndChain2.length;
-  const boxW = 210, boxH = 34, cx = 30, stubX = cx + boxW + 130, stubW = 250;
+  const edgeLabel = h => (h.internal === 'fuse' || h.internal === 'relay')
+    ? `⚡ ${h.internal_label || h.internal}`
+    : h.internal === 'mate' ? `⇄ ${h.internal_label || 'wtyk'}`
+    : wireLabelAttrs(h).join(' · ');
+  const boxW = 210, boxH = 34, cx = 30, stubW = 250;
+  // odnogi za najdłuższą etykietą przewodu — pełny opis (nr, kolor, przekrój, długość) czytelny
+  const maxLbl = trunk2.concat(gndChain2).reduce((m, nd) => Math.max(m, nd.edge ? edgeLabel(nd.edge).length : 0), 0);
+  const stubX = Math.max(cx + boxW + 130, cx + boxW / 2 + 8 + Math.ceil(maxLbl * 5.8) + 24);
   const W = stubX + stubW + 20;
 
   // Zmienne wysokości węzłów: złącze ze znanym layoutem dostaje mini-siatkę pinów w węźle
   const allNodes = trunk2.concat(gndChain2);
-  const nodeH = [], yOf = [];
+  const nodeH = [], yOf = [], SPLICE_R = 13;
   let _acc = 22;
   allNodes.forEach((nd, i) => {
     const _sfx = (nd.dev || '').split('-').pop() || nd.clean;
     const _L = nd.pin ? (connFaceLayout(connHalfInfo(connMeta, nd.clean, _sfx))
         || (nd.mate && connFaceLayout(connHalfInfo(connMeta, nd.clean, nd.mate)))) : null;
     nd._lay = _L || null;
-    const fastinLatch = _L && _L.fam === 'FASTIN';
+    // łączenie przewodów (Splice) rysujemy jako okrąg na linii toru
+    nd._splice = !_L && nd.role === '' && (/splice/i.test(connHalfInfo(connMeta, nd.clean, _sfx).desc)
+      || /splice/i.test((hopMeta[nd.dev + ':' + nd.pin] || {}).fn || ''));
+    const fastinLatch = _L && (_L.fam === 'FASTIN' || _L.fam === 'TBP');
     const gh = _L ? ((fastinLatch ? 0 : 6) + 6 + _L.rows * 10) : 0;  // latch 6 + pad 3+3 + rzędy po 10
     nd._gh = gh;
-    nodeH[i] = boxH + (gh ? gh + 6 : 0);
+    nodeH[i] = nd._relay
+      ? (nd._relay.coil && (nd._relay.coil.ends || []).length ? 112 : 76)
+      : (nd._splice ? SPLICE_R * 2 : boxH + (gh ? gh + 6 : 0));
     yOf[i] = _acc;
     _acc += nodeH[i] + 30;
+    if (nd._relay) {
+      // pozycje pinów cewki na prawej krawędzi symbolu (kotwice łańcuchów)
+      const gTop = yOf[i] + boxH + 6, gBot = yOf[i] + nodeH[i] - 14;
+      nd._coilY = [gTop + 8, gBot - 8];
+    }
   });
   const nodeY = i => yOf[i];
 
@@ -10544,20 +10654,22 @@ function circuitSvgForLoad(ld, connMeta) {
     '':       { stroke: '#94a3b8', icon: '' },
   };
 
-  let svg = '';
+  let svg = '', edgeLbls = '';
   allNodes.forEach((nd, i) => {
     const y = nodeY(i), x = cx;
     if (nd.edge) {
       const h = nd.edge;
       const yPrev = yOf[i - 1] + nodeH[i - 1], yCur = y;
-      const internal = h.internal === 'fuse' || h.internal === 'relay';
-      const stroke = internal ? '#d97706' : circuitWireStroke(h.wire_color);
-      const dash = internal ? ' stroke-dasharray="5 3"' : '';
-      svg += `<line x1="${cx + boxW / 2}" y1="${yPrev}" x2="${cx + boxW / 2}" y2="${yCur}" stroke="${stroke}" stroke-width="${internal ? 1.6 : 2.4}"${dash}/>`;
-      const lbl = internal
-        ? `⚡ ${h.internal_label || h.internal}`
-        : wireLabelAttrs(h).join(' · ');
-      if (lbl) svg += `<text x="${cx + boxW / 2 + 8}" y="${(yPrev + yCur) / 2 + 3}" font-size="9.5" fill="${internal ? '#d97706' : 'var(--text-muted, #64748b)'}" font-family="monospace">${escapeHtml(lbl)}</text>`;
+      const internal = h.internal === 'fuse' || h.internal === 'relay' || h.internal === 'mate';
+      // oś toru wchodząca w symbol przekaźnika / wychodząca z niego —
+      // zwykła linia, bez oznaczenia styku (symbol ma własne etykiety)
+      const axis = h.internal === 'relay' && (nd._relay || (allNodes[i - 1] || {})._relay);
+      const stroke = axis ? '#0891b2' : (h.internal === 'mate' ? '#7c3aed' : internal ? '#d97706' : circuitWireStroke(h.wire_color));
+      const dash = (internal && !axis) ? ' stroke-dasharray="5 3"' : '';
+      svg += `<line x1="${cx + boxW / 2}" y1="${yPrev}" x2="${cx + boxW / 2}" y2="${yCur}" stroke="${stroke}" stroke-width="${(internal && !axis) ? 1.6 : 2.4}"${dash}/>`;
+      const lbl = axis ? '' : edgeLabel(h);
+      // etykiety rysowane na końcu (nad odnogami), z obwódką w kolorze tła
+      if (lbl) edgeLbls += `<text x="${cx + boxW / 2 + 8}" y="${(yPrev + yCur) / 2 + 3}" font-size="9.5" fill="${internal ? '#d97706' : 'var(--text-main, #0f172a)'}" font-family="monospace" paint-order="stroke" stroke="var(--bg-card, #fff)" stroke-width="3" stroke-linejoin="round">${escapeHtml(lbl)}</text>`;
     }
     const rs = roleStyle[nd.role] || roleStyle[''];
     const fill = nd.role === 'gnd' ? '#1e293b' : 'var(--bg-card, #fff)';
@@ -10567,12 +10679,61 @@ function circuitSvgForLoad(ld, connMeta) {
     const devSfx = (nd.dev || '').split('-').pop() || nd.clean;
     const ownSfx = devSfx;
     const canFace = !!nd._lay;
+    if (nd._splice) {
+      const hm = hopMeta[nd.dev + ':' + nd.pin] || {};
+      const ccx = cx + boxW / 2, ccy = y + SPLICE_R;
+      svg += `<circle cx="${ccx}" cy="${ccy}" r="${SPLICE_R}" fill="var(--bg-card, #fff)" stroke="${rs.stroke}" stroke-width="2"/>`;
+      svg += `<circle cx="${ccx}" cy="${ccy}" r="3.5" fill="${rs.stroke}"/>`;
+      // opis obok okręgu — nad odnogami, z obwódką w kolorze tła
+      const info = [hm.fn, hm.deg > 2 ? t('js.zuken.spliceWires', { n: hm.deg }) : ''].filter(Boolean).join(' · ');
+      const halo = 'paint-order="stroke" stroke="var(--bg-card, #fff)" stroke-width="3" stroke-linejoin="round"';
+      edgeLbls += `<text x="${ccx + SPLICE_R + 7}" y="${ccy - 2}" font-size="11" font-weight="700" fill="var(--text-main, #0f172a)" font-family="monospace" ${halo}>${escapeHtml(ownSfx)}</text>`;
+      if (info) edgeLbls += `<text x="${ccx + SPLICE_R + 7}" y="${ccy + 10}" font-size="9" fill="var(--text-muted, #64748b)" ${halo}>${escapeHtml(info.slice(0, 46))}</text>`;
+      const rwS = rwTitles[(nd.clean || '').toUpperCase()];
+      if (rwS) svg += `<text x="${ccx - SPLICE_R - 16}" y="${ccy + 4}" font-size="11" style="cursor:help">🔧<title>${escapeHtml(t('ui.reworks.badgeTitle'))}: ${escapeHtml(rwS.join(' | '))}</title></text>`;
+      return;
+    }
+    if (nd._relay) {
+      // symbol przekaźnika/stycznika jak na schemacie: tor wchodzi pinem
+      // styku od góry, przechodzi przez otwarty styk i wychodzi dołem;
+      // obok prostokąt cewki z pinami sterowania na prawej krawędzi
+      const rl = nd._relay, hgt = nodeH[i], axm = cx + boxW / 2;
+      const pinOf = s => (rl.pin_names || {})[s.dev + '|' + s.pin] || s.pin || '';
+      const pinA = pinOf(rl.a), pinB = pinOf(rl.b);
+      svg += `<rect x="${x}" y="${y}" width="${boxW}" height="${hgt}" rx="7" fill="var(--bg-card, #fff)" stroke="${rs.stroke}" stroke-width="2"/>`;
+      svg += `<text x="${x + 8}" y="${y + 15}" font-size="11" font-weight="700" fill="${fg}" font-family="monospace">🔁 ${escapeHtml(nd.clean)}</text>`;
+      const rInfo = [nd.info || '', rl.label].filter(Boolean).join(' · ');
+      if (rInfo) svg += `<text x="${x + 8}" y="${y + 28}" font-size="9" fill="var(--text-muted, #64748b)">${escapeHtml(rInfo.slice(0, 46))}</text>`;
+      // styk roboczy na osi toru — ramię otwarte (wymaga załączenia cewki)
+      const pAy = y + boxH + 8, pBy = y + hgt - 14;
+      svg += `<circle cx="${axm}" cy="${pAy}" r="3" fill="var(--bg-card, #fff)" stroke="${rs.stroke}" stroke-width="1.6"/>`;
+      svg += `<line x1="${axm}" y1="${pAy + 3}" x2="${axm + 14}" y2="${pBy - 6}" stroke="${rs.stroke}" stroke-width="1.6"/>`;
+      svg += `<circle cx="${axm}" cy="${pBy}" r="3" fill="var(--bg-card, #fff)" stroke="${rs.stroke}" stroke-width="1.6"/>`;
+      svg += `<line x1="${axm}" y1="${pAy + 3}" x2="${axm}" y2="${pAy + 10}" stroke="${rs.stroke}" stroke-width="1.6"/>`;
+      svg += `<line x1="${axm}" y1="${pBy - 6}" x2="${axm}" y2="${y + hgt}" stroke="${rs.stroke}" stroke-width="1.6"/>`;
+      svg += `<text x="${axm - 8}" y="${pAy + 3}" font-size="9" font-weight="700" text-anchor="end" fill="#0891b2" font-family="monospace">${escapeHtml(pinA)}</text>`;
+      svg += `<text x="${axm - 8}" y="${pBy + 3}" font-size="9" font-weight="700" text-anchor="end" fill="#0891b2" font-family="monospace">${escapeHtml(pinB)}</text>`;
+      // cewka: prostokąt po prawej, piny sterowania na krawędzi węzła
+      if (rl.coil && (rl.coil.ends || []).length) {
+        const crx = axm + 64, crw = 16, cry0 = y + boxH + 2, crH = hgt - boxH - 16;
+        svg += `<rect x="${crx}" y="${cry0}" width="${crw}" height="${crH}" fill="none" stroke="${rs.stroke}" stroke-width="1.4"/>`;
+        const cpins = [...new Set((rl.coil.ends || []).map(e => e.coil_pin).filter(Boolean))].slice(0, 2);
+        (nd._coilY || []).forEach((py, k) => {
+          svg += `<line x1="${crx + crw}" y1="${py}" x2="${x + boxW - 3}" y2="${py}" stroke="${rs.stroke}" stroke-width="1.2" stroke-dasharray="3 2"/>`;
+          svg += `<circle cx="${x + boxW - 3}" cy="${py}" r="2.4" fill="${rs.stroke}"/>`;
+          if (cpins[k]) svg += `<text x="${crx + crw + 3}" y="${py + 3}" font-size="8" fill="#0891b2" font-family="monospace">${escapeHtml(cpins[k])}</text>`;
+        });
+      }
+      return;
+    }
     if (canFace)
       svg += `<g style="cursor:pointer" onclick="showConnFace(this)" data-clean="${escapeHtml(nd.clean)}" data-dev="${escapeHtml(devSfx)}" data-mate="${escapeHtml(nd.mate || '')}" data-pin="${escapeHtml(nd.pin)}"><title>${escapeHtml(t('js.zuken.connViewTitle'))}</title>`;
     svg += `<rect x="${x}" y="${y}" width="${boxW}" height="${nodeH[i]}" rx="7" fill="${fill}" stroke="${rs.stroke}" stroke-width="2"/>`;
     const nodeTitle = (nd.ml ? `${nd.ml.module} · ${nd.ml.code}` : `${ownSfx}${nd.pin ? ':' + nd.pin : ''}`) + (nd.mate ? ` ⇄ ${nd.mate}` : '');
+    const hm = hopMeta[nd.dev + ':' + nd.pin] || {};
+    const midInfo = nd.role === '' ? [hm.fn, hm.deg > 2 ? t('js.zuken.spliceWires', { n: hm.deg }) : ''] : [];
     const nodeInfo = nd.ml ? [nd.ml.function, `${nd.clean}:${nd.pin}`].filter(Boolean).join(' · ')
-      : [nd.info, pinFrac, cm.type || cm.article || cm.supplier || ''].filter(Boolean).join(' · ');
+      : [nd.info, ...midInfo, pinFrac, cm.type || cm.article || cm.supplier || ''].filter(Boolean).join(' · ');
     svg += `<text x="${x + 8}" y="${y + 15}" font-size="11" font-weight="700" fill="${fg}" font-family="monospace">${rs.icon ? rs.icon + ' ' : ''}${escapeHtml(nodeTitle)}</text>`;
     if (nodeInfo) svg += `<text x="${x + 8}" y="${y + 28}" font-size="9" fill="${nd.role === 'gnd' ? '#cbd5e1' : 'var(--text-muted, #64748b)'}">${escapeHtml(String(nodeInfo).slice(0, 46))}</text>`;
     if (nd._lay) {
@@ -10599,22 +10760,38 @@ function circuitSvgForLoad(ld, connMeta) {
     let wireLbl = '';
     const divIdx = (e.path || []).findIndex(h => (h.to + ':' + h.to_pin) && rowOf[h.to + ':' + h.to_pin] === st.at);
     const segH = (e.path || [])[divIdx + 1] || (e.path || [])[0];
-    if (segH) wireLbl = [segH.wire_number || segH.signal || '', segH.signal_name || '', segH.wire_color || ''].filter(Boolean).join(' · ');
+    if (segH) wireLbl = wireLabelAttrs(segH).join(' · ');
     const wireStroke = (segH && segH.wire_color) ? circuitWireStroke(segH.wire_color) : '#94a3b8';
-    svg += `<line x1="${cx + boxW}" y1="${atY + boxH / 2}" x2="${stubX}" y2="${y}" stroke="${wireStroke}" stroke-width="1.6" stroke-dasharray="4 3"/>`;
-    svg += `<rect x="${stubX}" y="${y - 15}" width="${stubW}" height="30" rx="6" fill="var(--bg-card, #fff)" stroke="${rm.color}" stroke-width="1.4" stroke-dasharray="3 2"/>`;
+    const atNd = allNodes[st.at] || {};
+    const ax = atNd._splice ? cx + boxW / 2 + SPLICE_R : cx + boxW;
+    const ay = atNd._splice ? atY + SPLICE_R : atY + (nodeH[st.at] || boxH) / 2;
+    svg += `<line x1="${ax}" y1="${ay}" x2="${stubX}" y2="${y}" stroke="${wireStroke}" stroke-width="1.6" stroke-dasharray="4 3"/>`;
     const eSfx = (e.device || '').split('-').pop() || e.clean;
     const ml = e.module_label;
-    const stubTitle = (ml && e.role === 'source')
+    // węzły pośrednie za rozgałęzieniem (np. U31 → U38 → RT112)
+    const tail = (e.path || []).slice(divIdx + 1);
+    const via = tail.slice(0, -1).map(h => h.to_clean || (h.to || '').split('-').pop()).filter(Boolean);
+    const viaTxt = via.length ? ' ' + t('js.zuken.viaNodes', { v: via.join(' → ') }) : '';
+    const stubTitle = ((ml && e.role === 'source')
       ? `${ml.module} · ${ml.code}`
-      : `${eSfx}${e.pin ? ':' + e.pin : ''}`;
-    svg += `<text x="${stubX + 7}" y="${y - 1}" font-size="10" font-weight="700" fill="${rm.color}" font-family="monospace">${rm.icon} ${escapeHtml(stubTitle)}</text>`;
+      : `${eSfx}${e.pin ? ':' + e.pin : ''}`) + viaTxt;
+    // pełny przebieg odnogi w dymku: każdy przewód z numerem, kolorem, przekrojem i długością
+    const tip = (e.path || []).map(h => `${h.from_clean}:${h.from_pin} → ${h.to_clean}:${h.to_pin}  ${edgeLabel(h)}`).join('\n');
+    // odnoga do złącza o znanym układzie (np. wtyczka sterownika X393) — klik otwiera widok złącza
+    const eLay = e.pin ? connFaceLayout(connHalfInfo(connMeta, e.clean, eSfx)) : null;
+    svg += eLay
+      ? `<g style="cursor:pointer" onclick="showConnFace(this)" data-clean="${escapeHtml(e.clean)}" data-dev="${escapeHtml(eSfx)}" data-mate="" data-pin="${escapeHtml(e.pin)}"><title>${escapeHtml(t('js.zuken.connViewTitle') + '\n' + tip)}</title>`
+      : `<g><title>${escapeHtml(tip)}</title>`;
+    svg += `<rect x="${stubX}" y="${y - 15}" width="${stubW}" height="30" rx="6" fill="var(--bg-card, #fff)" stroke="${rm.color}" stroke-width="1.4" stroke-dasharray="3 2"/>`;
+    svg += `<text x="${stubX + 7}" y="${y - 1}" font-size="10" font-weight="700" fill="${rm.color}" font-family="monospace">${rm.icon} ${escapeHtml(stubTitle.slice(0, 40))}</text>`;
     const sub = (ml && e.role === 'source')
       ? [ml.function, eSfx + (e.pin ? ':' + e.pin : ''), wireLbl].filter(Boolean).join(' · ')
       : [e.function || e.desc || '', wireLbl].filter(Boolean).join(' · ');
-    if (sub) svg += `<text x="${stubX + 7}" y="${y + 11}" font-size="8.5" fill="var(--text-muted, #64748b)">${escapeHtml(sub.slice(0, 44))}</text>`;
+    if (sub) svg += `<text x="${stubX + 7}" y="${y + 11}" font-size="8.5" fill="var(--text-muted, #64748b)">${escapeHtml(sub.slice(0, 50))}</text>`;
+    svg += '</g>';
   });
 
+  svg += edgeLbls;
   return `<svg viewBox="0 0 ${W} ${H}" style="width:100%; max-width:${W}px; display:block; margin:0 auto;" xmlns="http://www.w3.org/2000/svg">${svg}</svg>`;
 }
 
@@ -10622,16 +10799,43 @@ function showCircuitDiagram() {
   const cp = ZUKEN_STATE.lastCircuit;
   if (!cp || !(cp.loads || []).length) return;
   closeWirePath();
-  const parts = cp.loads.slice(0, 5).map(ld => {
+  circuitOverlay(t('js.zuken.diagramTitle'), circuitDiagramPartsHtml(cp) || `<div style="color:var(--text-muted); font-size:12px;">—</div>`, true);
+}
+
+// Diagramy odbiorników obwodu — w karcie wyników asystenta i w oknie powiększenia
+function circuitDiagramPartsHtml(cp) {
+  return (cp.loads || []).slice(0, 5).map(ld => {
     const svg = circuitSvgForLoad(ld, cp.conn_meta || {});
     if (!svg) return '';
     const dspName = (ld.device || '').split('-').pop() || ld.clean;
+    // obwód cewki przekaźnika jako osobny diagram pionowy pod diagramem
+    // toru głównego — końce cewki to zwykłe ścieżki, więc pakujemy je
+    // w pseudo-odbiornik (złącze cewki / sam przekaźnik) przez generator
+    const coilsHtml = (ld.relay_coils || []).map(rc => {
+      const byPin = {};
+      (rc.ends || []).forEach(e => { (byPin[e.coil_pin || '?'] = byPin[e.coil_pin || '?'] || []).push(e); });
+      const firstHop = (((rc.ends || [])[0] || {}).path || [])[0] || {};
+      const coilLd = {
+        device: firstHop.from || '', clean: rc.coil_label || firstHop.from_clean || '',
+        function: rc.function || '', desc: '',
+        pins: Object.keys(byPin).map(pin => ({
+          pin,
+          role: byPin[pin].every(e => e.role === 'gnd') ? 'gnd' : 'feed',
+          ends: byPin[pin],
+        })),
+      };
+      const csvg = circuitSvgForLoad(coilLd, cp.conn_meta || {});
+      if (!csvg) return '';
+      return `<div style="margin:8px 0 0 0; padding:7px 10px; border:1px dashed #0891b2; border-radius:6px; background:rgba(8,145,178,0.05);">
+        <div style="font-size:11px; font-weight:800; color:#0e7490;">🔁 ${escapeHtml(t('js.zuken.coilCircuit'))} — ${escapeHtml(rc.clean)}${rc.function ? ' · ' + escapeHtml(rc.function) : ''}${rc.coil_label ? ' · ' + escapeHtml(rc.coil_label) : ''}</div>
+        ${csvg}</div>`;
+    }).join('');
     return `<div style="margin-bottom:16px;">
       <div style="font-size:12px; font-weight:800; color:var(--text-main); margin-bottom:4px; font-family:var(--font-mono,monospace);">🔌 ${escapeHtml(dspName)}${(ld.function || ld.desc) ? ` <span style="font-weight:500; color:var(--text-muted);">— ${escapeHtml(ld.function || ld.desc)}</span>` : ''}</div>
       ${svg}
+      ${coilsHtml}
     </div>`;
   }).join('');
-  circuitOverlay(t('js.zuken.diagramTitle'), parts || `<div style="color:var(--text-muted); font-size:12px;">—</div>`, true);
 }
 
 async function runCircuitTrace() {

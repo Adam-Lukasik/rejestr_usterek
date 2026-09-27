@@ -29,6 +29,9 @@ Wersja wielojęzykowa: `SUPPORTED_LANGS = ("pl", "en", "de")`, tłumaczenia w
 - `backups/` — paczki backupu (~1.3 GB, gitignored)
 - `python-embed/` — przenośny WinPython (~303 MB, gitignored, per maszyna)
 - `sumatrapdfcache/`, `SumatraPDF*` — podgląd PDF (gitignored)
+- `webview_profile/` — trwały profil WebView2 (`private_mode=False` w `desktop_web.py`);
+  trzyma localStorage UI: `ru_last_ps` (domyślny projekt PS), `ru_theme`,
+  `ru_active_user`, stan paneli (gitignored)
 - `config.json` — **jest w repo** i zawiera hasło SMTP (app password Gmail).
   Repozytorium prywatne, ale rozważyć rotację hasła lub wyniesienie sekretów
   do pliku nieśledzonego (np. `config.local.json` / env).
