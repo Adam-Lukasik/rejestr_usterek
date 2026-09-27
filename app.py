@@ -2466,7 +2466,7 @@ def api_zuken_pdf_view(schematic_id):
         if not row:
             return jsonify({"error": smsg("schematicNotFound")}), 404
         
-        filepath = row["filepath"]
+        filepath = zuken_service.resolve_kb_filepath(row["filepath"], heal_db=True)
         if not os.path.exists(filepath):
             return jsonify({"error": smsg("physFileMissing", v=filepath)}), 404
 
@@ -2522,7 +2522,7 @@ def api_zuken_pdf_open():
         if not row:
             return jsonify({"error": smsg("schematicNotFound2")}), 404
 
-        filepath = row["filepath"]
+        filepath = zuken_service.resolve_kb_filepath(row["filepath"], heal_db=True)
         target = (data.get("target") or "").lower()
 
         # Dokumenty projektu inne niż PDF (txt, msg, xlsx…) otwieramy w domyślnej aplikacji

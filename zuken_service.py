@@ -67,6 +67,8 @@ ZS_MSG = {
     "started": {"pl": "Uruchomiono masowe pobieranie dla {n} artykułów.", "en": "Batch download started for {n} articles.", "de": "Stapel-Download für {n} Artikel gestartet."},
     "fileEmpty": {"pl": "Plik jest pusty lub niepoprawny.", "en": "File is empty or invalid.", "de": "Datei ist leer oder ungültig."},
     "importedConns": {"pl": "Zaimportowano {n} połączeń.", "en": "Imported {n} connections.", "de": "{n} Verbindungen importiert."},
+    "importedWireLens": {"pl": "Zaktualizowano długości przewodów: {n} połączeń ({m} nazw z pliku).", "en": "Updated wire lengths: {n} connections ({m} wire names from file).", "de": "Leitungslängen aktualisiert: {n} Verbindungen ({m} Leitungsnamen aus der Datei)."},
+    "connNoLengths": {"pl": "⚠️ Uwaga: kolumna Lenght jest w tym eksporcie pusta — wygeneruj raport w E3 ponownie po uzupełnieniu długości przewodów.", "en": "⚠️ Note: the Lenght column is empty in this export — regenerate the report from E3 after filling in wire lengths.", "de": "⚠️ Hinweis: Die Spalte Lenght ist in diesem Export leer — Bericht aus E3 neu erzeugen, nachdem die Leitungslängen eingetragen wurden."},
     "bomEmpty": {"pl": "Plik BOM jest pusty lub niepoprawny.", "en": "BOM file is empty or invalid.", "de": "BOM-Datei ist leer oder ungültig."},
     "importedBom": {"pl": "Zaimportowano {n} artykułów BOM ({m} przypisań aparatów).", "en": "Imported {n} BOM articles ({m} device assignments).", "de": "{n} BOM-Artikel importiert ({m} Gerätezuordnungen)."},
     "tipTe": {"pl": "Karta produktu TE.com (rysunki 2D/3D, specyfikacja i pinout)", "en": "TE.com product page (2D/3D drawings, spec and pinout)", "de": "TE.com-Produktseite (2D/3D-Zeichnungen, Spezifikation und Pinout)"},
@@ -129,6 +131,8 @@ ZS_MSG = {
     "rMultiConn": {"pl": "Wielopunktowe złącza obwodu ({n} aparatów)", "en": "Multi-point circuit connectors ({n} devices)", "de": "Mehrpunkt-Schaltkreisstecker ({n} Geräte)"},
     "rTopology": {"pl": "Topologia wiązki zawiera złącze: {v}", "en": "Harness topology contains connector: {v}", "de": "Kabelbaum-Topologie enthält Stecker: {v}"},
     "rConnTable": {"pl": "Tabela złączy wiązki ({n} złączy)", "en": "Harness connector table ({n} connectors)", "de": "Kabelbaum-Steckertabelle ({n} Stecker)"},
+    "rConnPinout": {"pl": "Rysunek złącza {v} z rozmieszczeniem pinów", "en": "Connector drawing {v} with pin layout", "de": "Steckerzeichnung {v} mit Pinbelegung"},
+    "rExactPin": {"pl": "Arkusz zawiera dokładny punkt {v}", "en": "Sheet contains exact point {v}", "de": "Blatt enthält exakten Punkt {v}"},
     "batAux": {"pl": "Aux. Bat (Akumulator medyczny)", "en": "Aux. Bat (medical battery)", "de": "Aux. Bat (medizinische Batterie)"},
     "batChass": {"pl": "Chass. Batt (Akumulator podwozia)", "en": "Chass. Batt (chassis battery)", "de": "Chass. Batt (Fahrgestellbatterie)"},
     "batComms": {"pl": "Comms. Bat (Akumulator łączności)", "en": "Comms. Bat (comms battery)", "de": "Comms. Bat (Kommunikationsbatterie)"},
@@ -338,9 +342,17 @@ def init_zuken_tables():
             cross_section TEXT,
             cable_name TEXT,
             length TEXT,
+            signal_name TEXT,
             FOREIGN KEY (project_id) REFERENCES zuken_projects (id) ON DELETE CASCADE
         );
     """)
+
+    try:
+        conn_cols = [r[1] for r in cur.execute("PRAGMA table_info(zuken_connections)").fetchall()]
+        if "signal_name" not in conn_cols:
+            cur.execute("ALTER TABLE zuken_connections ADD COLUMN signal_name TEXT;")
+    except Exception:
+        pass
 
     cur.execute("CREATE INDEX IF NOT EXISTS idx_zuken_signal ON zuken_connections (signal);")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_zuken_from_dev ON zuken_connections (from_device);")
@@ -735,7 +747,7 @@ def extract_project_info_from_filename(filename, raw_rows):
     }
 
 
-def import_zuken_xlsx(filepath, ps_code=None, lang="pl"):
+def import_zuken_xlsx(filepath, ps_code=None, lang="pl", has_wire_len_src=False):
     """Importuje plik XLSX z listy połączeń Zuken E3 do bazy SQLite."""
     filename = os.path.basename(filepath)
     raw_rows = parse_xlsx_fast(filepath)
@@ -826,8 +838,10 @@ def import_zuken_xlsx(filepath, ps_code=None, lang="pl"):
             w_len = _clean_val(r.get("K"))
             from_comp = ""
             to_comp = ""
+            sig_name = ""
         else:
-            # Format: A=Dev From, C=Comp From, D=Pin From, E=Dev To, G=Comp To, H=Pin To, I=Wire/Signal Name, L=Type, M=Colour, N=Cross-sec, O=Cable
+            # Format: A=Dev From, C=Comp From, D=Pin From, E=Dev To, G=Comp To, H=Pin To,
+            # I=Wire/Signal Name (net), J=Function (nazwa sygnału), L=Type, M=Colour, N=Cross-sec, O=Cable, Q=Length
             from_dev = _clean_val(r.get("A"))
             from_comp = _clean_val(r.get("C"))
             from_pin = _clean_val(r.get("D"))
@@ -835,6 +849,7 @@ def import_zuken_xlsx(filepath, ps_code=None, lang="pl"):
             to_comp = _clean_val(r.get("G"))
             to_pin = _clean_val(r.get("H"))
             sig = _clean_val(r.get("I"))
+            sig_name = _clean_val(r.get("J"))
             w_type = _clean_val(r.get("L"))
             w_col = _clean_val(r.get("M"))
             w_cross = _clean_val(r.get("N"))
@@ -850,7 +865,7 @@ def import_zuken_xlsx(filepath, ps_code=None, lang="pl"):
             connections_to_insert.append((
                 project_id, sig, from_dev, from_comp, from_pin,
                 to_dev, to_comp, to_pin, w_num, w_type, w_col,
-                w_cross, w_cable, w_len
+                w_cross, w_cable, w_len, sig_name
             ))
 
     if connections_to_insert:
@@ -858,15 +873,92 @@ def import_zuken_xlsx(filepath, ps_code=None, lang="pl"):
             INSERT INTO zuken_connections (
                 project_id, signal, from_device, from_component, from_pin,
                 to_device, to_component, to_pin, wire_number, wire_type,
-                wire_color, cross_section, cable_name, length
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                wire_color, cross_section, cable_name, length, signal_name
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
         """, connections_to_insert)
 
     cur.execute("UPDATE zuken_projects SET total_connections = ? WHERE id = ?", (len(connections_to_insert), project_id))
     conn.commit()
     conn.close()
 
-    return len(connections_to_insert), zsmsg("importedConns", lang, n=len(connections_to_insert))
+    msg = zsmsg("importedConns", lang, n=len(connections_to_insert))
+    # Kolumna „Lenght" istnieje w eksporcie, ale jest pusta — raport z E3
+    # wygenerowano bez długości przewodów (trzeba go regenerować).
+    hdr_vals = list(header_row.values())
+    if header_idx > 0:
+        hdr_vals += list(raw_rows[header_idx - 1].values())
+    has_len_col = any("lenght" in str(v).lower() or "length" in str(v).lower()
+                      for v in hdr_vals)
+    if (has_len_col and not has_wire_len_src and connections_to_insert
+            and not any(c[13] for c in connections_to_insert)):
+        msg += " " + zsmsg("connNoLengths", lang)
+    return len(connections_to_insert), msg
+
+
+def import_wire_lengths_xlsx(filepath, ps_code=None, lang="pl"):
+    """
+    Import długości przewodów z tabeli „Właściwości przewodu" wklejonej z E3
+    (np. „Przewody PS012732.xlsx"). Układ kolumn z widoku właściwości:
+    A=nazwa przewodu/żyły, …, G=przekrój, H=średnica, I=kolor, J=nazwa sygnału,
+    L=długość (np. „3590 mm"). Nagłówek opcjonalny — kolumny wykrywane też
+    po etykietach („Długość"/„Length"/„Lenght", nazwa = pierwsza kolumna).
+    Ustawia zuken_connections.length dla wierszy o pasującej nazwie sieci.
+    Zwraca (liczba_zaktualizowanych_połączeń, komunikat).
+    """
+    raw_rows = parse_xlsx_fast(filepath)
+    if not raw_rows:
+        return 0, zsmsg("fileEmpty", lang)
+
+    name_col, len_col = "A", "L"
+    for r in raw_rows[:5]:
+        for col, val in r.items():
+            v = str(val or "").strip().lower()
+            if v in ("długość", "dlugosc", "długość [mm]", "length", "lenght", "länge"):
+                len_col = col
+            elif v in ("przewód", "przewod", "wire", "nazwa", "name", "żyła", "zyla", "core", "ader"):
+                name_col = col
+
+    len_re = re.compile(r"^(\d+(?:[.,]\d+)?)\s*mm$", re.I)
+    wire_len = {}
+    for r in raw_rows:
+        name = str(r.get(name_col, "") or "").strip()
+        m = len_re.match(str(r.get(len_col, "") or "").strip())
+        if not name or not m:
+            continue
+        val = m.group(1).replace(",", ".")
+        try:
+            f = float(val)
+            val = str(int(f)) if f == int(f) else str(f)
+        except ValueError:
+            continue
+        wire_len[name] = val  # przy duplikatach nazwy wygrywa ostatnia wartość
+
+    if not wire_len:
+        return 0, zsmsg("fileEmpty", lang)
+
+    init_zuken_tables()
+    conn = get_db()
+    cur = conn.cursor()
+    proj_ids = [r[0] for r in cur.execute(
+        "SELECT id FROM zuken_projects WHERE ps_codes LIKE ?;",
+        (f"%{ps_code}%",)).fetchall()] if ps_code else []
+    if not proj_ids:
+        conn.close()
+        return 0, zsmsg("importedWireLens", lang, n=0, m=len(wire_len))
+
+    ph = ",".join("?" for _ in proj_ids)
+    updated = 0
+    matched = 0
+    for name, lv in wire_len.items():
+        cur.execute(f"UPDATE zuken_connections SET length=? "
+                    f"WHERE project_id IN ({ph}) AND (signal=? OR wire_number=?);",
+                    [lv, *proj_ids, name, name])
+        if cur.rowcount:
+            matched += 1
+            updated += cur.rowcount
+    conn.commit()
+    conn.close()
+    return updated, zsmsg("importedWireLens", lang, n=updated, m=matched)
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -2318,6 +2410,57 @@ def find_zuken_executable():
     return None
 
 
+def resolve_kb_filepath(filepath, heal_db=False):
+    """
+    Mapuje zapisaną w bazie ścieżkę pliku Bazy wiedzy na lokalną lokalizację.
+    Ścieżki w DB są absolutne i zależne od maszyny, na której indeksowano —
+    po skopiowaniu aplikacji na inny komputer stare ścieżki nie istnieją.
+    Obcina część ścieżki po „Baza wiedzy\\" i dokleja do lokalnego
+    BAZA_WIEDZY_DIR; przy heal_db=True zapisuje naprawioną ścieżkę w DB.
+    """
+    if not filepath:
+        return filepath
+    if os.path.exists(filepath):
+        return filepath
+
+    norm = filepath.replace("/", "\\")
+    marker = "baza wiedzy\\"
+    i = norm.lower().rfind(marker)
+    if i >= 0:
+        cand = os.path.normpath(os.path.join(BAZA_WIEDZY_DIR, norm[i + len(marker):]))
+        if os.path.exists(cand):
+            if heal_db:
+                try:
+                    c = get_db()
+                    c.execute("UPDATE zuken_pdf_schematics SET filepath = ? WHERE filepath = ?;",
+                              (cand, filepath))
+                    c.commit()
+                    c.close()
+                except Exception:
+                    pass
+            return cand
+
+    # Ostateczność: szukaj po samej nazwie pliku w całej Bazie wiedzy
+    fname = os.path.basename(filepath)
+    if fname and os.path.isdir(BAZA_WIEDZY_DIR):
+        try:
+            for hit in Path(BAZA_WIEDZY_DIR).glob(f"**/{fname}"):
+                if os.path.isfile(hit):
+                    if heal_db:
+                        try:
+                            c = get_db()
+                            c.execute("UPDATE zuken_pdf_schematics SET filepath = ? WHERE filepath = ?;",
+                                      (str(hit), filepath))
+                            c.commit()
+                            c.close()
+                        except Exception:
+                            pass
+                    return str(hit)
+        except Exception:
+            pass
+    return filepath
+
+
 def find_sumatra_executable():
     """Wyszukuje ścieżkę do programu SumatraPDF.exe (najpierw w katalogu aplikacji, potem w systemie)."""
     # 1. Główny priorytet: SumatraPDF wgrana do katalogu programu rejestru usterek
@@ -2993,6 +3136,14 @@ def find_pdf_sheets_for_query(query, ps_code=None, limit=25, extra_tokens=None, 
             primary_sym_set.add(m_clean)
             primary_sym_set.add(f"-{m_clean}")
 
+    # Kody złączy X z zapytania/obwodu (np. X300) oraz pary złącze:pin (np. X300:17)
+    query_conn_codes = set()
+    for ps_tok in primary_sym_set | circuit_dev_set:
+        m_c = re.fullmatch(r"-?(X[0-9]{1,4}[A-Z]?)", ps_tok)
+        if m_c:
+            query_conn_codes.add(m_c.group(1))
+    conn_pin_queries = re.findall(r"\b([XF]-?[0-9]{1,4}[A-Z]?)\s*[:.]\s*([0-9]{1,3})\b", (query or "").upper())
+
     scored_results = []
     max_score = 0
 
@@ -3012,7 +3163,9 @@ def find_pdf_sheets_for_query(query, ps_code=None, limit=25, extra_tokens=None, 
         syms_on_sheet = sheet_sym_map.get(sh_id, [])
         sym_count = len(syms_on_sheet)
         is_overview = False
-        if OVERVIEW_SHEET_REGEX.search(title_upper):
+        sec_upper = (sh.get("section_code") or "").upper()
+        snum_upper = str(sh.get("sheet_number") or "").upper()
+        if OVERVIEW_SHEET_REGEX.search(title_upper) or OVERVIEW_SHEET_REGEX.search(sec_upper) or re.search(r'=[A-Z]{2,}', snum_upper):
             is_overview = True
         elif sym_count >= 180 and not any(k in title_upper for k in ['DOOR', 'LIGHT', 'HVAC', 'PUMP', 'RADIO', 'LOCKING', 'SIREN', 'RELAY', 'FUSE']):
             is_overview = True
@@ -3148,6 +3301,26 @@ def find_pdf_sheets_for_query(query, ps_code=None, limit=25, extra_tokens=None, 
             elif not has_specific and sc in generic_tokens:
                 score += 10
                 reasons.append(zsmsg("rSignal", lang, v=sn))
+
+        # 5b. Arkusz z fizycznym rysunkiem złącza (siatka pinów) lub dokładnym pinem z zapytania
+        if raw_upper:
+            for cc in query_conn_codes:
+                pin_grid_found = False
+                for m_c in re.finditer(r"(?<![A-Z0-9])-?" + re.escape(cc) + r"'?(?![A-Z0-9])", raw_upper):
+                    seg = raw_upper[m_c.start():m_c.start() + 400]
+                    if len(re.findall(r"\b[0-9]{1,2}/[0-9]{2}\b", seg)) >= 3:
+                        pin_grid_found = True
+                        break
+                if pin_grid_found:
+                    # Gdy zapytanie wskazuje konkretny pin złącza (X300:17), fizyczny
+                    # rysunek złącza jest najwłaściwszą odpowiedzią — silniejsza premia
+                    score += (800 if conn_pin_queries else 450) if not is_overview else 120
+                    reasons.append(zsmsg("rConnPinout", lang, v=cc))
+            for cc, pp in conn_pin_queries:
+                cc_clean = cc.lstrip("-")
+                if re.search(re.escape(cc_clean) + r"'?\s*[:.\-]\s*" + re.escape(pp) + r"\b", raw_upper):
+                    score += 300 if not is_overview else 100
+                    reasons.append(zsmsg("rExactPin", lang, v=f"{cc_clean}:{pp}"))
 
         # Trafienie bezpośrednie (arkusz zawiera kluczowe złącze ORAZ właściwy temat/kategorię układu)
         has_topic_match = (
@@ -3393,7 +3566,7 @@ def index_kb_document(filepath, ps_code=None, category="", lang="pl"):
     return doc_id, zsmsg("docIndexed", lang, p=len(chunks))
 
 
-def _kb_process_file(full_path, rel_path, ps_code, category, lang="pl"):
+def _kb_process_file(full_path, rel_path, ps_code, category, lang="pl", has_wire_len_src=False):
     """
     Przetwarza pojedynczy plik Bazy wiedzy zgodnie z klasyfikacją:
     conn/bom → import XLSX, pdf → indeksacja (schemat E3 lub manual),
@@ -3409,8 +3582,12 @@ def _kb_process_file(full_path, rel_path, ps_code, category, lang="pl"):
             items_cnt, devs_cnt, msg = import_zuken_bom_xlsx(full_path, ps_code=ps_code, lang=lang)
             return {"type": "bom_xlsx", "file": rel_path, "articles": items_cnt, "devices": devs_cnt, "message": msg}
         if ftype == "conn":
-            count, msg = import_zuken_xlsx(full_path, ps_code=ps_code, lang=lang)
+            count, msg = import_zuken_xlsx(full_path, ps_code=ps_code, lang=lang,
+                                           has_wire_len_src=has_wire_len_src)
             return {"type": "xlsx", "file": rel_path, "connections": count, "message": msg}
+        if ftype == "wires":
+            count, msg = import_wire_lengths_xlsx(full_path, ps_code=ps_code, lang=lang)
+            return {"type": "wires_xlsx", "file": rel_path, "wires": count, "message": msg}
         if ftype == "pdf":
             # Schemat E3 = PDF na poziomie głównym lub z kodem PS w nazwie;
             # PDF-y w podfolderach-kategoriach bez kodu PS = dokumentacja urządzeń.
@@ -3463,7 +3640,7 @@ def sync_all_knowledge_base(lang="pl"):
 # Typy plików rozpoznawane w folderze Bazy wiedzy projektu PS.
 # Kolejność = kolejność wyświetlania na liście kontrolnej w UI.
 # "ctrl" = raport konfiguracyjny sterownika (Carnation HTML, docelowo Acetech — format TBD).
-KB_FILE_TYPES = ("conn", "bom", "pdf", "e3s", "ctrl")
+KB_FILE_TYPES = ("conn", "wires", "bom", "pdf", "e3s", "ctrl")
 KB_REQUIRED_TYPES = ("conn", "bom", "pdf")
 KB_ALLOWED_EXTENSIONS = (".xlsx", ".pdf", ".e3s", ".html", ".htm", ".xml", ".json", ".csv", ".txt",
                          ".msg", ".png", ".jpg", ".jpeg", ".actp")
@@ -3481,6 +3658,9 @@ def _kb_classify_file(filename):
     if f_lower.endswith(".xlsx"):
         if "bom" in f_lower:
             return "bom"
+        if "przewod" in f_lower or "wire" in f_lower:
+            # tabela „Właściwości przewodu" z E3 — długości przewodów
+            return "wires"
         if "connection" in f_lower or "_con" in f_lower or "conn" in f_lower:
             return "conn"
         # inne XLSX (np. WAS_ListOfOperations) = dokument projektu, nie lista połączeń
@@ -3608,8 +3788,18 @@ def sync_ps_knowledge_base(ps_code, lang="pl"):
                 "message_key": "kbDirMissing", "results": []}
 
     results = []
+    deferred_wires = []  # długości przewodów — po imporcie list połączeń
+    entries = list(_kb_iter_files(kb_dir))
+    has_wires_src = any(_kb_classify_file(os.path.basename(f)) == "wires"
+                        for f, _, _ in entries)
     try:
-        for full_path, rel, category in _kb_iter_files(kb_dir):
+        for full_path, rel, category in entries:
+            if _kb_classify_file(os.path.basename(full_path)) == "wires":
+                deferred_wires.append((full_path, rel, category))
+            else:
+                results.append(_kb_process_file(full_path, rel, ps_code, category, lang,
+                                                has_wire_len_src=has_wires_src))
+        for full_path, rel, category in deferred_wires:
             results.append(_kb_process_file(full_path, rel, ps_code, category, lang))
     except Exception as e:
         return {"status": "error", "message": str(e), "results": results}
@@ -4973,10 +5163,10 @@ def diagnose_defect(element="", typ="", opisProblem="", ps_code=None, client=Non
             FROM zuken_connections c
             JOIN zuken_projects p ON c.project_id = p.id
             WHERE c.project_id IN ({proj_placeholders})
-              AND (c.signal LIKE ? OR c.from_device LIKE ? OR c.to_device LIKE ? OR c.cable_name LIKE ?)
+              AND (c.signal LIKE ? OR c.signal_name LIKE ? OR c.from_device LIKE ? OR c.to_device LIKE ? OR c.cable_name LIKE ?)
             LIMIT 40;
         """
-        params = proj_ids + [query_pattern, query_pattern, query_pattern, query_pattern]
+        params = proj_ids + [query_pattern, query_pattern, query_pattern, query_pattern, query_pattern]
         cur.execute(sql, params)
         for row in cur.fetchall():
             r_dict = dict(row)
@@ -4988,7 +5178,7 @@ def diagnose_defect(element="", typ="", opisProblem="", ps_code=None, client=Non
     # Posortuj połączenia tak, aby obwody powiązane z kluczowymi aparatami, historią i frazami były na samej górze
     def _conn_priority(c):
         score = 0
-        txt = f"{c.get('from_device', '')} {c.get('to_device', '')} {c.get('signal', '')}".upper()
+        txt = f"{c.get('from_device', '')} {c.get('to_device', '')} {c.get('signal', '')} {c.get('signal_name', '')}".upper()
         for vp in variant_phrases:
             if vp.upper() in txt:
                 score += 80
@@ -5150,6 +5340,7 @@ def diagnose_defect(element="", typ="", opisProblem="", ps_code=None, client=Non
             "wire_type": c["wire_type"],
             "cross_section": c["cross_section"],
             "wire_number": c["wire_number"],
+            "signal_name": c.get("signal_name", ""),
             "length": c.get("length", ""),
             "length_formatted": format_wire_length(c.get("length", ""), lang=lang),
             "project_rev": c["revision_name"],
@@ -5205,7 +5396,8 @@ def diagnose_defect(element="", typ="", opisProblem="", ps_code=None, client=Non
                     if rw not in hit_reworks:
                         hit_reworks.append(rw)
         for tok in tokens:
-            key = (clean_device_code(tok) or tok).upper()
+            base_tok = tok.split(":")[0]
+            key = (clean_device_code(base_tok) or base_tok).upper()
             for rw in rework_map.get(key, []):
                 if rw not in hit_reworks:
                     hit_reworks.append(rw)
@@ -5466,7 +5658,7 @@ def generate_ps_technical_summaries(ps_code, lang="pl"):
     if conn_proj_ids:
         ph_conn = ",".join("?" for _ in conn_proj_ids)
         cur.execute(f"""
-            SELECT project_id, signal, from_device, from_component, from_pin,
+            SELECT project_id, signal, signal_name, from_device, from_component, from_pin,
                    to_device, to_component, to_pin,
                    wire_number, wire_type, wire_color, cross_section, cable_name, length
             FROM zuken_connections
@@ -5528,6 +5720,7 @@ def generate_ps_technical_summaries(ps_code, lang="pl"):
                 pin_entry = {
                     "wire_number": w_num,
                     "signal": sig,
+                    "signal_name": (r["signal_name"] or "").strip(),
                     "wire_color": w_col,
                     "cross_section": w_cs,
                     "wire_type": w_type,
@@ -5543,7 +5736,7 @@ def generate_ps_technical_summaries(ps_code, lang="pl"):
                     existing.append(pin_entry)
                 else:
                     # Ten sam przewód opisany w innym pliku projektu — dopełnij brakujące pola
-                    for fld in ("signal", "wire_color", "cross_section", "wire_type"):
+                    for fld in ("signal", "signal_name", "wire_color", "cross_section", "wire_type"):
                         if not dup[fld] and pin_entry[fld]:
                             dup[fld] = pin_entry[fld]
 
@@ -5670,7 +5863,7 @@ def generate_ps_technical_summaries(ps_code, lang="pl"):
                 ph_devs = ",".join("?" for _ in search_devs)
                 ph_conn = ",".join("?" for _ in conn_proj_ids)
                 cur.execute(f"""
-                    SELECT project_id, signal, wire_number, wire_color, cross_section, length, to_device, to_pin, from_device, from_pin
+                    SELECT project_id, signal, signal_name, wire_number, wire_color, cross_section, length, to_device, to_pin, from_device, from_pin
                     FROM zuken_connections
                     WHERE (from_device IN ({ph_devs}) OR to_device IN ({ph_devs}))
                       AND project_id IN ({ph_conn});
@@ -5701,6 +5894,7 @@ def generate_ps_technical_summaries(ps_code, lang="pl"):
                                 "target": target,
                                 "target_desc": explain_device_code(target, glossary, lang=lang),
                                 "signal": s,
+                                "signal_name": (conn_row["signal_name"] or "").strip(),
                                 "wire": wn
                             }
                             details.append(details_seen[dkey])
@@ -5817,7 +6011,7 @@ def generate_ps_technical_summaries(ps_code, lang="pl"):
                     con_prio = f"ORDER BY CASE WHEN project_id IN ({ph_cfmt}) THEN 0 ELSE 1 END"
                     con_params = tuple(con_format_ids)
                 cur.execute(f"""
-                    SELECT project_id, from_pin, to_pin, signal, wire_number, wire_color,
+                    SELECT project_id, from_pin, to_pin, signal, signal_name, wire_number, wire_color,
                            cross_section, wire_type, length, cable_name, to_device, from_device
                     FROM zuken_connections
                     WHERE (from_device = ? OR to_device = ?) AND project_id IN ({ph_conn})
@@ -5853,6 +6047,7 @@ def generate_ps_technical_summaries(ps_code, lang="pl"):
                     raw_contacts.append({
                         "pin": pin, "target": target, "target_pin": target_p,
                         "wire_number": w_num, "signal": sig,
+                        "signal_name": (cr["signal_name"] or "").strip(),
                         "wire_color": c_col,
                         "cross_section": c_cs,
                         "wire_type": c_type,
@@ -5866,7 +6061,7 @@ def generate_ps_technical_summaries(ps_code, lang="pl"):
                         continue
                     key = (rc["pin"], rc["target"], rc["target_pin"], rc["wire_number"])
                     if key in seen_contacts:
-                        for fld in ("signal", "wire_color", "cross_section", "wire_type", "length"):
+                        for fld in ("signal", "signal_name", "wire_color", "cross_section", "wire_type", "length"):
                             if not seen_contacts[key][fld] and rc[fld]:
                                 seen_contacts[key][fld] = rc[fld]
                         continue
@@ -5889,6 +6084,7 @@ def generate_ps_technical_summaries(ps_code, lang="pl"):
                         "relay_pin": relay_pin,
                         "role": role,
                         "signal": rc["signal"],
+                        "signal_name": rc["signal_name"],
                         "wire_number": rc["wire_number"],
                         "wire_color": rc["wire_color"],
                         "cross_section": rc["cross_section"],
@@ -6020,13 +6216,13 @@ def _wire_adjacency(cur, conn_proj_ids):
     ph = ",".join("?" for _ in conn_proj_ids)
     cur.execute(f"""
         SELECT from_device, from_pin, to_device, to_pin,
-               signal, wire_number, wire_color, cross_section, wire_type, length
+               signal, signal_name, wire_number, wire_color, cross_section, wire_type, length
         FROM zuken_connections
         WHERE project_id IN ({ph});
     """, conn_proj_ids)
 
     def _richness(r):
-        return sum(1 for k in ("wire_number", "signal", "wire_color",
+        return sum(1 for k in ("wire_number", "signal", "signal_name", "wire_color",
                                "cross_section", "wire_type", "length")
                    if (r[k] or "").strip())
 
@@ -6161,7 +6357,8 @@ def _wire_hop(fdev, fpin, tdev, tpin, row):
         "to": tdev or "", "to_pin": tpin or "",
         "from_clean": clean_device_code(fdev) or (fdev or ""),
         "to_clean": clean_device_code(tdev) or (tdev or ""),
-        "signal": _g("signal"), "wire_number": _g("wire_number"),
+        "signal": _g("signal"), "signal_name": _g("signal_name"),
+        "wire_number": _g("wire_number"),
         "wire_color": _g("wire_color"), "cross_section": _g("cross_section"),
         "wire_type": _g("wire_type"), "length": ln,
         "internal": (row.get("_internal") or "") if isinstance(row, dict) else "",
@@ -6311,7 +6508,13 @@ _CONN_TYPE_FILLER = re.compile(
     r"|crimp|terminal|positions?|pos\.?|pitch|dual|row|assembly|assy"
     r"|genuine|system|only|multi|interlok)\b", re.IGNORECASE)
 
-_CIRCUIT_FUSE_RE = re.compile(r"^(FH?|U)\d", re.IGNORECASE)
+_CIRCUIT_FUSE_RE = re.compile(r"^(FH?|FR|U)\d", re.IGNORECASE)
+
+# Słowa kluczowe w funkcji/opisie złącza wskazujące, że jest to złącze
+# modułu sterownika (Acetech, Carnation, EVPSS, Inomatic, ...).
+_CIRCUIT_CTRL_CONN_KEYWORDS = re.compile(
+    r"\b(ACETECH|CARNATION|EVPSS|INOMATIC|OXP|CONTROLLER|STEROWNIK|ECU|MODULE|MODU[LŁ])\b",
+    re.IGNORECASE)
 
 
 def _connector_type_name(desc):
@@ -6404,20 +6607,25 @@ def _signal_node_map(cur, conn_proj_ids):
         return out
     ph = ",".join("?" for _ in conn_proj_ids)
     for r in cur.execute(f"""
-        SELECT signal, from_device, from_pin, to_device, to_pin
+        SELECT signal, signal_name, from_device, from_pin, to_device, to_pin
         FROM zuken_connections
         WHERE project_id IN ({ph}) AND COALESCE(TRIM(signal), '') != '';
     """, conn_proj_ids):
         sig = (r["signal"] or "").strip()
         if not sig:
             continue
-        nodes = out.setdefault(sig, set())
         a = ((r["from_device"] or "").strip(), (r["from_pin"] or "").strip())
         b = ((r["to_device"] or "").strip(), (r["to_pin"] or "").strip())
-        if a[0]:
-            nodes.add(a)
-        if b[0]:
-            nodes.add(b)
+        # Indeksuj też nazwę funkcji sygnału (np. 'Motor 1') — zapytanie po nazwie
+        # trafia na numer sieci (np. '315_1')
+        for label in (sig, (r["signal_name"] or "").strip()):
+            if not label:
+                continue
+            nodes = out.setdefault(label, set())
+            if a[0]:
+                nodes.add(a)
+            if b[0]:
+                nodes.add(b)
     return out
 
 
@@ -6500,27 +6708,34 @@ def _match_signals_by_desc(descs, sig_nodes, limit=6):
     return [s for neg, _, s in scored if neg == best_key][:limit]
 
 
-def _circuit_evpss_for_signal(signal, carn):
-    """Wyjście EVPSS, którego nazwa funkcji dopasowuje się do sygnału."""
+def _circuit_evpss_for_signal(signal, carn, signal_names=()):
+    """Wyjście EVPSS, którego nazwa funkcji dopasowuje się do sygnału
+    (kodu lub nazwy sygnału, np. 'Heater Perm Feed')."""
     outs = (carn or {}).get("relevant_outputs") or []
     if not outs:
         return None
-    if not signal:
+    candidates = [signal] + list(signal_names or ())
+    if not any(candidates):
         return outs[0] if len(outs) == 1 else None
-    sig_toks = set(_circuit_tokens(signal))
 
     def _covers(toks_a, toks_b):
         return all((({tk} | _CIRCUIT_SYNONYMS.get(tk, set())) & toks_b)
                    for tk in toks_a)
 
-    for out in outs:
-        f_toks = set(_circuit_tokens(out.get("function") or ""))
-        if f_toks and _covers(f_toks, sig_toks):
-            return out
-    for out in outs:
-        f_toks = set(_circuit_tokens(out.get("function") or ""))
-        if f_toks and _covers(sig_toks, f_toks):
-            return out
+    for sig in candidates:
+        if not sig:
+            continue
+        sig_toks = set(_circuit_tokens(sig))
+        if not sig_toks:
+            continue
+        for out in outs:
+            f_toks = set(_circuit_tokens(out.get("function") or ""))
+            if f_toks and _covers(f_toks, sig_toks):
+                return out
+        for out in outs:
+            f_toks = set(_circuit_tokens(out.get("function") or ""))
+            if f_toks and _covers(sig_toks, f_toks):
+                return out
     return outs[0] if len(outs) == 1 else None
 
 
@@ -6540,7 +6755,7 @@ def _circuit_extend_adjacency(cur, adj, ps_code):
         dev_pins.setdefault(d, set()).add(p)
 
     def _mark(kind, label):
-        return {"signal": "", "wire_number": "", "wire_color": "",
+        return {"signal": "", "signal_name": "", "wire_number": "", "wire_color": "",
                 "cross_section": "", "wire_type": "", "length": "",
                 "_internal": kind, "_internal_label": label}
 
@@ -6606,12 +6821,18 @@ def _circuit_extend_adjacency(cur, adj, ps_code):
 
 def _evpss_signal_label(sig, parsed, controller="Carnation"):
     """Nazwa sygnału -> wyjście/wejście sterownika (dopasowanie przez
-    synonimy nazw). Zwraca dict {code, kind, module, function, max_current}."""
+    synonimy nazw, z fuzzy-matchingiem dla sufiksów faz .A/.B/.C).
+    Zwraca dict {code, kind, module, function, max_current}."""
     if not sig or not parsed:
         return None
     sig_toks = set(_circuit_tokens(sig))
     if not sig_toks:
         return None
+
+    def _core(toks):
+        # Usuń pojedyncze litery fazowe (A, B, C) oraz numery wersji, aby
+        # 'Heater Perm Feed' pasowało do 'Heater Feed.A'.
+        return {t for t in toks if not re.match(r"^[A-Z]$|^[A-Z]\d+$", t)}
 
     def _sig_covered_by(f_toks):
         return all((({tk} | _CIRCUIT_SYNONYMS.get(tk, set())) & f_toks)
@@ -6621,35 +6842,82 @@ def _evpss_signal_label(sig, parsed, controller="Carnation"):
         return all((({tk} | _CIRCUIT_SYNONYMS.get(tk, set())) & sig_toks)
                    for tk in f_toks)
 
+    def _covers(a, b):
+        return all((({tk} | _CIRCUIT_SYNONYMS.get(tk, set())) & b)
+                   for tk in a)
+
+    def _fmt_module(raw_module, code, kind):
+        # CP20-O3 -> Acetech OUTPUT 3; A103 -> Carnation 1; puste -> controller.
+        mod = (raw_module or "").strip()
+        m_ac = re.search(r"\bO(\d+)\b", mod) or re.search(r"\bO(\d+)\.", code)
+        if m_ac:
+            return f"{controller} OUTPUT {m_ac.group(1)}"
+        m_carn = re.search(r"\bA?10?(\d)\b", mod)
+        if m_carn:
+            return f"{controller} {m_carn.group(1)}"
+        return mod if mod else controller
+
     best = None
     for code, out in (parsed.get("outputs") or {}).items():
-        f_toks = set(_circuit_tokens(out.get("function") or ""))
-        if not f_toks or not (_f_covered_by_sig(f_toks) or _sig_covered_by(f_toks)):
+        raw_toks = set(_circuit_tokens(out.get("function") or ""))
+        if not raw_toks:
+            continue
+        f_toks = _core(raw_toks)
+        # Sprawdź ścisłe pokrycie oraz pokrycie rdzenia funkcji.
+        strict = _f_covered_by_sig(raw_toks) or _sig_covered_by(raw_toks)
+        core_match = _covers(f_toks, sig_toks) or _covers(sig_toks, f_toks)
+        if not (strict or core_match):
             continue
         score = len(f_toks & sig_toks) * 100 + min(len(f_toks), len(sig_toks))
         if best is None or score > best[0]:
-            m = re.match(r"O(\d)\.", code)
             best = (score, {"code": out.get("code") or code, "kind": "output",
-                            "module": out.get("module") or (f"{controller} {m.group(1)}" if m else controller),
+                            "module": _fmt_module(out.get("module"), code, "output"),
                             "function": out.get("function") or "",
                             "max_current": out.get("max_current") or ""})
     for code, inp in (parsed.get("inputs") or {}).items():
-        f_toks = set(_circuit_tokens(inp.get("function") or ""))
-        if not f_toks or not (_f_covered_by_sig(f_toks) or _sig_covered_by(f_toks)):
+        raw_toks = set(_circuit_tokens(inp.get("function") or ""))
+        if not raw_toks:
+            continue
+        f_toks = _core(raw_toks)
+        strict = _f_covered_by_sig(raw_toks) or _sig_covered_by(raw_toks)
+        core_match = _covers(f_toks, sig_toks) or _covers(sig_toks, f_toks)
+        if not (strict or core_match):
             continue
         score = len(f_toks & sig_toks) * 100 + min(len(f_toks), len(sig_toks))
         if best is None or score > best[0]:
             best = (score, {"code": inp.get("code") or code, "kind": "input",
-                            "module": inp.get("module") or f"{controller} ECU",
+                            "module": _fmt_module(inp.get("module"), code, "input"),
                             "function": inp.get("function") or "",
                             "max_current": ""})
     return best[1] if best else None
 
 
-def _circuit_end_role(ed, last_row):
+def _module_label_from_function(func_text, controller="Sterownik"):
+    """Fallbackowa etykieta modułu sterownika na podstawie funkcji BOM
+    złącza (np. 'ACETECH OXP3 #3 - right' -> {'module':'Acetech OUTPUT 3', ...})."""
+    txt = (func_text or "").upper()
+    m = re.search(r"\b(ACETECH|CARNATION|EVPSS|INOMATIC|OXP)\b", txt)
+    if not m:
+        return None
+    brand = m.group(1).title()
+    if brand == "Evpss":
+        brand = "Carnation EVPSS"
+    # Próba wyciągnięcia numeru wyjścia/wejścia, np. OXP3 #3
+    out_m = re.search(r"OXP\d*\s*#?\s*(\d+)", txt) or re.search(r"OUTPUT\s*(\d+)", txt)
+    code = f"O.{out_m.group(1)}" if out_m else ""
+    module = controller if controller.upper() == brand.upper() else f"{controller} {brand}"
+    if out_m:
+        module += f" OUTPUT {out_m.group(1)}"
+    return {"code": code, "kind": "output", "module": module,
+            "function": "", "max_current": ""}
+
+
+def _circuit_end_role(ed, last_row, dev_funcs=None, bom_names=None):
     """Rola końca sieci patrząc od odbiornika:
     gnd (punkt masy), source (moduł EVPSS/OPM), terminal (zacisk/stud),
-    fuse, relay, load (inny odbiornik — rozgałęzienie)."""
+    fuse, relay, load (inny odbiornik — rozgałęzienie).
+    Złącza oznaczone w BOM jako moduły sterownika (Acetech/Carnation/...)
+    traktujemy jako źródło zasilania."""
     d = (ed or "").upper()
     c = (clean_device_code(ed) or "").upper()
     if "+GND" in d:
@@ -6658,6 +6926,8 @@ def _circuit_end_role(ed, last_row):
         return "source"
     if _CIRCUIT_RELAY_RE.match(c):
         return "relay"
+    info = ((dev_funcs or {}).get(ed) or (dev_funcs or {}).get(c) or "").upper()
+    is_gnd_by_func = any(k in info for k in ("GND", "GROUND", "MASSA", "MASOWA", "MINUS", "NEG", "-"))
     if _CIRCUIT_RT_RE.match(c):
         sig = ""
         if last_row is not None:
@@ -6665,9 +6935,14 @@ def _circuit_end_role(ed, last_row):
                 sig = (last_row["signal"] or "").upper()
             except Exception:
                 sig = ""
-        return "gnd" if "GND" in sig else "terminal"
+        return "gnd" if ("GND" in sig or is_gnd_by_func) else "terminal"
     if _CIRCUIT_FUSE_RE.match(c):
-        return "fuse"
+        return "gnd" if is_gnd_by_func else "fuse"
+    # Złącze modułu sterownika: np. X396/X397 z funkcją "ACETECH OXP3 #3 ..."
+    info = (dev_funcs or {}).get(ed) or (dev_funcs or {}).get(c) or \
+           (bom_names or {}).get(c) or ""
+    if c.startswith("X") and _CIRCUIT_CTRL_CONN_KEYWORDS.search(info):
+        return "source"
     return "load"
 
 
@@ -6777,7 +7052,14 @@ def trace_circuit(ps_code, query, lang="pl"):
             return {"ok": True, "query": q, "resolved": resolved,
                     "loads": [], "candidates": []}
 
-        evpss = _circuit_evpss_for_signal(sig_matches[0], ctrl)
+        sig_names = list(dict.fromkeys(
+            (r["signal_name"] or "").strip()
+            for sig in sig_matches[:4]
+            for nd in (sig_nodes.get(sig) or set())
+            for r in (adj.get(nd) or {}).values()
+            if (r["signal_name"] or "").strip()
+        ))
+        evpss = _circuit_evpss_for_signal(sig_matches[0], ctrl, signal_names=sig_names)
         used_sigs, load_devs, all_terms = [], [], []
         for sig in sig_matches[:4]:
             nodes = sig_nodes.get(sig) or set()
@@ -6787,7 +7069,7 @@ def trace_circuit(ps_code, query, lang="pl"):
                     terms.append(nd)
             all_terms.extend(terms)
             loads_here = [nd for nd in terms
-                          if _circuit_end_role(nd[0], None) == "load"]
+                          if _circuit_end_role(nd[0], None, dev_funcs, bom_names) == "load"]
             if not loads_here:
                 continue
             used_sigs.append(sig)
@@ -6830,7 +7112,7 @@ def trace_circuit(ps_code, query, lang="pl"):
                     continue
                 seen_e.add((ed, ep))
                 last_row = path[-1][2] if path else None
-                role = _circuit_end_role(ed, last_row)
+                role = _circuit_end_role(ed, last_row, dev_funcs, bom_names)
                 roles.add(role)
                 hops = [_wire_hop(a[0], a[1], b[0], b[1], row)
                         for (a, b, row) in path]
@@ -6866,24 +7148,34 @@ def trace_circuit(ps_code, query, lang="pl"):
 
     # ── 3. Etykiety modułów sterownika dla końców-źródeł ─────────
     # A103/A104/A105 -> "Carnation 1/2/3 · O<n.m>", CP20-Ox -> "Acetech · O.n"
-    # — sygnał na krawędzi do modułu wskazuje wyjście/wejście sterownika.
+    # X396/X397 z funkcją "ACETECH OXP3 #3 ..." -> źródło zasilania.
     _ctype, cname, ctrl_parsed = _controller_parsed(ps_code)
     for ld in loads_out:
         for p in ld["pins"]:
             for e in p["ends"]:
-                if not _CIRCUIT_MODULE_RE.match(e["clean"] or ""):
+                # Moduł Axxx (oryginalna logika) lub złącze sterownika
+                is_module = bool(_CIRCUIT_MODULE_RE.match(e["clean"] or ""))
+                func_text = e.get("function") or ""
+                is_ctrl_conn = (e.get("role") == "source" and
+                                bool(_CIRCUIT_CTRL_CONN_KEYWORDS.search(func_text)))
+                if not is_module and not is_ctrl_conn:
                     continue
                 lbl = None
                 if e["path"]:
                     for h in reversed(e["path"]):
-                        if h.get("signal"):
-                            lbl = _evpss_signal_label(h["signal"], ctrl_parsed, controller=cname or "Sterownik")
+                        sig_text = h.get("signal_name") or h.get("signal") or ""
+                        if sig_text:
+                            lbl = _evpss_signal_label(sig_text, ctrl_parsed,
+                                                      controller=cname or "Sterownik")
                             if lbl:
                                 break
+                # Fallback: nazwa wyjścia/wejścia wywnioskowana z funkcji BOM
+                if not lbl and is_ctrl_conn:
+                    lbl = _module_label_from_function(func_text, cname or "Sterownik")
                 if not lbl:
                     continue
                 e["module_label"] = lbl
-                # funkcja EVPSS wazniejsza niz ogolny opis BOM modulu
+                # funkcja sterownika ważniejsza niż ogólny opis BOM modułu/złącza
                 if not e["function"] or e["function"] == bom_names.get(e["clean"]):
                     e["function"] = lbl["function"] or e["function"]
                 # wtyczka modułu: ostatnie złącze przechodnie przed końcem
@@ -7517,7 +7809,7 @@ def get_ps_fuses(ps_code, search="", limit=100, offset=0, lang="pl"):
             con_prio = f"ORDER BY CASE WHEN project_id IN ({ph_cfmt}) THEN 0 ELSE 1 END"
             con_params = tuple(con_format_ids)
         cur.execute(f"""
-            SELECT project_id, from_device, from_pin, to_device, to_pin, signal,
+            SELECT project_id, from_device, from_pin, to_device, to_pin, signal, signal_name,
                    wire_number, wire_color, cross_section, wire_type, length
             FROM zuken_connections
             WHERE (from_device IN ({ph_devs}) OR to_device IN ({ph_devs}))
@@ -7556,6 +7848,7 @@ def get_ps_fuses(ps_code, search="", limit=100, offset=0, lang="pl"):
                 "pin": pin,
                 "wire_number": w_num,
                 "signal": sig,
+                "signal_name": (cr["signal_name"] or "").strip(),
                 "wire_color": (cr["wire_color"] or "").strip(),
                 "cross_section": (cr["cross_section"] or "").strip(),
                 "wire_type": (cr["wire_type"] or "").strip(),
@@ -7567,7 +7860,7 @@ def get_ps_fuses(ps_code, search="", limit=100, offset=0, lang="pl"):
                 continue  # "ślepy" zapis bez danych przewodu
             key = (pin, target, target_p, w_num)
             if key in seen:
-                for fld in ("signal", "wire_color", "cross_section", "wire_type", "length"):
+                for fld in ("signal", "signal_name", "wire_color", "cross_section", "wire_type", "length"):
                     if not seen[key][fld] and entry[fld]:
                         seen[key][fld] = entry[fld]
                 continue
@@ -7588,7 +7881,7 @@ def get_ps_fuses(ps_code, search="", limit=100, offset=0, lang="pl"):
             if tgts:
                 ph_t = ",".join("?" for _ in tgts)
                 cur.execute(f"""
-                    SELECT project_id, from_device, to_device, signal,
+                    SELECT project_id, from_device, to_device, signal, signal_name,
                            wire_number, wire_color, cross_section, wire_type, length
                     FROM zuken_connections
                     WHERE (from_device IN ({ph_t}) OR to_device IN ({ph_t}))
@@ -7615,6 +7908,8 @@ def get_ps_fuses(ps_code, search="", limit=100, offset=0, lang="pl"):
                                 w["wire_number"] = wn2
                             if not w["signal"] and sg2:
                                 w["signal"] = sg2
+                            if not w["signal_name"] and (cr["signal_name"] or "").strip():
+                                w["signal_name"] = cr["signal_name"].strip()
                             if not w["wire_color"] and (cr["wire_color"] or "").strip():
                                 w["wire_color"] = cr["wire_color"].strip()
                             if not w["cross_section"] and (cr["cross_section"] or "").strip():

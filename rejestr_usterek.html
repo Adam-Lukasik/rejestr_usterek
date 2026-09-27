@@ -5362,6 +5362,7 @@ async function deleteProject(ps) {
 const KB_STATE = { ps: '', _miniTimer: null };
 const KB_TYPES = [
   { key: 'conn', nameKey: 'ui.kb.typeConnName', descKey: 'ui.kb.typeConnDesc', accept: '.xlsx' },
+  { key: 'wires', nameKey: 'ui.kb.typeWiresName', descKey: 'ui.kb.typeWiresDesc', accept: '.xlsx' },
   { key: 'bom',  nameKey: 'ui.kb.typeBomName',  descKey: 'ui.kb.typeBomDesc',  accept: '.xlsx' },
   { key: 'pdf',  nameKey: 'ui.kb.typePdfName',  descKey: 'ui.kb.typePdfDesc',  accept: '.pdf' },
   { key: 'e3s',  nameKey: 'ui.kb.typeE3sName',  descKey: 'ui.kb.typeE3sDesc',  accept: '.e3s' },
@@ -9860,8 +9861,7 @@ function signalPathCardHtml(sp, query) {
     const endsHtml = (net.ends || []).map(e => {
       const endL = (e.clean || e.device) + (e.pin ? ':' + e.pin : '');
       const hopsTxt = (e.path || []).map(h => {
-        const wlabel = h.wire_number || h.signal || '';
-        const attrs = [wlabel, h.wire_color, h.cross_section ? h.cross_section + ' mm²' : '', (h.length && h.length !== '0') ? fmtWireLength(h.length) : ''].filter(Boolean).join(' · ');
+        const attrs = wireLabelAttrs(h).join(' · ');
         return `${escapeHtml(h.from_clean)}${h.from_pin ? ':' + escapeHtml(h.from_pin) : ''} <span style="color:var(--text-muted);">—[${escapeHtml(attrs)}]→</span>`;
       }).join(' ');
       return `<div data-fe="${escapeHtml(JSON.stringify(e))}" onclick="showWirePath(this)" style="margin:4px 0 4px 14px; padding:6px 10px; background:var(--bg-card); border:1px solid var(--border); border-left:3px solid #16a34a; border-radius:6px; cursor:pointer;" title="${t('js.zuken.wirePathStepTitle', { v: escapeHtml(e.device) })}">
@@ -9906,6 +9906,15 @@ function circuitWireStroke(colorText) {
   return '#64748b';
 }
 
+// Wspólna etykieta przewodu: nr sieci/przewodu · nazwa sygnału (Motor 1) · kolor · przekrój · długość
+function wireLabelAttrs(h) {
+  const cs = (h.cross_section || '').replace(/\s*mm²?$/i, '');
+  const net = h.wire_number || h.signal || '';
+  const sname = (h.signal_name || '').trim();
+  return [net, (sname && sname !== net) ? sname : '', h.wire_color || '', cs ? cs + ' mm²' : '',
+    (h.length && h.length !== '0') ? fmtWireLength(h.length) : ''].filter(Boolean);
+}
+
 function circuitHopInline(h, mateMark) {
   const nodeA = escapeHtml(h.from_clean) + (h.from_pin ? ':' + escapeHtml(h.from_pin) : '')
     + (mateMark ? ` <span style="color:#7c3aed;" title="${escapeHtml(t('js.zuken.matePair'))}">⇄${escapeHtml(mateMark)}</span>` : '');
@@ -9913,10 +9922,7 @@ function circuitHopInline(h, mateMark) {
     const lbl = h.internal === 'fuse' ? t('js.zuken.viaFuse') : t('js.zuken.viaRelay');
     return `${nodeA} <span style="color:#d97706;">—[⚡ ${escapeHtml(lbl)} ${escapeHtml(h.internal_label || '')}]→</span>`;
   }
-  const wlabel = h.wire_number || h.signal || '';
-  const cs = (h.cross_section || '').replace(/\s*mm²?$/i, '');
-  const attrs = [wlabel, h.wire_color, cs ? cs + ' mm²' : '',
-    (h.length && h.length !== '0') ? fmtWireLength(h.length) : ''].filter(Boolean).join(' · ');
+  const attrs = wireLabelAttrs(h).join(' · ');
   return `${nodeA} <span style="color:var(--text-muted);">—[${escapeHtml(attrs)}]→</span>`;
 }
 
@@ -9924,10 +9930,7 @@ function circuitSegDesc(h) {
   if (!h) return '';
   if (h.internal === 'fuse') return `⚠️ ${escapeHtml(h.internal_label || '')} — ${escapeHtml(t('js.zuken.checkFuseHere'))}`;
   if (h.internal === 'relay') return `⚠️ ${escapeHtml(h.internal_label || '')} — ${escapeHtml(t('js.zuken.relayContactNote'))}`;
-  const cs = (h.cross_section || '').replace(/\s*mm²?$/i, '');
-  const w = [h.wire_number || h.signal || '', h.wire_color || '', cs ? cs + ' mm²' : '',
-    (h.length && h.length !== '0') ? fmtWireLength(h.length) : ''].filter(Boolean).join(' · ');
-  return escapeHtml(w);
+  return escapeHtml(wireLabelAttrs(h).join(' · '));
 }
 
 function circuitEndHtml(e) {
@@ -10039,7 +10042,7 @@ function showCircuitChecklist() {
         const src = ends.find(e => e.role === 'source' || e.role === 'terminal') || ends[0];
         if (!src) return;
         const srcMl = src.module_label;
-        const nodes = [{ label: ld.clean + ':' + p.pin, dev: ld.clean, seg: null, isEnd: false }];
+        const nodes = [{ label: ((ld.device || '').split('-').pop() || ld.clean) + ':' + p.pin, dev: ld.clean, seg: null, isEnd: false }];
         (src.path || []).forEach((h, i) => {
           const mate = h.from_clean === h.to_clean && h.from_pin === h.to_pin && h.from !== h.to;
           if (mate) {
@@ -10048,7 +10051,8 @@ function showCircuitChecklist() {
             return;
           }
           const isEnd = i === src.path.length - 1;
-          const base = h.to_clean + (h.to_pin ? ':' + h.to_pin : '');
+          const toSfx = (h.to || '').split('-').pop() || h.to_clean;
+          const base = toSfx + (h.to_pin ? ':' + h.to_pin : '');
           nodes.push({
             label: (isEnd && srcMl) ? `${srcMl.module} · ${srcMl.code} (${base})` : base,
             dev: h.to_clean, seg: h, isEnd
@@ -10148,6 +10152,15 @@ function connFaceLayout(info) {
     fam = 'MATENLOK'; cols = 2; rows = n / 2;
     if (/receptacle|\bplug\b|wtyk|socket/i.test(blob)) gender = 'F';
     if (/\bcap\b|\bpin\b/i.test(blob)) gender = 'M';
+  } else if (/fastin|faston/i.test(blob) || /^1809(0[0-9]|1[0-9]|2[0-4])-?\d*$/.test(art)) {
+    // FASTIN-FASTON 250 (TE): obudowy 1/2/4/6/8 pozycji, 4+ jako 2-rzędowe.
+    fam = 'FASTIN';
+    if (n === 4 || n === 6 || n === 8 || n === 10) { rows = 2; cols = n / 2; }
+    else if (n === 1 || n === 2 || n === 3) { rows = 1; cols = n; }
+    else { rows = 1; cols = n; } // fallback 1-rzędowy
+    if (/receptacle/i.test(blob)) gender = 'F';
+    else if (/tab/i.test(blob) || /\bplug\b|wtyk/i.test(blob)) gender = 'M';
+    if (!gender) gender = 'F'; // domyślnie gniazdo, gdy opis niejasny
   }
   if (!fam || !gender || !cols || !rows || cols !== Math.floor(cols) || rows !== Math.floor(rows)) return null;
   return { fam, gender, cols, rows, n };
@@ -10158,11 +10171,12 @@ function connFaceLayout(info) {
 // na dole) — tak jak na rysunkach producenta — więc przy ułożeniu pionowym
 // ten sam pin wypada w tej samej kolumnie, w przeciwnym rzędzie.
 // Konwencje zweryfikowane z rysunków katalogowych:
-//   JPT (TE):      F czoło: góra nieparz./dół parz., rosnąco L→R (pin 1 góra-lewo)
-//   MINIFIT:       F czoło: pin 1 dół-prawo (góra n..cols+1, dół cols..1, malejąco)
-//   MICROFIT:      F czoło: pin 1 dół-lewo (dół 1..cols, góra cols+1..n, rosnąco)
-//   SUPERSEAL:     1 rząd; F od tyłu: pin 1 prawo (malejąco L→R)
-//   MATENLOK:      F czoło: pin 1 dół-prawo (kolumna prawa nieparz., lewa parz., do góry)
+//   JPT (TE):       F czoło: góra nieparz./dół parz., rosnąco L→R (pin 1 góra-lewo)
+//   MINIFIT:        F czoło: pin 1 dół-prawo (góra n..cols+1, dół cols..1, malejąco)
+//   MICROFIT:       F czoło: pin 1 dół-lewo (dół 1..cols, góra cols+1..n, rosnąco)
+//   SUPERSEAL:      1 rząd; F od tyłu: pin 1 prawo (malejąco L→R)
+//   MATENLOK:       F czoło: pin 1 dół-prawo (kolumna prawa nieparz., lewa parz., do góry)
+//   FASTIN-FASTON:  2 rzędy dla 4/6/8 pozycji; F od tyłu: pin 1 top-right, M od tyłu: obrót 180°
 // Widok od strony przewodów = lustro kolumn widoku czoła; M = rotacja 180°.
 function connFacePinAt(L, r, c) {
   const cols = L.cols, n = L.n;
@@ -10181,18 +10195,65 @@ function connFacePinAt(L, r, c) {
       return n - c;
     case 'MATENLOK':
       return L.gender === 'F' ? 2 * (L.rows - 1 - r) + 1 + c : 2 * r + 1 + c;
+    case 'FASTIN':
+      // FASTIN-FASTON (TE) — widok OD STRONY PRZEWODÓW (lustro kolumn widoku złącza),
+      // tak jak pozostałe rodziny. 4-pozycyjne gniazdo: [1 2 / 3 4].
+      // Wtyk (M) to obrót o 180°.
+      return L.gender === 'F'
+        ? (L.rows === 1 ? c + 1 : (r * L.cols + c + 1))
+        : (L.rows === 1 ? n - c : ((L.rows - r) * L.cols - c));
   }
   return 0;
 }
 
-function connFaceSvg(L, pin) {
+function connFaceSvg(L, pin, opt) {
+  opt = opt || {};
+  const mini = !!opt.mini;
   const pinSet = new Set([].concat(pin == null ? [] : pin).map(String));
-  const cw = 30, ch = 24, pad = 7, latchH = 13;
+  const cw = mini ? 13 : 30, ch = mini ? 10 : 24, pad = mini ? 3 : 7, latchH = mini ? 6 : 13;
   const W = pad * 2 + L.cols * cw, H = latchH + pad * 2 + L.rows * ch;
   const latchTop = L.gender !== 'M'; // męska rysowana obrócona o 180°
   const boxY = latchTop ? latchH : 1, latchY = latchTop ? 1 : H - latchH + 2;
-  let s = `<svg viewBox="0 0 ${W} ${H}" style="width:100%; display:block;" xmlns="http://www.w3.org/2000/svg">`;
-  s += `<rect x="${W / 2 - 24}" y="${latchY}" width="48" height="${latchH - 3}" rx="3" fill="var(--bg-card-subtle,#e2e8f0)" stroke="var(--border,#94a3b8)"/>`;
+  const nest = opt.nested ? `x="${opt.x || 0}" y="${opt.y || 0}" width="${opt.width || W}" height="${opt.height || H}"` : '';
+  const lw = mini ? 20 : 48;
+  let s = `<svg ${nest} viewBox="0 0 ${W} ${H}" style="${mini ? '' : 'width:100%; '}display:block;" xmlns="http://www.w3.org/2000/svg">`;
+
+  // FASTIN-FASTON: rysunek uwzględniający cechy antyodwrotne (ścięte narożniki,
+  // boczne wypustki), tak jak na schemacie Zuken.
+  if (L.fam === 'FASTIN') {
+    const latchW = mini ? 3.5 : 8;
+    const bodyW = pad * 2 + L.cols * cw;
+    const bodyH = pad * 2 + L.rows * ch;
+    const Wf = bodyW + latchW * 2;
+    const Hf = bodyH;
+    const bx = latchW, by = 0;
+    const cut = mini ? 3.5 : 7;
+    const r4 = mini ? 3 : 5;
+    const nestF = opt.nested ? `x="${opt.x || 0}" y="${opt.y || 0}" width="${opt.width || Wf}" height="${opt.height || Hf}"` : '';
+    let sF = `<svg ${nestF} viewBox="0 0 ${Wf} ${Hf}" style="${mini ? '' : 'width:100%; '}display:block;" xmlns="http://www.w3.org/2000/svg">`;
+    const stroke = 'var(--border,#94a3b8)', fill = 'var(--bg-card,#fff)', subtle = 'var(--bg-card-subtle,#e2e8f0)';
+    // obudowa ze ściętymi narożnikami u dołu (przy pinach 3 i 4)
+    sF += `<path d="M ${bx + r4} ${by} L ${bx + bodyW - r4} ${by} Q ${bx + bodyW} ${by} ${bx + bodyW} ${by + r4} L ${bx + bodyW} ${by + bodyH - cut} L ${bx + bodyW - cut} ${by + bodyH} L ${bx + cut} ${by + bodyH} L ${bx} ${by + bodyH - cut} L ${bx} ${by + r4} Q ${bx} ${by} ${bx + r4} ${by} Z" fill="${fill}" stroke="${stroke}" stroke-width="1.3"/>`;
+    // lewa wypustka półokrągła (pomiędzy pinami 1 i 3)
+    const cy = by + bodyH / 2, semiR = mini ? 3 : 7;
+    sF += `<path d="M ${bx} ${cy - semiR} A ${semiR} ${semiR} 0 0 0 ${bx} ${cy + semiR}" fill="${fill}" stroke="${stroke}" stroke-width="1.3"/>`;
+    // prawe dwie wypustki (przy pinach 2 i 4)
+    const rw = mini ? 2.5 : 5, rh = mini ? 3 : 6;
+    const cyTop = by + pad + ch / 2, cyBot = by + pad + ch + ch / 2;
+    sF += `<rect x="${bx + bodyW}" y="${cyTop - rh/2}" width="${rw}" height="${rh}" rx="1" fill="${fill}" stroke="${stroke}" stroke-width="1.3"/>`;
+    sF += `<rect x="${bx + bodyW}" y="${cyBot - rh/2}" width="${rw}" height="${rh}" rx="1" fill="${fill}" stroke="${stroke}" stroke-width="1.3"/>`;
+    for (let r = 0; r < L.rows; r++)
+      for (let c = 0; c < L.cols; c++) {
+        const p = connFacePinAt(L, r, c);
+        const hot = pinSet.has(String(p));
+        const x = bx + pad + c * cw, y = by + pad + r * ch;
+        sF += `<rect x="${x + 1}" y="${y + 1}" width="${cw - 2}" height="${ch - 2}" rx="3" fill="${hot ? '#0284c7' : subtle}" stroke="${hot ? '#0284c7' : stroke}" stroke-width="${hot ? 2 : 1}"/>`;
+        sF += `<text x="${x + cw / 2}" y="${y + ch / 2 + (mini ? 2.5 : 3.5)}" text-anchor="middle" font-size="${mini ? 6 : 10}" font-weight="${hot ? 800 : 600}" fill="${hot ? '#fff' : 'var(--text-muted,#475569)'}" font-family="monospace">${p}</text>`;
+      }
+    return sF + '</svg>';
+  }
+
+  s += `<rect x="${W / 2 - lw / 2}" y="${latchY}" width="${lw}" height="${latchH - 3}" rx="3" fill="var(--bg-card-subtle,#e2e8f0)" stroke="var(--border,#94a3b8)"/>`;
   s += `<rect x="1" y="${boxY}" width="${W - 2}" height="${H - latchH - 1}" rx="4" fill="var(--bg-card,#fff)" stroke="var(--border,#94a3b8)" stroke-width="1.2"/>`;
   for (let r = 0; r < L.rows; r++)
     for (let c = 0; c < L.cols; c++) {
@@ -10200,7 +10261,7 @@ function connFaceSvg(L, pin) {
       const hot = pinSet.has(String(p));
       const x = pad + c * cw, y = boxY + pad + r * ch;
       s += `<rect x="${x + 1}" y="${y + 1}" width="${cw - 2}" height="${ch - 2}" rx="3" fill="${hot ? '#0284c7' : 'var(--bg-card-subtle,#f1f5f9)'}" stroke="${hot ? '#0284c7' : 'var(--border,#cbd5e1)'}" stroke-width="${hot ? 2 : 1}"/>`;
-      s += `<text x="${x + cw / 2}" y="${y + ch / 2 + 3.5}" text-anchor="middle" font-size="${L.cols > 6 ? 8.5 : 10}" font-weight="${hot ? 800 : 600}" fill="${hot ? '#fff' : 'var(--text-muted,#475569)'}" font-family="monospace">${p}</text>`;
+      s += `<text x="${x + cw / 2}" y="${y + ch / 2 + (mini ? 2.5 : 3.5)}" text-anchor="middle" font-size="${mini ? 6 : (L.cols > 6 ? 8.5 : 10)}" font-weight="${hot ? 800 : 600}" fill="${hot ? '#fff' : 'var(--text-muted,#475569)'}" font-family="monospace">${p}</text>`;
     }
   return s + '</svg>';
 }
@@ -10209,7 +10270,7 @@ function closeConnFace() {
   document.getElementById('conn-face-overlay')?.remove();
 }
 
-function showConnFace(el) {
+async function showConnFace(el) {
   const d = el.dataset;
   const cp = ZUKEN_STATE.lastCircuit || {};
   const connMeta = cp.conn_meta || {};
@@ -10219,6 +10280,62 @@ function showConnFace(el) {
   const lays = infos.map(i => connFaceLayout(i));
   const ki = lays.findIndex(Boolean);
   if (ki < 0) return;
+
+  // Pełny pinout połówek złącza z zestawienia (cache per PS+złącze)
+  const ps = cp.ps_code || (typeof STATE !== 'undefined' ? STATE.lastSelectedPS : '') || '';
+  let connItems = [];
+  if (ps && d.clean) {
+    ZUKEN_STATE._connPinCache = ZUKEN_STATE._connPinCache || {};
+    const ck = `${ps}|${d.clean}`;
+    if (!(ck in ZUKEN_STATE._connPinCache)) {
+      try {
+        const res = await apiCall(`/api/zuken/summaries/connectors?ps=${encodeURIComponent(ps)}&q=${encodeURIComponent(d.clean)}&limit=25`);
+        ZUKEN_STATE._connPinCache[ck] = res.items || [];
+      } catch (e) { ZUKEN_STATE._connPinCache[ck] = []; }
+    }
+    connItems = ZUKEN_STATE._connPinCache[ck] || [];
+  }
+  const pinsFor = sfx => {
+    const it = connItems.find(x => (x.device_code || '').endsWith('-' + sfx))
+            || connItems.find(x => ((x.device_code || '').split('-').pop() === sfx));
+    return it ? (it.pins || []) : [];
+  };
+  const pinTable = sfx => {
+    const pins = pinsFor(sfx);
+    if (!pins.length) return '';
+    const rows = pins.map(p => {
+      const hot = String(p.pin) === String(d.pin);
+      const conns = p.connections || [];
+      if (!conns.length)
+        return `<tr style="${hot ? 'background:rgba(2,132,199,0.12); font-weight:700;' : 'color:var(--text-muted);'}">
+          <td style="padding:1px 6px; font-family:var(--font-mono,monospace); font-weight:700;">${escapeHtml(String(p.pin))}</td>
+          <td colspan="4" style="padding:1px 6px; font-size:10px; color:var(--text-muted);">—</td></tr>`;
+      return conns.map(c => {
+        const cs = (c.cross_section || '').replace(/\s*mm²?$/i, '');
+        const tgt = ((c.target_device || '').split('-').pop() || '') + (c.target_pin ? ':' + c.target_pin : '');
+        const tgtDesc = (c.target_desc || '').split('→').pop().trim();
+        return `<tr style="${hot ? 'background:rgba(2,132,199,0.12); font-weight:700;' : ''}">
+          <td style="padding:1px 6px; font-family:var(--font-mono,monospace); font-weight:700; white-space:nowrap;">${escapeHtml(String(p.pin))}</td>
+          <td style="padding:1px 6px; font-family:var(--font-mono,monospace); white-space:nowrap;"><span style="display:inline-block; width:11px; height:4px; border-radius:2px; background:${circuitWireStroke(c.wire_color)}; margin-right:4px; vertical-align:middle;"></span>${escapeHtml(c.wire_number || c.signal || '')}</td>
+          <td style="padding:1px 6px; font-size:10px; white-space:nowrap;">${escapeHtml(c.signal_name || '')}</td>
+          <td style="padding:1px 6px; font-size:9.5px; color:var(--text-muted); white-space:nowrap;">${escapeHtml([c.wire_color, cs ? cs + ' mm²' : ''].filter(Boolean).join(' · '))}</td>
+          <td style="padding:1px 6px; font-family:var(--font-mono,monospace); font-size:10px; white-space:nowrap;">→ ${escapeHtml(tgt)}${tgtDesc ? ` <span style="color:var(--text-muted); font-family:inherit; font-size:9px;">${escapeHtml(tgtDesc)}</span>` : ''}</td>
+        </tr>`;
+      }).join('');
+    }).join('');
+    return `<div style="margin-top:7px; border-top:1px solid var(--border); padding-top:4px; max-height:300px; overflow:auto;">
+      <table style="width:100%; border-collapse:collapse; font-size:10px; color:var(--text-main); text-align:left;">
+        <thead><tr style="color:var(--text-muted); font-size:9px; text-transform:uppercase; letter-spacing:0.3px; position:sticky; top:0; background:var(--bg-card,#fff);">
+          <th style="padding:1px 6px;">${t('zuken.pinoutColPin')}</th>
+          <th style="padding:1px 6px;">${t('zuken.pinoutColWire')}</th>
+          <th style="padding:1px 6px;">${t('zuken.pinoutColSignal')}</th>
+          <th style="padding:1px 6px;">${t('zuken.pinoutColColor')} / ${t('zuken.pinoutColCross')}</th>
+          <th style="padding:1px 6px;">${t('zuken.pinoutColTarget')}</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+  };
   // połówka bez własnego artykułu → odpowiednik (odwrotna płeć, ta sama rodzina)
   lays.forEach((L, i) => {
     if (!L) {
@@ -10248,11 +10365,9 @@ function showConnFace(el) {
   };
   const wireRow = w => {
     const h = w.h;
-    const cs = (h.cross_section || '').replace(/\s*mm²?$/i, '');
     const attrs = h.internal
       ? `⚡ ${h.internal_label || h.internal}`
-      : [h.wire_number || h.signal || '', h.wire_color || '', cs ? cs + ' mm²' : '',
-         (h.length && h.length !== '0') ? fmtWireLength(h.length) : ''].filter(Boolean).join(' · ');
+      : wireLabelAttrs(h).join(' · ');
     return `<div style="display:flex; gap:6px; align-items:baseline; font-size:11px; margin-top:3px; text-align:left;">
       <span style="display:inline-block; width:14px; height:4px; border-radius:2px; flex-shrink:0; align-self:center; background:${circuitWireStroke(h.wire_color)};"></span>
       <span style="font-family:var(--font-mono,monospace); font-weight:600; color:var(--text-muted); white-space:nowrap;">→ ${escapeHtml(w.label)}</span>
@@ -10265,11 +10380,12 @@ function showConnFace(el) {
     const gen = t(L.gender === 'F' ? 'js.zuken.connFemale' : 'js.zuken.connMale');
     const art = info.article || (L.inferred ? t('js.zuken.connCounterpart') : '');
     const wires = d.pin ? wiresAt(info.sfx).map(wireRow).join('') : '';
-    return `<div style="width:100%; max-width:330px; margin:0 auto;">
+    return `<div style="width:100%; max-width:640px; margin:0 auto;">
       <div style="font-family:var(--font-mono,monospace); font-weight:800; font-size:13px; color:var(--text-main);">${escapeHtml(info.sfx)}${d.pin ? ':' + escapeHtml(d.pin) : ''}</div>
       <div style="font-size:11px; color:var(--text-muted); margin:2px 0 6px;">${escapeHtml(gen)}${art ? ' · ' + escapeHtml(art) : ''}</div>
-      ${connFaceSvg(L, d.pin)}
+      <div style="max-width:340px; margin:0 auto;">${connFaceSvg(L, d.pin)}</div>
       ${wires ? `<div style="margin-top:6px; border-top:1px dashed var(--border); padding-top:5px;">${wires}</div>` : ''}
+      ${pinTable(info.sfx)}
     </div>`;
   };
   const body = `<div style="display:flex; flex-direction:column; gap:10px; align-items:stretch;">
@@ -10355,9 +10471,26 @@ function circuitSvgForLoad(ld, connMeta) {
   if (gndPin) (gndPin.ends || []).forEach(e => { if (e !== g) addStub(e); });
 
   const rows = trunk2.length + gndChain2.length;
-  const rowH = 64, boxW = 210, boxH = 34, cx = 30, stubX = cx + boxW + 130, stubW = 250;
+  const boxW = 210, boxH = 34, cx = 30, stubX = cx + boxW + 130, stubW = 250;
   const W = stubX + stubW + 20;
-  const nodeY = i => 24 + i * rowH;
+
+  // Zmienne wysokości węzłów: złącze ze znanym layoutem dostaje mini-siatkę pinów w węźle
+  const allNodes = trunk2.concat(gndChain2);
+  const nodeH = [], yOf = [];
+  let _acc = 22;
+  allNodes.forEach((nd, i) => {
+    const _sfx = (nd.dev || '').split('-').pop() || nd.clean;
+    const _L = nd.pin ? (connFaceLayout(connHalfInfo(connMeta, nd.clean, _sfx))
+        || (nd.mate && connFaceLayout(connHalfInfo(connMeta, nd.clean, nd.mate)))) : null;
+    nd._lay = _L || null;
+    const fastinLatch = _L && _L.fam === 'FASTIN';
+    const gh = _L ? ((fastinLatch ? 0 : 6) + 6 + _L.rows * 10) : 0;  // latch 6 + pad 3+3 + rzędy po 10
+    nd._gh = gh;
+    nodeH[i] = boxH + (gh ? gh + 6 : 0);
+    yOf[i] = _acc;
+    _acc += nodeH[i] + 30;
+  });
+  const nodeY = i => yOf[i];
 
   // rozrzut odnóg: stub'y z tego samego węzła idą w dół wachlarzem
   const STUB_STEP = 36, STUB_CAP = 12;
@@ -10366,7 +10499,7 @@ function circuitSvgForLoad(ld, connMeta) {
   const stubLayout = [];
   let stubMaxY = 0;
   Object.keys(stubGroups).forEach(atK => {
-    const at = +atK, baseY = nodeY(at) + boxH / 2, grp = stubGroups[atK];
+    const at = +atK, baseY = yOf[at] + nodeH[at] / 2, grp = stubGroups[atK];
     grp.slice(0, STUB_CAP).forEach((st, k) => {
       const sy = baseY + k * STUB_STEP;
       stubLayout.push({ st, sy });
@@ -10378,7 +10511,7 @@ function circuitSvgForLoad(ld, connMeta) {
       stubMaxY = Math.max(stubMaxY, sy + 20);
     }
   });
-  const H = Math.max(rows * rowH + 46, stubMaxY + 30);
+  const H = Math.max(_acc + 16, stubMaxY + 30);
   const roleStyle = {
     source:   { stroke: '#2563eb', icon: '⚡' },
     terminal: { stroke: '#7c3aed', icon: '⊟' },
@@ -10390,39 +10523,45 @@ function circuitSvgForLoad(ld, connMeta) {
   };
 
   let svg = '';
-  const allNodes = trunk2.concat(gndChain2);
   allNodes.forEach((nd, i) => {
     const y = nodeY(i), x = cx;
     if (nd.edge) {
       const h = nd.edge;
-      const yPrev = nodeY(i - 1) + boxH, yCur = y;
+      const yPrev = yOf[i - 1] + nodeH[i - 1], yCur = y;
       const internal = h.internal === 'fuse' || h.internal === 'relay';
       const stroke = internal ? '#d97706' : circuitWireStroke(h.wire_color);
       const dash = internal ? ' stroke-dasharray="5 3"' : '';
       svg += `<line x1="${cx + boxW / 2}" y1="${yPrev}" x2="${cx + boxW / 2}" y2="${yCur}" stroke="${stroke}" stroke-width="${internal ? 1.6 : 2.4}"${dash}/>`;
-      const cs = (h.cross_section || '').replace(/\s*mm²?$/i, '');
       const lbl = internal
         ? `⚡ ${h.internal_label || h.internal}`
-        : [h.wire_number || h.signal || '', h.wire_color || '', cs ? cs + ' mm²' : '', (h.length && h.length !== '0') ? fmtWireLength(h.length) : ''].filter(Boolean).join(' · ');
+        : wireLabelAttrs(h).join(' · ');
       if (lbl) svg += `<text x="${cx + boxW / 2 + 8}" y="${(yPrev + yCur) / 2 + 3}" font-size="9.5" fill="${internal ? '#d97706' : 'var(--text-muted, #64748b)'}" font-family="monospace">${escapeHtml(lbl)}</text>`;
     }
     const rs = roleStyle[nd.role] || roleStyle[''];
     const fill = nd.role === 'gnd' ? '#1e293b' : 'var(--bg-card, #fff)';
     const fg = nd.role === 'gnd' ? '#f8fafc' : 'var(--text-main, #0f172a)';
     const cm = (connMeta || {})[nd.clean] || {};
-    const pinFrac = (cm.pins && nd.pin) ? `${nd.pin}/${cm.pins}` : '';
-    const ownSfx = nd.mate ? ((nd.dev || '').split('-').pop() || nd.clean) : nd.clean;
+    const pinFrac = nd.pin ? (nd._lay ? `${nd.pin}/${nd._lay.n}` : (cm.pins ? `${nd.pin}/${cm.pins}` : '')) : '';
     const devSfx = (nd.dev || '').split('-').pop() || nd.clean;
-    const canFace = !!(nd.pin && (connFaceLayout(connHalfInfo(connMeta, nd.clean, devSfx))
-        || (nd.mate && connFaceLayout(connHalfInfo(connMeta, nd.clean, nd.mate)))));
+    const ownSfx = devSfx;
+    const canFace = !!nd._lay;
     if (canFace)
       svg += `<g style="cursor:pointer" onclick="showConnFace(this)" data-clean="${escapeHtml(nd.clean)}" data-dev="${escapeHtml(devSfx)}" data-mate="${escapeHtml(nd.mate || '')}" data-pin="${escapeHtml(nd.pin)}"><title>${escapeHtml(t('js.zuken.connViewTitle'))}</title>`;
-    svg += `<rect x="${x}" y="${y}" width="${boxW}" height="${boxH}" rx="7" fill="${fill}" stroke="${rs.stroke}" stroke-width="2"/>`;
+    svg += `<rect x="${x}" y="${y}" width="${boxW}" height="${nodeH[i]}" rx="7" fill="${fill}" stroke="${rs.stroke}" stroke-width="2"/>`;
     const nodeTitle = (nd.ml ? `${nd.ml.module} · ${nd.ml.code}` : `${ownSfx}${nd.pin ? ':' + nd.pin : ''}`) + (nd.mate ? ` ⇄ ${nd.mate}` : '');
     const nodeInfo = nd.ml ? [nd.ml.function, `${nd.clean}:${nd.pin}`].filter(Boolean).join(' · ')
       : [nd.info, pinFrac, cm.type || cm.article || cm.supplier || ''].filter(Boolean).join(' · ');
     svg += `<text x="${x + 8}" y="${y + 15}" font-size="11" font-weight="700" fill="${fg}" font-family="monospace">${rs.icon ? rs.icon + ' ' : ''}${escapeHtml(nodeTitle)}</text>`;
     if (nodeInfo) svg += `<text x="${x + 8}" y="${y + 28}" font-size="9" fill="${nd.role === 'gnd' ? '#cbd5e1' : 'var(--text-muted, #64748b)'}">${escapeHtml(String(nodeInfo).slice(0, 46))}</text>`;
+    if (nd._lay) {
+      const gw = 6 + nd._lay.cols * 13;
+      const gwDisp = Math.min(gw, boxW - 10);
+      svg += connFaceSvg(nd._lay, nd.pin, {
+        mini: true, nested: true,
+        x: x + (boxW - gwDisp) / 2, y: y + boxH + 1,
+        width: gwDisp, height: nd._gh
+      });
+    }
     const rwT = rwTitles[(nd.clean || '').toUpperCase()];
     if (rwT) svg += `<text x="${x + boxW - 16}" y="${y + 15}" font-size="11" style="cursor:help">🔧<title>${escapeHtml(t('ui.reworks.badgeTitle'))}: ${escapeHtml(rwT.join(' | '))}</title></text>`;
     if (canFace) svg += '</g>';
@@ -10438,12 +10577,19 @@ function circuitSvgForLoad(ld, connMeta) {
     let wireLbl = '';
     const divIdx = (e.path || []).findIndex(h => (h.to + ':' + h.to_pin) && rowOf[h.to + ':' + h.to_pin] === st.at);
     const segH = (e.path || [])[divIdx + 1] || (e.path || [])[0];
-    if (segH) wireLbl = [segH.wire_number || segH.signal || '', segH.wire_color || ''].filter(Boolean).join(' · ');
+    if (segH) wireLbl = [segH.wire_number || segH.signal || '', segH.signal_name || '', segH.wire_color || ''].filter(Boolean).join(' · ');
     const wireStroke = (segH && segH.wire_color) ? circuitWireStroke(segH.wire_color) : '#94a3b8';
     svg += `<line x1="${cx + boxW}" y1="${atY + boxH / 2}" x2="${stubX}" y2="${y}" stroke="${wireStroke}" stroke-width="1.6" stroke-dasharray="4 3"/>`;
     svg += `<rect x="${stubX}" y="${y - 15}" width="${stubW}" height="30" rx="6" fill="var(--bg-card, #fff)" stroke="${rm.color}" stroke-width="1.4" stroke-dasharray="3 2"/>`;
-    svg += `<text x="${stubX + 7}" y="${y - 1}" font-size="10" font-weight="700" fill="${rm.color}" font-family="monospace">${rm.icon} ${escapeHtml(e.clean)}${e.pin ? ':' + escapeHtml(e.pin) : ''}</text>`;
-    const sub = [e.function || e.desc || '', wireLbl].filter(Boolean).join(' · ');
+    const eSfx = (e.device || '').split('-').pop() || e.clean;
+    const ml = e.module_label;
+    const stubTitle = (ml && e.role === 'source')
+      ? `${ml.module} · ${ml.code}`
+      : `${eSfx}${e.pin ? ':' + e.pin : ''}`;
+    svg += `<text x="${stubX + 7}" y="${y - 1}" font-size="10" font-weight="700" fill="${rm.color}" font-family="monospace">${rm.icon} ${escapeHtml(stubTitle)}</text>`;
+    const sub = (ml && e.role === 'source')
+      ? [ml.function, eSfx + (e.pin ? ':' + e.pin : ''), wireLbl].filter(Boolean).join(' · ')
+      : [e.function || e.desc || '', wireLbl].filter(Boolean).join(' · ');
     if (sub) svg += `<text x="${stubX + 7}" y="${y + 11}" font-size="8.5" fill="var(--text-muted, #64748b)">${escapeHtml(sub.slice(0, 44))}</text>`;
   });
 
@@ -10457,8 +10603,9 @@ function showCircuitDiagram() {
   const parts = cp.loads.slice(0, 5).map(ld => {
     const svg = circuitSvgForLoad(ld, cp.conn_meta || {});
     if (!svg) return '';
+    const dspName = (ld.device || '').split('-').pop() || ld.clean;
     return `<div style="margin-bottom:16px;">
-      <div style="font-size:12px; font-weight:800; color:var(--text-main); margin-bottom:4px; font-family:var(--font-mono,monospace);">🔌 ${escapeHtml(ld.clean)}${(ld.function || ld.desc) ? ` <span style="font-weight:500; color:var(--text-muted);">— ${escapeHtml(ld.function || ld.desc)}</span>` : ''}</div>
+      <div style="font-size:12px; font-weight:800; color:var(--text-main); margin-bottom:4px; font-family:var(--font-mono,monospace);">🔌 ${escapeHtml(dspName)}${(ld.function || ld.desc) ? ` <span style="font-weight:500; color:var(--text-muted);">— ${escapeHtml(ld.function || ld.desc)}</span>` : ''}</div>
       ${svg}
     </div>`;
   }).join('');
