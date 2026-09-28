@@ -6311,9 +6311,17 @@ def _wire_net_paths(adj, start_node, banned=(), max_nodes=400, max_ends=24, pass
     parent = {start_node: None}
     queue = deque([start_node])
     ends = []
+    def _relay_of(row):
+        return (row.get("_relay_dev") or "") if isinstance(row, dict) \
+            and row.get("_internal") == "relay" else ""
+
     while queue and len(visited) <= max_nodes and len(ends) < max_ends:
         node = queue.popleft()
-        nbrs = [n for n in adj.get(node, {}) if n not in visited]
+        # styki jednego przekaźnika nie przewodzą szeregowo (87 -> 30 -> 87a):
+        # po krawędzi styku nie wchodzimy od razu w kolejny styk tego samego
+        prev_rd = _relay_of(adj[parent[node]][node]) if parent.get(node) is not None else ""
+        nbrs = [n for n in adj.get(node, {}) if n not in visited
+                and not (prev_rd and _relay_of(adj[node][n]) == prev_rd)]
         if node != start_node and not (nbrs and is_pass(node)):
             ends.append(node)
             continue
@@ -6682,6 +6690,23 @@ def _signal_node_map(cur, conn_proj_ids):
                 nodes.add(a)
             if b[0]:
                 nodes.add(b)
+    return out
+
+
+def _wire_number_nodes(cur, conn_proj_ids, wire_no):
+    """Końce przewodu o dokładnym numerze ('66A') — {(device, pin)}."""
+    wn = (wire_no or "").strip()
+    if not conn_proj_ids or not wn or len(wn) > 24:
+        return set()
+    ph = ",".join("?" for _ in conn_proj_ids)
+    out = set()
+    for r in cur.execute(f"""
+        SELECT from_device, from_pin, to_device, to_pin FROM zuken_connections
+        WHERE project_id IN ({ph}) AND UPPER(TRIM(wire_number)) = UPPER(?);
+    """, (*conn_proj_ids, wn)):
+        for d, p in ((r["from_device"], r["from_pin"]), (r["to_device"], r["to_pin"])):
+            if (d or "").strip():
+                out.add(((d or "").strip(), (p or "").strip()))
     return out
 
 
@@ -7069,14 +7094,21 @@ def _circuit_extend_adjacency(cur, adj, ps_code, dev_funcs=None, bom_names=None)
         if coil:
             relay_coils[dev] = {"clean": label, "function": "",
                                 "coil_label": "",
-                                "coil_nodes": [(dev, p) for p in coil]}
+                                "coil_nodes": [(dev, p) for p in coil],
+                                "coil_names": {
+                                    str(ct.get("pin") or "").strip():
+                                        str(ct.get("relay_pin") or "").strip()
+                                    for ct in contacts
+                                    if "Cewka" in (ct.get("role") or "")
+                                    and str(ct.get("relay_pin") or "").strip()}}
         for p30 in rp_map.get("30", ()):
             for tgt in ("87", "87A"):
+                tname = "87a" if tgt == "87A" else tgt
                 for p87 in rp_map.get(tgt, ()):
-                    _link(dev, p30, p87, "relay", f"{label} 30\u2192{tgt}",
+                    _link(dev, p30, p87, "relay", f"{label} 30\u2192{tname}",
                           relay_dev=dev,
                           pin_names={f"{dev}|{p30}": "30",
-                                     f"{dev}|{p87}": tgt})
+                                     f"{dev}|{p87}": tname})
         # styczniki bez numeracji 30/87 (np. K2 zasilania inwertera):
         # dokladnie 2 styki robocze bez relay_pin = para styku glownego
         work = sorted({str(ct.get("pin") or "").strip() for ct in contacts
@@ -7452,15 +7484,22 @@ def trace_circuit(ps_code, query, lang="pl"):
     # (końce krawędzi wewnętrznych 'relay') — do zapytań 'K1', 'K3' itd.
     relay_clean2dev = {}
     relay_contacts = {}
+    relay_edges = {}      # relay_dev -> [(węzeł_a, węzeł_b, wiersz)] styków roboczych
+    node_relay = {}       # (dev, pin) styku albo cewki -> relay_dev
     for rdev, rinfo in relay_coils.items():
         rc = (rinfo.get("clean") or "").strip().upper()
         if rc:
             relay_clean2dev.setdefault(rc, rdev)
+        for cnd in rinfo.get("coil_nodes") or ():
+            node_relay.setdefault(cnd, rdev)
     for (rd_d, rd_p), rd_nbrs in adj.items():
         for rd_nb, rd_row in rd_nbrs.items():
             rdv = rd_row.get("_relay_dev") if isinstance(rd_row, dict) else ""
             if rdv:
                 relay_contacts.setdefault(rdv, set()).add((rd_d, rd_p))
+                node_relay.setdefault((rd_d, rd_p), rdv)
+                if (rd_d, rd_p) < rd_nb:
+                    relay_edges.setdefault(rdv, []).append(((rd_d, rd_p), rd_nb, rd_row))
     sig_nodes = _signal_node_map(cur, conn_ids)
     ctrl = get_controller_diagnostic_info(ps_code, q, lang=lang) or {}
 
@@ -7525,28 +7564,39 @@ def trace_circuit(ps_code, query, lang="pl"):
     # roboczy — tor przejdzie przez styk, a sekcja cewki dołączy się
     # sama przez relay_dev na krawędzi wewnętrznej
     func_label = ""
+    # przekaźniki do narysowania w widoku przekaźnika: obwody przełączane
+    # 30->87 / 30->87a + obwód cewki (zapytanie o przekaźnik, jego gniazdo
+    # albo przewód dochodzący wyłącznie do styków/cewki przekaźnika)
+    relay_view_devs = []
     if not dev_nodes and dev_q:
         rdev = relay_clean2dev.get(dev_q)
         if not rdev:
             mk = re.search(r"\bK\d+[A-Z]*\b", dev_q)
             rdev = relay_clean2dev.get(mk.group(0)) if mk else ""
-        if rdev:
+        if rdev and (relay_edges.get(rdev) or (relay_coils.get(rdev) or {}).get("coil_nodes")):
             rinfo = relay_coils.get(rdev) or {}
-            cands = sorted(relay_contacts.get(rdev) or (),
-                           key=lambda n: (_natural_sort_key(n[0]),
-                                          _natural_sort_key(n[1])))
-            if not cands:
-                cands = list(rinfo.get("coil_nodes") or [])[:2]
-            for (rnd, rpn) in cands[:1]:
-                dev_nodes.setdefault(rnd, set()).add(rpn)
-            if dev_nodes:
-                pin_q = ""
-                func_label = (f"{rinfo.get('clean') or dev_q}"
-                              + (f" ({rinfo['function']})"
-                                 if rinfo.get("function") else ""))
+            relay_view_devs.append(rdev)
+            pin_q = ""
+            func_label = (f"{rinfo.get('clean') or dev_q}"
+                          + (f" ({rinfo['function']})"
+                             if rinfo.get("function") else ""))
+    elif dev_nodes:
+        # gniazdo przekaźnika (X241 'HORN RING'): wszystkie piny to styki
+        # albo cewka -> zamiast 'odbiornika' rysujemy sam przekaźnik
+        for ndev in sorted(dev_nodes, key=_natural_sort_key):
+            pins = dev_nodes[ndev]
+            if pin_q:
+                pins = {p for p in pins if p.upper() == pin_q.upper()} or pins
+            rds = {node_relay.get((ndev, p)) for p in pins}
+            if None not in rds:
+                for rd in sorted(rds, key=_natural_sort_key):
+                    if rd not in relay_view_devs:
+                        relay_view_devs.append(rd)
+        if relay_view_devs:
+            dev_nodes = {}
     # opis odbiornika bez kodu i bez pasującego sygnału ('gniazdo 7/12V'):
     # szukaj po funkcji urządzenia z BOM (X192 'Socket 7/12V DEFI' -> X193/X194)
-    if not dev_nodes and not _match_signals(q, sig_nodes):
+    if not dev_nodes and not relay_view_devs and not _match_signals(q, sig_nodes):
         by_clean = {}
         for (ndev, npin) in adj:
             by_clean.setdefault((clean_device_code(ndev) or ndev).upper(), {}) \
@@ -7563,8 +7613,10 @@ def trace_circuit(ps_code, query, lang="pl"):
     # urządzenie spoza raportu połączeń (=BOM-...): opis BOM jako
     # dodatkowy trop do sygnału (np. A313 -> 'ProCar ... USB socket')
     bom_descs = []
-    if dev_q and not dev_nodes:
+    wire_nodes = set()
+    if dev_q and not dev_nodes and not relay_view_devs:
         bom_descs = _bom_device_descriptions(cur, bom_ids, dev_q)
+        wire_nodes = _wire_number_nodes(cur, conn_ids, q)
     conn.close()
 
     resolved = {"kind": "", "label": q}
@@ -7572,7 +7624,10 @@ def trace_circuit(ps_code, query, lang="pl"):
     evpss = None
     more_signals = []
 
-    if dev_nodes:
+    if relay_view_devs:
+        resolved = {"kind": "relay",
+                    "label": func_label or (dev_q + ((":" + pin_q) if pin_q else ""))}
+    elif dev_nodes:
         resolved = {"kind": "device",
                     "label": func_label or (dev_q + ((":" + pin_q) if pin_q else ""))}
         for ndev in sorted(dev_nodes, key=_natural_sort_key):
@@ -7584,6 +7639,11 @@ def trace_circuit(ps_code, query, lang="pl"):
             seed_devices.append((ndev, pins))
     else:
         sig_matches = _match_signals(q, sig_nodes)
+        if wire_nodes:
+            # numer przewodu ('66A') — dokładne trafienie idzie na początek
+            wkey = next((s for s in sig_nodes if s.upper() == q.upper()), q.upper())
+            sig_nodes[wkey] = set(sig_nodes.get(wkey) or ()) | wire_nodes
+            sig_matches = [wkey] + [s for s in sig_matches if s != wkey]
         via_dev = ""
         if not sig_matches and bom_descs:
             sig_matches = _match_signals_by_desc(bom_descs, sig_nodes)
@@ -7619,8 +7679,9 @@ def trace_circuit(ps_code, query, lang="pl"):
                 if not pass_fn(nd) or len(adj.get(nd, {})) <= 1:
                     terms.append(nd)
             all_terms.extend(terms)
-            loads_here = [nd for nd in terms
-                          if _circuit_end_role(nd[0], None, dev_funcs, bom_names) == "load"]
+            # gniazdo przekaźnika (styk/cewka) nie jest odbiornikiem
+            loads_here = [nd for nd in terms if nd not in node_relay
+                          and _circuit_end_role(nd[0], None, dev_funcs, bom_names) == "load"]
             if not loads_here:
                 continue
             used_sigs.append(sig)
@@ -7630,17 +7691,34 @@ def trace_circuit(ps_code, query, lang="pl"):
                 if all(nd[0] != ld for ld in load_devs):
                     load_devs.append(nd[0])
         more_signals = sig_matches[4:]
+        if not load_devs:
+            # przewód bez odbiornika na końcach, a dochodzący do styku/cewki
+            # przekaźnika (66A: X53 -> X241:30) — rysujemy przekaźnik
+            for sig in sig_matches[:4]:
+                for nd in sorted(sig_nodes.get(sig) or (),
+                                 key=lambda n: (_natural_sort_key(n[0]),
+                                                _natural_sort_key(n[1]))):
+                    rd = node_relay.get(nd)
+                    if rd and rd not in relay_view_devs:
+                        relay_view_devs.append(rd)
+                if relay_view_devs:
+                    used_sigs.append(sig)
+                    break
         if load_devs:
             for d in load_devs[:12]:
                 pins = sorted({p for (dd, p) in adj if dd == d},
                               key=_natural_sort_key)
                 seed_devices.append((d, pins[:16]))
-        else:
+        elif not relay_view_devs:
             for nd in sorted(all_terms,
                              key=lambda n: (_natural_sort_key(n[0]),
                                             _natural_sort_key(n[1])))[:12]:
                 seed_devices.append((nd[0], [nd[1]]))
         label = ", ".join(used_sigs or sig_matches[:1])
+        if relay_view_devs:
+            label += " \u2192 " + ", ".join(
+                (relay_coils.get(rd) or {}).get("clean") or clean_device_code(rd) or rd
+                for rd in relay_view_devs)
         resolved = {"kind": "signal",
                     "label": f"{via_dev} \u2192 {label}" if via_dev else label}
 
@@ -7764,6 +7842,103 @@ def trace_circuit(ps_code, query, lang="pl"):
     # Gdy tor przechodzi przez styk przekaźnika, cewka to osobny obwód
     # sterowania (np. 85/86, złącze X185 dla styczników WM V231) —
     # dołączamy jej przebieg, żeby można było sprawdzić też sterowanie.
+    def _coil_pass(nd):
+        """Jak tor główny, ale zatrzymuje się na zacisku masy — inaczej
+        końcem cewki jest cała gwiazda GND za punktem masowym."""
+        if not pass_fn(nd):
+            return False
+        ec = clean_device_code(nd[0]) or nd[0]
+        return not _is_ground_point({
+            "device": nd[0], "clean": ec,
+            "function": (dev_funcs.get(nd[0]) or dev_funcs.get(ec)
+                         or bom_names.get(ec) or "")})
+
+    def _mk_end(ed, ep, path, prefix=None, **extra):
+        """Koniec ścieżki w formacie odpowiedzi; prefix — przeskoki przed
+        ścieżką BFS (np. wewnętrzny styk 30->87 w widoku przekaźnika)."""
+        last = path[-1][2] if path else None
+        hops = [_wire_hop(a[0], a[1], b[0], b[1], row)
+                for (a, b, row) in list(prefix or []) + list(path)]
+        for h, (_a, b, _row) in zip(hops, list(prefix or []) + list(path)):
+            h["to_function"] = (dev_funcs.get(b[0]) or dev_funcs.get(h["to_clean"])
+                                or bom_names.get(h["to_clean"]) or "")
+            h["to_degree"] = len(adj.get(b, {}))
+        eclean = clean_device_code(ed) or ed
+        out = {
+            "device": ed, "pin": ep, "clean": eclean,
+            "role": _circuit_end_role(ed, last, dev_funcs, bom_names),
+            "function": (dev_funcs.get(ed) or dev_funcs.get(eclean)
+                         or bom_names.get(eclean) or ""),
+            "desc": explain_device_code(ed, glossary, lang=lang) or "",
+            "path": hops,
+            "via_fuse": any(h.get("internal") == "fuse" for h in hops),
+            "via_relay": any(h.get("internal") == "relay" for h in hops),
+        }
+        out.update(extra)
+        return out
+
+    def _relay_label(rd):
+        info = relay_coils.get(rd) or {}
+        return info.get("clean") or clean_device_code(rd) or rd
+
+    def _relay_func(rd):
+        rc = _relay_label(rd)
+        return ((relay_coils.get(rd) or {}).get("function")
+                or dev_funcs.get(rd) or dev_funcs.get(rc) or bom_names.get(rc) or "")
+
+    def _coil_rc(rd):
+        info = relay_coils.get(rd)
+        if not info or not info.get("coil_nodes"):
+            return None
+        coil_set = set(info["coil_nodes"])
+        coil_ends, seen_ce = [], set()
+        for cnd in info["coil_nodes"]:
+            if cnd not in adj:
+                continue
+            for (ced, cep), cpath in _wire_net_paths(
+                    adj, cnd, banned=coil_set - {cnd},
+                    max_nodes=600, max_ends=10, pass_fn=_coil_pass):
+                if (ced, cep) in coil_set or (ced, cep) in seen_ce:
+                    continue
+                seen_ce.add((ced, cep))
+                coil_ends.append(_mk_end(ced, cep, cpath, coil_pin=cnd[1],
+                                         coil_pin_name=(info.get("coil_names") or {}).get(cnd[1]) or cnd[1],
+                                         coil_dev=clean_device_code(cnd[0]) or cnd[0]))
+        # najpierw masa, potem zasilanie sterowania — czytelna diagnoza
+        _coil_rank = {"gnd": 0, "source": 1, "terminal": 1, "load": 2}
+        coil_ends.sort(key=lambda x: (_coil_rank.get(x["role"], 3),
+                                      len(x["path"]),
+                                      _natural_sort_key(x["clean"])))
+        if not coil_ends:
+            return None
+        return {"device": rd, "clean": _relay_label(rd),
+                "function": _relay_func(rd),
+                "coil_label": info.get("coil_label") or "",
+                "ends": coil_ends[:6]}
+
+    def _coils_cascade(rds, limit=6):
+        """Obwody cewek + cewki przekaźników, przez których styki idzie
+        zasilanie/masa tych cewek (X241:86 <- styk 87 X242 -> cewka X242)."""
+        out, seen = [], set()
+        queue = [(rd, "") for rd in rds]
+        while queue and len(out) < limit:
+            rd, via = queue.pop(0)
+            if rd in seen:
+                continue
+            seen.add(rd)
+            rc = _coil_rc(rd)
+            if not rc:
+                continue
+            if via:
+                rc["drives"] = via
+            out.append(rc)
+            for e in rc["ends"]:
+                for h in e["path"]:
+                    nrd = h.get("relay_dev") or ""
+                    if nrd and nrd not in seen:
+                        queue.append((nrd, rc["clean"]))
+        return out
+
     for ld in loads_out:
         # cewka tylko dla przekaźników na RYSOWANYM torze — diagram bierze
         # pierwszy pin 'feed' i pierwszy 'gnd'; inne piny odbiornika mogą
@@ -7771,7 +7946,7 @@ def trace_circuit(ps_code, query, lang="pl"):
         feed_p = next((p for p in ld["pins"] if p["role"] == "feed"), None) \
             or next((p for p in ld["pins"] if p["role"] != "gnd"), None)
         gnd_p = next((p for p in ld["pins"] if p["role"] == "gnd"), None)
-        seen_rd, rcs = set(), []
+        seen_rd = []
         for p in (feed_p, gnd_p):
             if not p:
                 continue
@@ -7779,68 +7954,108 @@ def trace_circuit(ps_code, query, lang="pl"):
                 for h in e["path"]:
                     rd = h.get("relay_dev") or ""
                     if rd and rd not in seen_rd:
-                        seen_rd.add(rd)
-        def _coil_pass(nd):
-            """Jak tor główny, ale zatrzymuje się na zacisku masy — inaczej
-            końcem cewki jest cała gwiazda GND za punktem masowym."""
-            if not pass_fn(nd):
-                return False
-            ec = clean_device_code(nd[0]) or nd[0]
-            return not _is_ground_point({
-                "device": nd[0], "clean": ec,
-                "function": (dev_funcs.get(nd[0]) or dev_funcs.get(ec)
-                             or bom_names.get(ec) or "")})
-
-        for rd in seen_rd:
-            info = relay_coils.get(rd)
-            if not info or not info.get("coil_nodes"):
-                continue
-            coil_set = set(info["coil_nodes"])
-            coil_ends = []
-            seen_ce = set()
-            for cnd in info["coil_nodes"]:
-                if cnd not in adj:
-                    continue
-                for (ced, cep), cpath in _wire_net_paths(
-                        adj, cnd, banned=coil_set - {cnd},
-                        max_nodes=600, max_ends=10, pass_fn=_coil_pass):
-                    if (ced, cep) in coil_set or (ced, cep) in seen_ce:
-                        continue
-                    seen_ce.add((ced, cep))
-                    last = cpath[-1][2] if cpath else None
-                    crole = _circuit_end_role(ced, last, dev_funcs, bom_names)
-                    cclean = clean_device_code(ced) or ced
-                    hops = [_wire_hop(a[0], a[1], b[0], b[1], row)
-                            for (a, b, row) in cpath]
-                    for h, (a, b, _row) in zip(hops, cpath):
-                        h["to_function"] = (dev_funcs.get(b[0])
-                                            or dev_funcs.get(h["to_clean"])
-                                            or bom_names.get(h["to_clean"]) or "")
-                        h["to_degree"] = len(adj.get(b, {}))
-                    coil_ends.append({
-                        "device": ced, "pin": cep, "clean": cclean,
-                        "role": crole,
-                        "function": (dev_funcs.get(ced) or dev_funcs.get(cclean)
-                                     or bom_names.get(cclean) or ""),
-                        "desc": explain_device_code(ced, glossary, lang=lang) or "",
-                        "path": hops,
-                        "coil_pin": cnd[1],
-                        "coil_dev": clean_device_code(cnd[0]) or cnd[0],
-                    })
-            # najpierw masa, potem zasilanie sterowania — czytelna diagnoza
-            _coil_rank = {"gnd": 0, "source": 1, "terminal": 1, "load": 2}
-            coil_ends.sort(key=lambda x: (_coil_rank.get(x["role"], 3),
-                                          len(x["path"]),
-                                          _natural_sort_key(x["clean"])))
-            if coil_ends:
-                rcs.append({
-                    "device": rd, "clean": info.get("clean") or rd,
-                    "function": info.get("function") or "",
-                    "coil_label": info.get("coil_label") or "",
-                    "ends": coil_ends[:6],
-                })
+                        seen_rd.append(rd)
+        rcs = _coils_cascade(seen_rd)
         if rcs:
             ld["relay_coils"] = rcs
+
+    # ── 2c. Widok przekaźnika: obwody przełączane 30->87 / 30->87a ──
+    # Przewód/gniazdo bez odbiornika na końcu, a na styku przekaźnika:
+    # od styku wspólnego (30) tor zasilania w górę, od każdego styku
+    # roboczego (87 NO, 87a NC) tor w dół do odbiornika, pod spodem
+    # obwód cewki (85/86) z kaskadą przekaźników sterujących cewką.
+    def _relay_view(rd):
+        edges = relay_edges.get(rd) or []
+        if not edges:
+            return None
+        names = {}
+        for a, b, row in edges:
+            pn = row.get("_pin_names") or {}
+            for nd in (a, b):
+                names.setdefault(nd, str(pn.get(f"{nd[0]}|{nd[1]}") or nd[1]))
+        contacts = set(names)
+
+        def _trace(nd):
+            out, seen = [], set()
+            for (ed, ep), path in _wire_net_paths(
+                    adj, nd, banned=contacts - {nd}, max_nodes=800,
+                    max_ends=24, pass_fn=pass_fn):
+                if (ed, ep) == nd or (ed, ep) in seen or (ed, ep) in contacts:
+                    continue
+                seen.add((ed, ep))
+                out.append(((ed, ep), path))
+            return out
+
+        common = next((nd for nd, nm in names.items() if nm.upper() == "30"), None)
+        if common is None:
+            deg = {}
+            for a, b, _r in edges:
+                for nd in (a, b):
+                    deg[nd] = deg.get(nd, 0) + 1
+            multi = [nd for nd, c in deg.items() if c > 1]
+            if len(multi) == 1:
+                common = multi[0]
+        traced = {nd: _trace(nd) for nd in contacts}
+        if common is None:
+            # para styków bez numeracji (5/5b, styk główny stycznika):
+            # stroną zasilania jest ta z bezpiecznikiem/źródłem
+            def _supply_score(nd):
+                roles = {_circuit_end_role(ed, p[-1][2] if p else None,
+                                           dev_funcs, bom_names)
+                         for (ed, _ep), p in traced[nd]}
+                return (0 if roles & {"fuse", "source", "terminal"} else 1,
+                        _natural_sort_key(names[nd]))
+            common = sorted(contacts, key=_supply_score)[0]
+
+        c_name = names[common]
+        pins = [{"pin": common[1], "node_dev": common[0], "relay_pin": c_name,
+                 "role": "feed",
+                 "ends": [_mk_end(ed, ep, path) for (ed, ep), path in traced[common]]}]
+        others = sorted((nd for nd in contacts if nd != common),
+                        key=lambda nd: _natural_sort_key(names[nd]))
+        for nd in others:
+            row = (adj.get(common) or {}).get(nd)
+            if row is None:
+                continue
+            nm = names[nd]
+            pins.append({
+                "pin": nd[1], "node_dev": nd[0], "relay_pin": nm,
+                "role": "switched",
+                "contact": "NC" if nm.upper() == "87A" else
+                           "NO" if nm.upper() == "87" else "",
+                "ends": [_mk_end(ed, ep, path, prefix=[(common, nd, row)])
+                         for (ed, ep), path in traced[nd]],
+            })
+        if len(pins) < 2 and not pins[0]["ends"]:
+            return None
+        cdev = common[0]
+        cclean = clean_device_code(cdev) or cdev
+        rlabel = _relay_label(rd)
+        return {
+            "device": cdev, "clean": cclean,
+            "function": _relay_func(rd) or dev_funcs.get(cdev)
+                        or dev_funcs.get(cclean) or bom_names.get(cclean) or "",
+            "desc": explain_device_code(cdev, glossary, lang=lang) or "",
+            "relay_view": {"relay_dev": rd, "relay_clean": rlabel,
+                           "socket": cclean if cclean != rlabel else "",
+                           "common_pin": c_name},
+            "pins": pins,
+            "relay_coils": _coils_cascade([rd]),
+        }
+
+    for rd in relay_view_devs[:4]:
+        rv = _relay_view(rd)
+        if rv is None and (relay_coils.get(rd) or {}).get("coil_nodes"):
+            # przekaźnik bez rozpoznanych styków — przynajmniej cewka
+            cdev = relay_coils[rd]["coil_nodes"][0][0]
+            cclean = clean_device_code(cdev) or cdev
+            rv = {"device": cdev, "clean": cclean, "function": _relay_func(rd),
+                  "desc": "", "pins": [],
+                  "relay_view": {"relay_dev": rd, "relay_clean": _relay_label(rd),
+                                 "socket": "", "common_pin": ""},
+                  "relay_coils": _coils_cascade([rd])}
+        if rv and (rv["pins"] or rv["relay_coils"]):
+            loads_out.append(rv)
 
     # ── 3. Etykiety modułów sterownika dla końców-źródeł ─────────
     # A103/A104/A105 -> "Carnation 1/2/3 · O<n.m>", CP20-Ox -> "Acetech · O.n"
