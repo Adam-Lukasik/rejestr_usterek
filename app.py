@@ -2945,6 +2945,18 @@ def api_zuken_summaries_connectors():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/zuken/summaries/connector-types", methods=["GET"])
+def api_zuken_summaries_connector_types():
+    """Lista złączy PS z artykułami — raport typów bez rysunku."""
+    try:
+        ps_code = request.args.get("ps", "")
+        if not ps_code:
+            return jsonify({"error": smsg("psParamRequired")}), 400
+        return jsonify(zuken_service.get_ps_connector_types(ps_code))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/api/zuken/summaries/fuses", methods=["GET"])
 def api_zuken_summaries_fuses():
     """Zwraca zestaw bezpieczników dla projektu PS."""
@@ -3018,6 +3030,30 @@ def api_zuken_circuit_path():
         if not query:
             return jsonify({"error": smsg("psQRequired")}), 400
         return jsonify(zuken_service.trace_circuit(ps_code, query, lang=_app_lang()))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/zuken/assist-list", methods=["GET"])
+def api_zuken_assist_list():
+    """Klikalna lista elementów dla zapytań kategorii asystenta
+    ('bezpiecznik 7,5A', '7,5A', 'przekaźnik'). ok=False gdy to nie kategoria."""
+    try:
+        ps_code = request.args.get("ps", "") or request.args.get("ps_code", "")
+        query = request.args.get("q", "") or request.args.get("query", "")
+        return jsonify(zuken_service.assistant_list(ps_code, query, lang=_app_lang()))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/zuken/known-devices", methods=["GET"])
+def api_zuken_known_devices():
+    """Kody aparatów projektu PS — do linkowania kodów w odpowiedziach asystenta."""
+    try:
+        ps_code = request.args.get("ps", "") or request.args.get("ps_code", "")
+        if not ps_code:
+            return jsonify({"codes": []})
+        return jsonify({"codes": zuken_service.get_ps_device_codes(ps_code)})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 

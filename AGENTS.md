@@ -43,6 +43,10 @@ Wersja wielojęzykowa: `SUPPORTED_LANGS = ("pl", "en", "de")`, tłumaczenia w
 - **Cały katalog** (z db, Bazą wiedzy, backupami) — Adam przenosi na pendrive
   między pracą a domem: na docelowym kompie zmienia nazwę starego katalogu na
   `..._old`, kopiuje całość z pendrive. Rutyna, nie optymalizować bez pytania.
+  Uwaga: program zmienia mtime `rejestr_usterek.db` przy KAŻDYM starcie, więc
+  kopiowanie na istniejący katalog z opcją „Zastąp wszystkie starsze” (Total
+  Commander) potrafi pominąć nowszą treściowo bazę (incydent 29.09: 88 vs 87
+  usterek). Kopiując na istniejący katalog — „Zastąp wszystkie”.
 - Komunikaty commitów po polsku, krótko, konwencja jak w `git log`.
 - Konwersacje Devina NIE migrują między maszynami — ten plik jest pamięcią
   długoterminową; aktualizować przy zmianach workflow/struktury.
@@ -59,6 +63,28 @@ Wersja wielojęzykowa: `SUPPORTED_LANGS = ("pl", "en", "de")`, tłumaczenia w
 - Prace nad obwodami/przewodami: sygnały mają `wire_number`, `signal`,
   `signal_name`, `wire_color`, `cross_section`, `length` — używać
   `wireLabelAttrs()` do etykiet.
+
+- Rysunki złączy (widok od strony przewodów): `connFaceLayout()` rozpoznaje rodzinę
+  po artykule/opisie z `zuken_ps_connectors`/BOM, `connFacePinAt()` numeruje gniazda,
+  `connFaceSvg()` rysuje. Rodziny: JPT, MINIFIT, MICROFIT, SUPERSEAL, MATENLOK,
+  FASTIN, TBP, RELAY9 (Hella 5/9), RCA, ROW (ogólny 1-rząd, `unverified`).
+  Nowe rodziny dodawać tylko ze zweryfikowaną numeracją (rysunek katalogowy/zdjęcie
+  od Adama); niepewny kierunek → `unverified: true` (ostrzeżenie w oknie złącza).
+  Typ bez rysunku: węzeł i tak klikalny — okno pokazuje przewody i pinout.
+  Podgląd SVG bez UI: wyciągnąć funkcje z HTML-a w node i zrzut przez headless Edge.
+
+- Klikalność w asystencie: `entLink(q, label)` (jawny link) i `entText(raw)` (escape +
+  kody aparatów znane w PS → linki; zbiór z `/api/zuken/known-devices`). Jeden handler
+  `click` w fazie capture na `[data-ent-q]` → `goZukenEntity(q)` (nowe zapytanie,
+  zamyka okna złącza/ścieżki). Historia ◀ ▶ + ścieżka: `ZUKEN_STATE.nav`,
+  `zukenNavPush/zukenNavGo`. Ctrl+klik na węźle diagramu = od razu obwód.
+- Listy kategorii: `zuken_service.assistant_list()` → `/api/zuken/assist-list`
+  (bezpieczniki z prądem „7,5A”, przekaźniki + filtr słowami); karta `assistListCardHtml()`.
+  Plan dalej: etap 3 — edytowalne aliasy firmowe (NAK = gniazdo zewnętrzne 115/230V →
+  SHORELINE/EJECT/AUTO-EJECT) w tabeli DB + ekran w Słownikach, listy gniazd USB/12V/
+  zapalniczka; tylko wybrany PS.
+- Test UI bez klikania: headless Edge + CDP (node 22 ma globalny WebSocket),
+  `openAiDiagnosisModal({projekt, default_query})`, zrzut `Page.captureScreenshot`.
 
 ## Weryfikacja
 

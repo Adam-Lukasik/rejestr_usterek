@@ -1352,6 +1352,22 @@
       display: none !important;
     }
   }
+
+  /* Asystent: klikalne elementy (złącza, bezpieczniki, przewody) i historia */
+  .ent-link { color:#0284c7; font-weight:700; text-decoration:underline dotted; text-underline-offset:2px; cursor:pointer; border-radius:3px; }
+  .ent-link:hover { color:#2563eb; text-decoration-style:solid; background:rgba(2,132,199,0.1); }
+  .ent-link-row { display:grid; grid-template-columns:minmax(64px,auto) minmax(46px,auto) 1fr auto; gap:10px; align-items:center; padding:6px 10px; background:var(--bg-card); border:1px solid var(--border); border-radius:6px; cursor:pointer; font-size:12.5px; }
+  .ent-link-row:hover { border-color:#0284c7; background:rgba(2,132,199,0.06); }
+  .ent-row-code { font-family:var(--font-mono,monospace); font-weight:800; color:#0284c7; }
+  .ent-row-badge { font-weight:800; color:#b45309; font-size:12px; }
+  .ent-row-label { font-weight:600; color:var(--text-main); min-width:0; word-break:break-word; }
+  .ent-row-sub { font-size:11px; color:var(--text-muted); font-family:var(--font-mono,monospace); text-align:right; }
+  .zuken-nav-btn { padding:8px 10px; font-size:12px; border:1px solid var(--border); border-radius:var(--radius-md); background:var(--bg-card-subtle); color:var(--text-main); cursor:pointer; line-height:1; }
+  .zuken-nav-btn:disabled { opacity:0.35; cursor:default; }
+  .zuken-crumb { border:none; background:none; padding:1px 4px; font-size:11.5px; font-family:var(--font-mono,monospace); color:#0284c7; cursor:pointer; border-radius:4px; }
+  .zuken-crumb:hover { background:rgba(2,132,199,0.1); }
+  .zuken-crumb.active { color:var(--text-main); font-weight:800; cursor:default; background:none; }
+  .zuken-crumb-sep { color:var(--text-muted); font-size:11px; }
 </style>
 </head>
 <body>
@@ -2091,8 +2107,11 @@
                 <button type="button" class="tag-project" style="cursor:pointer;" onclick="filterZukenConnSystem('=CHA')" data-i18n="ui.zuken.sysCha">=CHA (Podwozie)</button>
                 <button type="button" class="tag-project" style="cursor:pointer;" onclick="filterZukenConnSystem('=BOM')" data-i18n="ui.zuken.sysBom">=BOM (Dach)</button>
               </div>
-              <div style="font-size:12px; color:var(--text-muted); font-weight:600;" id="zuken-conn-count-label" data-i18n="ui.zuken.loadingConnectors">
-                Ładowanie złączy...
+              <div style="display:flex; gap:10px; align-items:center;">
+                <button type="button" class="btn-secondary-action" style="padding:4px 10px; font-size:11.5px; border-radius:var(--radius-sm);" onclick="showConnectorDrawingReport()" data-i18n="js.zuken.connReportBtn">🖼 Złącza bez rysunku</button>
+                <div style="font-size:12px; color:var(--text-muted); font-weight:600;" id="zuken-conn-count-label" data-i18n="ui.zuken.loadingConnectors">
+                  Ładowanie złączy...
+                </div>
               </div>
             </div>
 
@@ -2780,6 +2799,10 @@
 
     <!-- Pasek narzędziowy / Wyszukiwarka -->
     <div style="padding:12px 20px; background:var(--bg-card); border-bottom:1px solid var(--border); display:flex; gap:10px; align-items:center; flex-wrap:wrap; flex-shrink:0;">
+      <div style="display:flex; gap:4px;">
+        <button type="button" id="zuken-nav-back" class="zuken-nav-btn" onclick="zukenNavGo(ZUKEN_STATE.nav.idx - 1)" disabled title="Wstecz" data-i18n-title="js.zuken.navBack">◀</button>
+        <button type="button" id="zuken-nav-fwd" class="zuken-nav-btn" onclick="zukenNavGo(ZUKEN_STATE.nav.idx + 1)" disabled title="Dalej" data-i18n-title="js.zuken.navFwd">▶</button>
+      </div>
       <div style="flex:1; min-width:260px; position:relative;">
         <input type="text" id="zuken-search-input" style="width:100%; padding:9px 12px; border-radius:var(--radius-md); border:1px solid var(--border); background:var(--bg-card-subtle); font-size:13.5px;" placeholder="Wpisz numer przewodu (np. 185D, 30B), złącze (X132), bezpiecznik (F18), odbiornik..." data-i18n-placeholder="zuken.searchPlaceholder" onkeydown="if(event.key==='Enter') runAiDiagnosisSearch();">
       </div>
@@ -2793,6 +2816,7 @@
         🔄 <span data-i18n="zuken.btnSync">Skanuj bazę</span>
       </button>
     </div>
+    <div id="zuken-nav-crumbs" style="display:none; padding:4px 20px; background:var(--bg-card); border-bottom:1px solid var(--border); gap:2px; align-items:center; flex-wrap:wrap; flex-shrink:0;"></div>
 
     <!-- Pasek kontekstu projektu i szybkich tagów -->
     <div id="zuken-project-badge-bar" style="padding:8px 20px; background:var(--bg-card-subtle); border-bottom:1px solid var(--border); font-size:12px; color:var(--text-muted); display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; flex-shrink:0;">
@@ -7433,8 +7457,133 @@ let ZUKEN_STATE = {
     klient: '',
     vin: ''
   },
-  lastResults: null
+  lastResults: null,
+  lastQuery: '',
+  runSeq: 0,
+  nav: { stack: [], idx: -1 },
+  knownDevs: { ps: null, set: new Set() }
 };
+
+// ═══ Klikalne elementy w odpowiedziach asystenta (X34, F51, K1, nr przewodu) ═══
+// Kliknięcie = nowe zapytanie asystenta dla elementu; historia ◀ ▶ pozwala wrócić.
+function entLink(q, label) {
+  if (!q) return escapeHtml(label ?? '');
+  return `<span class="ent-link" data-ent-q="${escapeHtml(q)}" title="${escapeHtml(t('js.zuken.entLinkTitle', { v: q }))}">${escapeHtml(label ?? q)}</span>`;
+}
+
+const ENT_CODE_RE = /(^|[^A-Za-z0-9_'])([A-Z]{1,4}\d{1,5}[A-Z']*)(?=$|[^A-Za-z0-9_])/g;
+// escapeHtml + kody aparatów istniejące w projekcie PS zamienione na linki
+function entText(raw) {
+  const s = String(raw ?? '');
+  const known = ZUKEN_STATE.knownDevs.set;
+  if (!known.size) return escapeHtml(s);
+  let out = '', last = 0, m;
+  ENT_CODE_RE.lastIndex = 0;
+  while ((m = ENT_CODE_RE.exec(s))) {
+    const code = m[2], start = m.index + m[1].length;
+    if (!known.has(code.toUpperCase())) continue;
+    out += escapeHtml(s.slice(last, start)) + entLink(code, code);
+    last = start + code.length;
+  }
+  return out + escapeHtml(s.slice(last));
+}
+
+async function ensureKnownDevs(ps) {
+  ps = (ps || '').toUpperCase();
+  if (ZUKEN_STATE.knownDevs.ps === ps) return;
+  let codes = [];
+  if (ps) {
+    try { codes = (await apiCall(`/api/zuken/known-devices?ps=${encodeURIComponent(ps)}`)).codes || []; }
+    catch (e) { codes = []; }
+  }
+  ZUKEN_STATE.knownDevs = { ps, set: new Set(codes.map(c => String(c).toUpperCase())) };
+}
+
+function goZukenEntity(q) {
+  if (!q) return;
+  closeConnFace(); closeCircuitOverlay(); closeWirePath();
+  const modal = document.getElementById('modal-zuken-diagnose');
+  if (modal && modal.style.display !== 'none') {
+    if (typeof switchZukenTab === 'function') switchZukenTab('diag');
+    document.getElementById('zuken-search-input').value = q;
+    document.getElementById('zuken-results-body')?.scrollTo({ top: 0 });
+    runAiDiagnosisSearch();
+  } else {
+    openAiDiagnosisModal({ projekt: ZUKEN_STATE.currentContext.projekt || STATE.lastSelectedPS || '', default_query: q });
+  }
+}
+
+// faza capture: link wewnątrz klikalnej karty (np. ścieżka przewodu) ma pierwszeństwo
+document.addEventListener('click', ev => {
+  const el = ev.target && ev.target.closest && ev.target.closest('[data-ent-q]');
+  if (!el) return;
+  ev.preventDefault();
+  ev.stopPropagation();
+  goZukenEntity(el.dataset.entQ);
+}, true);
+
+function zukenNavPush(q, mode) {
+  const n = ZUKEN_STATE.nav;
+  const cur = n.stack[n.idx];
+  if (cur && cur.q === q && cur.mode === mode) return;
+  n.stack = n.stack.slice(0, n.idx + 1);
+  n.stack.push({ q, mode });
+  if (n.stack.length > 30) n.stack.shift();
+  n.idx = n.stack.length - 1;
+  renderZukenNav();
+}
+
+function zukenNavGo(i) {
+  const n = ZUKEN_STATE.nav;
+  const e = n.stack[i];
+  if (!e) return;
+  n.idx = i;
+  document.getElementById('zuken-search-input').value = e.q;
+  renderZukenNav();
+  closeConnFace(); closeCircuitOverlay(); closeWirePath();
+  if (e.mode === 'circuit') runCircuitTrace({ fromNav: true });
+  else runAiDiagnosisSearch({ fromNav: true });
+}
+
+function renderZukenNav() {
+  const n = ZUKEN_STATE.nav;
+  const b = document.getElementById('zuken-nav-back');
+  const f = document.getElementById('zuken-nav-fwd');
+  if (b) b.disabled = n.idx <= 0;
+  if (f) f.disabled = n.idx >= n.stack.length - 1;
+  const cr = document.getElementById('zuken-nav-crumbs');
+  if (!cr) return;
+  if (n.stack.length < 2) { cr.style.display = 'none'; cr.innerHTML = ''; return; }
+  const from = Math.max(0, n.stack.length - 8);
+  cr.style.display = 'flex';
+  cr.innerHTML = (from > 0 ? '<span class="zuken-crumb-sep">…</span>' : '') + n.stack.slice(from).map((e, k) => {
+    const i = from + k;
+    return `<button type="button" class="zuken-crumb${i === n.idx ? ' active' : ''}" onclick="zukenNavGo(${i})">${e.mode === 'circuit' ? '🔌 ' : ''}${escapeHtml(e.q)}</button>`;
+  }).join('<span class="zuken-crumb-sep">›</span>');
+}
+
+// Karta listy dla zapytań kategorii ('bezpiecznik 7,5A', 'przekaźnik')
+function assistListCardHtml(lst) {
+  if (!lst || !lst.ok) return '';
+  const items = lst.items || [];
+  if (!items.length && !lst.explicit) return '';
+  const isFuse = lst.category === 'fuse';
+  const title = t(isFuse ? 'js.zuken.listFuses' : 'js.zuken.listRelays')
+    + (lst.rating ? ' ' + lst.rating : '') + (lst.filter ? ` · „${lst.filter}”` : '');
+  const rows = items.map(it => `<div class="ent-link-row" data-ent-q="${escapeHtml(it.q)}" title="${escapeHtml(t('js.zuken.entLinkTitle', { v: it.q }))}">
+      <span class="ent-row-code">${escapeHtml(it.q)}</span>
+      <span class="ent-row-badge">${escapeHtml(it.badge || '')}</span>
+      <span class="ent-row-label">${escapeHtml(it.label || '')}</span>
+      <span class="ent-row-sub">${escapeHtml(it.sub || '')}</span>
+    </div>`).join('');
+  return `<div id="zuken-assist-list" style="padding:12px 16px; background:linear-gradient(135deg, rgba(217,119,6,0.08), rgba(2,132,199,0.05)); border:1px solid rgba(217,119,6,0.35); border-radius:var(--radius-md);">
+    <div style="display:flex; justify-content:space-between; align-items:baseline; gap:8px; flex-wrap:wrap; margin-bottom:8px;">
+      <div style="font-size:12px; font-weight:800; color:#b45309; text-transform:uppercase; letter-spacing:0.5px;">${isFuse ? '⏛' : '🔁'} ${escapeHtml(title)} <span style="color:var(--text-muted); font-weight:700;">(${items.length})</span></div>
+      <div style="font-size:11px; color:var(--text-muted);">${escapeHtml(items.length ? t('js.zuken.listHint') : t('js.zuken.listEmpty', { ps: lst.ps_code || '' }))}</div>
+    </div>
+    ${rows ? `<div style="display:flex; flex-direction:column; gap:4px;">${rows}</div>` : ''}
+  </div>`;
+}
 
 function openAiDiagnosisModal(ctx = {}) {
   ZUKEN_STATE.currentContext = Object.assign({
@@ -7462,6 +7611,8 @@ function openAiDiagnosisModal(ctx = {}) {
   }
 
   updateZukenContextBadge();
+  ZUKEN_STATE.nav = { stack: [], idx: -1 };
+  renderZukenNav();
 
   const defQuery = (ctx.default_query || ctx.element || ctx.opisProblem || '').trim();
   if (input) input.value = defQuery;
@@ -7624,9 +7775,12 @@ function applyZukenQuickTag(tag) {
   runAiDiagnosisSearch();
 }
 
-async function runAiDiagnosisSearch() {
+async function runAiDiagnosisSearch(opts = {}) {
   const query = (document.getElementById('zuken-search-input').value || '').trim();
   const resBody = document.getElementById('zuken-results-body');
+  if (query && !opts.fromNav) zukenNavPush(query, 'diag');
+  ZUKEN_STATE.lastQuery = query;
+  const runId = ++ZUKEN_STATE.runSeq;
 
   resBody.innerHTML = `
     <div style="text-align:center; padding:60px 20px; color:var(--text-muted);">
@@ -7658,22 +7812,49 @@ async function runAiDiagnosisSearch() {
     const circuitPromise = query
       ? apiCall(`/api/zuken/circuit-path?ps=${encodeURIComponent(psForPath)}&q=${encodeURIComponent(query)}`).catch(() => null)
       : Promise.resolve(null);
+    // zapytanie kategorii ('bezpiecznik 7,5A', 'przekaźnik') -> klikalna lista
+    const listPromise = (query && psForPath)
+      ? apiCall(`/api/zuken/assist-list?ps=${encodeURIComponent(psForPath)}&q=${encodeURIComponent(query)}`).catch(() => null)
+      : Promise.resolve(null);
+    const knownPromise = ensureKnownDevs(psForPath);
 
     const res = await apiCall('/api/ai/diagnose', 'POST', payload);
+    await knownPromise;
+    if (runId !== ZUKEN_STATE.runSeq) return;
     ZUKEN_STATE.lastResults = res;
     renderDiagnosisResults(res);
 
+    let ccard = '';
     try {
       const cp = await circuitPromise;
-      const ccard = (cp && cp.ok) ? circuitCardHtml(cp, query) : '';
+      if (runId !== ZUKEN_STATE.runSeq) return;
+      ccard = (cp && cp.ok) ? circuitCardHtml(cp, query) : '';
       if (ccard) {
         resBody.insertAdjacentHTML('afterbegin', ccard);
       } else {
         const sp = await pathPromise;
+        if (runId !== ZUKEN_STATE.runSeq) return;
         const card = signalPathCardHtml(sp, query);
         if (card) resBody.insertAdjacentHTML('afterbegin', card);
       }
     } catch (e) { /* ścieżka to dodatek — nie blokuj wyników diagnostyki */ }
+
+    try {
+      const lst = await listPromise;
+      if (runId !== ZUKEN_STATE.runSeq) return;
+      const lcard = assistListCardHtml(lst);
+      if (lcard) {
+        resBody.insertAdjacentHTML('afterbegin', lcard);
+        // jedna pozycja — od razu jej obwód pod listą
+        const one = (lst.items || []).length === 1 ? lst.items[0].q : '';
+        if (one && !ccard) {
+          const cp1 = await apiCall(`/api/zuken/circuit-path?ps=${encodeURIComponent(psForPath)}&q=${encodeURIComponent(one)}`).catch(() => null);
+          if (runId !== ZUKEN_STATE.runSeq) return;
+          const c1 = (cp1 && cp1.ok) ? circuitCardHtml(cp1, one) : '';
+          if (c1) document.getElementById('zuken-assist-list')?.insertAdjacentHTML('afterend', c1);
+        }
+      }
+    } catch (e) { /* lista to dodatek */ }
   } catch (err) {
     resBody.innerHTML = `
       <div style="padding:20px; background:var(--red-bg); color:var(--red-text); border-radius:var(--radius-md); font-size:13px;">
@@ -7752,7 +7933,7 @@ function renderDiagnosisResults(data) {
           <span>${t('js.zuken.sugSteps')}</span>
         </div>
         <ul style="margin:0; padding-left:20px; font-size:13px; color:var(--text-main); line-height:1.6;">
-          ${data.recommendations.map(rec => `<li>${escapeHtml(rec)}</li>`).join('')}
+          ${data.recommendations.map(rec => `<li>${entText(rec)}</li>`).join('')}
         </ul>
       </div>
     `;
@@ -8049,7 +8230,7 @@ function renderDiagnosisResults(data) {
                   <div style="flex:1; min-width:180px;">
                     <span style="font-size:10px; font-weight:700; color:var(--text-muted); text-transform:uppercase;">${t('js.zuken.pointFrom')}</span>
                     <div style="font-family:var(--font-mono); font-weight:700; color:var(--primary); font-size:13px;">
-                      ${escapeHtml(lnk.from || '—')} ${lnk.from_pin ? `<span style="color:var(--text-main); font-weight:800;">[pin ${escapeHtml(lnk.from_pin)}]</span>` : ''}
+                      ${entText(lnk.from || '—')} ${lnk.from_pin ? `<span style="color:var(--text-main); font-weight:800;">[pin ${escapeHtml(lnk.from_pin)}]</span>` : ''}
                     </div>
                     <div style="font-size:11px; color:var(--text-muted); margin-top:1px;">${escapeHtml(lnk.from_desc || '')}</div>
                   </div>
@@ -8061,7 +8242,7 @@ function renderDiagnosisResults(data) {
                   <div style="flex:1; min-width:180px;">
                     <span style="font-size:10px; font-weight:700; color:var(--text-muted); text-transform:uppercase;">${t('js.zuken.pointTo')}</span>
                     <div style="font-family:var(--font-mono); font-weight:700; color:var(--primary); font-size:13px;">
-                      ${escapeHtml(lnk.to || '—')} ${lnk.to_pin ? `<span style="color:var(--text-main); font-weight:800;">[pin ${escapeHtml(lnk.to_pin)}]</span>` : ''}
+                      ${entText(lnk.to || '—')} ${lnk.to_pin ? `<span style="color:var(--text-main); font-weight:800;">[pin ${escapeHtml(lnk.to_pin)}]</span>` : ''}
                     </div>
                     <div style="font-size:11px; color:var(--text-muted); margin-top:1px;">${escapeHtml(lnk.to_desc || '')}</div>
                   </div>
@@ -8074,8 +8255,8 @@ function renderDiagnosisResults(data) {
                     ${lnk.wire_color ? `<span>🎨 ${t('zuken.pinoutColColor')}: <strong>${escapeHtml(lnk.wire_color)}</strong></span>` : ''}
                     ${lnk.wire_type ? `<span>${t('js.zuken.typeLabel')} <code>${escapeHtml(lnk.wire_type)}</code></span>` : ''}
                     ${lnk.cross_section ? `<span>${t('zuken.pinoutColCross')}: <strong>${escapeHtml(lnk.cross_section)}</strong></span>` : ''}
-                    ${lnk.wire_number ? `<span>${t('js.zuken.wireNr')} <code>${escapeHtml(lnk.wire_number)}</code></span>` : ''}
-                    ${lnk.length_formatted ? `<span style="background:rgba(2,132,199,0.12); color:#0284c7; padding:2px 8px; border-radius:4px; font-weight:700; border:1px solid rgba(2,132,199,0.25);>📏 ${t('ui.zuken.relayColLength')}: ${escapeHtml(lnk.length_formatted)}</span>` : ''}
+                    ${lnk.wire_number ? `<span>${t('js.zuken.wireNr')} <code>${entLink(lnk.wire_number)}</code></span>` : ''}
+                    ${lnk.length_formatted ? `<span style="background:rgba(2,132,199,0.12); color:#0284c7; padding:2px 8px; border-radius:4px; font-weight:700; border:1px solid rgba(2,132,199,0.25);">📏 ${t('ui.zuken.relayColLength')}: ${escapeHtml(lnk.length_formatted)}</span>` : ''}
                     ${lnk.project_rev ? `<span style="color:var(--text-muted); margin-left:auto; font-size:10.5px;">(${escapeHtml(lnk.project_rev)})</span>` : ''}
                   </div>
                 ` : ''}
@@ -9357,6 +9538,65 @@ function debounceZukenConnectorsSearch() {
   }, 250);
 }
 
+// Raport typów złączy PS bez rysunku / z rysunkiem poglądowym — po imporcie
+// nowego projektu widać, które rodziny trzeba uzupełnić w connFaceLayout()
+async function showConnectorDrawingReport() {
+  const ps = ZUKEN_SUMM_STATE.currentPs;
+  if (!ps) return;
+  let items = [];
+  try {
+    items = (await apiCall(`/api/zuken/summaries/connector-types?ps=${encodeURIComponent(ps)}`)).items || [];
+  } catch (e) {
+    circuitOverlay(t('js.zuken.connReportTitle', { ps }), `<div style="color:var(--red-text); font-size:12px;">⚠️ ${escapeHtml(e.message || String(e))}</div>`);
+    return;
+  }
+  const groups = { missing: {}, unverified: {} };
+  let terminals = 0;
+  items.forEach(it => {
+    if (/^(SP|RT|U)\d/i.test(it.device_clean || '')) return;
+    const L = connFaceLayout({ article: it.article_number, desc: it.description, pins: it.pin_count });
+    const kind = !L ? 'missing' : L.unverified ? 'unverified' : '';
+    if (!kind) return;
+    if (kind === 'missing' && (it.pin_count || 0) <= 1) { terminals++; return; }
+    const key = (it.article_number || '') + '|' + (it.description || '');
+    const g = groups[kind][key] = groups[kind][key] || { art: it.article_number, desc: it.description, sup: it.supplier, pins: new Set(), devs: [] };
+    g.pins.add(it.pin_count || 0);
+    g.devs.push((it.device_code || '').split('-').pop() || it.device_clean);
+  });
+  const section = (kind, title, color) => {
+    const list = Object.values(groups[kind]).sort((a, b) => b.devs.length - a.devs.length);
+    if (!list.length) return '';
+    return `<div style="margin-bottom:14px;">
+      <div style="font-size:12px; font-weight:800; color:${color}; margin-bottom:6px;">${escapeHtml(title)} (${list.length})</div>
+      ${list.map(g => `<div style="padding:6px 8px; border:1px solid var(--border); border-radius:6px; margin-bottom:5px; font-size:11.5px;">
+        <div style="display:flex; gap:8px; align-items:baseline; flex-wrap:wrap;">
+          <span style="font-weight:800; min-width:26px; color:var(--text-main);">${g.devs.length}×</span>
+          <span style="font-family:var(--font-mono,monospace); font-weight:700;">${escapeHtml(g.art || '—')}</span>
+          ${g.sup ? `<span style="color:var(--text-muted);">${escapeHtml(g.sup)}</span>` : ''}
+          <span style="color:var(--text-muted);">· ${escapeHtml(t('ui.zuken.pinCount', { n: [...g.pins].sort((a, b) => a - b).join('/') }))}</span>
+        </div>
+        ${g.desc ? `<div style="color:var(--text-muted); font-size:11px; margin-top:1px;">${escapeHtml(g.desc.slice(0, 140))}</div>` : ''}
+        <div style="margin-top:3px; display:flex; gap:4px; flex-wrap:wrap;">${g.devs.slice(0, 16).map(d =>
+          `<button type="button" class="tag-project" style="cursor:pointer; border:none; font-size:10.5px;" data-dev="${escapeHtml(d)}" onclick="connReportJump(this.dataset.dev)">${escapeHtml(d)}</button>`).join('')}${g.devs.length > 16 ? `<span style="font-size:10.5px; color:var(--text-muted);">+${g.devs.length - 16}</span>` : ''}</div>
+      </div>`).join('')}
+    </div>`;
+  };
+  const body = section('missing', t('js.zuken.connReportMissing'), '#b91c1c')
+    + section('unverified', t('js.zuken.connReportUnverified'), '#b45309');
+  circuitOverlay(t('js.zuken.connReportTitle', { ps }),
+    (body || `<div style="font-size:12px; color:#16a34a; font-weight:700;">✓ ${escapeHtml(t('js.zuken.connReportNone'))}</div>`)
+    + (terminals ? `<div style="font-size:11px; color:var(--text-muted); margin-top:4px;">${escapeHtml(t('js.zuken.connReportTerminals', { n: terminals }))}</div>` : '')
+    + `<div style="font-size:11px; color:var(--text-muted); margin-top:8px; border-top:1px dashed var(--border); padding-top:6px;">${escapeHtml(t('js.zuken.connReportHint'))}</div>`, true);
+}
+
+function connReportJump(dev) {
+  closeCircuitOverlay();
+  const inp = document.getElementById('zuken-conn-search');
+  if (inp) inp.value = dev;
+  ZUKEN_SUMM_STATE.connectorsSearch = dev;
+  loadZukenConnectorsList();
+}
+
 async function loadZukenConnectorsList() {
   const ps = ZUKEN_SUMM_STATE.currentPs;
   const listEl = document.getElementById('zuken-conn-list-container');
@@ -9815,19 +10055,19 @@ function showWirePath(el) {
       const mateB = (h.to || '').split('-').pop();
       const pin = h.from_pin ? ':' + escapeHtml(h.from_pin) : '';
       return `<div style="display:flex; align-items:center; gap:8px; padding:6px 0; border-bottom:1px dashed var(--border); font-size:12px;">
-        <span style="font-family:var(--font-mono, monospace); font-weight:700; color:var(--text-main); white-space:nowrap;">${escapeHtml(mateA)}${pin}</span>
+        <span style="font-family:var(--font-mono, monospace); font-weight:700; color:var(--text-main); white-space:nowrap;">${entText(mateA)}${pin}</span>
         <span style="color:#7c3aed; font-weight:700;">⇄</span>
         <span style="flex:1; font-size:11px; color:#7c3aed;">${escapeHtml(t('js.zuken.matePair'))}</span>
-        <span style="font-family:var(--font-mono, monospace); font-weight:700; color:#0284c7; white-space:nowrap;">${escapeHtml(mateB)}${pin}</span>
+        <span style="font-family:var(--font-mono, monospace); font-weight:700; color:#0284c7; white-space:nowrap;">${entText(mateB)}${pin}</span>
       </div>`;
     }
     const wlabel = h.wire_number || h.signal || '';
     const attrs = [wlabel, h.cross_section ? h.cross_section + ' mm²' : '', (h.length && h.length !== '0') ? fmtWireLength(h.length) : ''].filter(Boolean).join(' · ');
     return `<div style="display:flex; align-items:center; gap:8px; padding:6px 0; border-bottom:1px dashed var(--border); font-size:12px;">
-      <span style="font-family:var(--font-mono, monospace); font-weight:700; color:var(--text-main); white-space:nowrap;">${escapeHtml(h.from_clean)}${h.from_pin ? ':' + escapeHtml(h.from_pin) : ''}</span>
+      <span style="font-family:var(--font-mono, monospace); font-weight:700; color:var(--text-main); white-space:nowrap;">${entText(h.from_clean)}${h.from_pin ? ':' + escapeHtml(h.from_pin) : ''}</span>
       <span style="color:var(--text-muted);">→</span>
-      <span style="flex:1; font-size:11px; color:var(--text-muted); min-width:70px;">${getWireColorBadge(h.wire_color)} ${escapeHtml(attrs)}</span>
-      <span style="font-family:var(--font-mono, monospace); font-weight:700; color:#0284c7; white-space:nowrap;">${escapeHtml(h.to_clean)}${h.to_pin ? ':' + escapeHtml(h.to_pin) : ''}</span>
+      <span style="flex:1; font-size:11px; color:var(--text-muted); min-width:70px;">${getWireColorBadge(h.wire_color)} ${wlabel ? entLink(wlabel) : ''}${escapeHtml(attrs.slice(wlabel.length))}</span>
+      <span style="font-family:var(--font-mono, monospace); font-weight:700; color:#0284c7; white-space:nowrap;">${entText(h.to_clean)}${h.to_pin ? ':' + escapeHtml(h.to_pin) : ''}</span>
     </div>`;
   }).join('');
 
@@ -9884,10 +10124,10 @@ function signalPathCardHtml(sp, query) {
       const endL = (e.clean || e.device) + (e.pin ? ':' + e.pin : '');
       const hopsTxt = (e.path || []).map(h => {
         const attrs = wireLabelAttrs(h).join(' · ');
-        return `${escapeHtml(h.from_clean)}${h.from_pin ? ':' + escapeHtml(h.from_pin) : ''} <span style="color:var(--text-muted);">—[${escapeHtml(attrs)}]→</span>`;
+        return `${entText(h.from_clean)}${h.from_pin ? ':' + escapeHtml(h.from_pin) : ''} <span style="color:var(--text-muted);">—[${escapeHtml(attrs)}]→</span>`;
       }).join(' ');
       return `<div data-fe="${escapeHtml(JSON.stringify(e))}" onclick="showWirePath(this)" style="margin:4px 0 4px 14px; padding:6px 10px; background:var(--bg-card); border:1px solid var(--border); border-left:3px solid #16a34a; border-radius:6px; cursor:pointer;" title="${t('js.zuken.wirePathStepTitle', { v: escapeHtml(e.device) })}">
-        <div style="font-weight:700; color:#16a34a; font-size:12px; font-family:var(--font-mono, monospace);">⇒ ${escapeHtml(endL)}${(e.function || e.desc) ? ` <span style="color:var(--text-muted); font-weight:400; font-family:inherit; font-size:11px;">— ${escapeHtml(e.function || e.desc)}</span>` : ''}</div>
+        <div style="font-weight:700; color:#16a34a; font-size:12px; font-family:var(--font-mono, monospace);">⇒ ${entText(endL)}${(e.function || e.desc) ? ` <span style="color:var(--text-muted); font-weight:400; font-family:inherit; font-size:11px;">— ${escapeHtml(e.function || e.desc)}</span>` : ''}</div>
         <div style="font-size:11px; color:var(--text-muted); margin-top:2px; font-family:var(--font-mono, monospace); line-height:1.5;">${hopsTxt}</div>
       </div>`;
     }).join('');
@@ -9938,7 +10178,7 @@ function wireLabelAttrs(h) {
 }
 
 function circuitHopInline(h, mateMark) {
-  const nodeA = escapeHtml(h.from_clean) + (h.from_pin ? ':' + escapeHtml(h.from_pin) : '')
+  const nodeA = entText(h.from_clean) + (h.from_pin ? ':' + escapeHtml(h.from_pin) : '')
     + (mateMark ? ` <span style="color:#7c3aed;" title="${escapeHtml(t('js.zuken.matePair'))}">⇄${escapeHtml(mateMark)}</span>` : '');
   if (h.internal === 'fuse' || h.internal === 'relay') {
     const lbl = h.internal === 'fuse' ? t('js.zuken.viaFuse') : t('js.zuken.viaRelay');
@@ -9969,13 +10209,13 @@ function circuitEndHtml(e) {
     return circuitHopInline(h, partner);
   }).filter(Boolean).join(' ');
   const metaBits = [];
-  if (ml) metaBits.push(escapeHtml(endL) + (e.plug ? ` · ${escapeHtml(t('js.zuken.plugLabel'))} ${escapeHtml(e.plug.clean)} (${escapeHtml(e.plug.label)})` : ''));
+  if (ml) metaBits.push(entText(endL) + (e.plug ? ` · ${escapeHtml(t('js.zuken.plugLabel'))} ${entText(e.plug.clean)} (${escapeHtml(e.plug.label)})` : ''));
   if (e.function || e.desc) metaBits.push(escapeHtml(e.function || e.desc));
   if (ml && ml.max_current) metaBits.push(escapeHtml(ml.max_current));
   if (e.role === 'gnd' && e.shared > 0) metaBits.push(escapeHtml(t('js.zuken.sharedGnd', { n: e.shared })));
   const fe = { path: e.path || [], clean: e.clean, device: e.device, pin: e.pin, function: e.function || '' };
   return `<div data-fe="${escapeHtml(JSON.stringify(fe))}" onclick="showWirePath(this)" style="margin:4px 0 4px 14px; padding:6px 10px; background:var(--bg-card); border:1px solid var(--border); border-left:3px solid ${rm.color}; border-radius:6px; cursor:pointer;" title="${escapeHtml(endL)}">
-    <div style="font-weight:700; color:${rm.color}; font-size:12px; font-family:var(--font-mono, monospace);">${rm.icon} ${escapeHtml(t('js.zuken.' + rm.key))} ⇒ ${escapeHtml(dispL)}${metaBits.length ? ` <span style="color:var(--text-muted); font-weight:400; font-size:11px;">— ${metaBits.join(' · ')}</span>` : ''}</div>
+    <div style="font-weight:700; color:${rm.color}; font-size:12px; font-family:var(--font-mono, monospace);">${rm.icon} ${escapeHtml(t('js.zuken.' + rm.key))} ⇒ ${ml ? escapeHtml(dispL) : entText(dispL)}${metaBits.length ? ` <span style="color:var(--text-muted); font-weight:400; font-size:11px;">— ${metaBits.join(' · ')}</span>` : ''}</div>
     <div style="font-size:11px; color:var(--text-muted); margin-top:2px; font-family:var(--font-mono, monospace); line-height:1.6;">${hopsTxt}</div>
   </div>`;
 }
@@ -10143,6 +10383,22 @@ function showCircuitChecklist() {
             </div>
           </div>`);
         });
+      } else if (p.role === 'other') {
+        (p.ends || []).forEach(e => {
+          n++;
+          const segs = (e.path || []).map(circuitSegDesc).filter(Boolean).join(' | ');
+          sections.push(`<div style="margin-bottom:12px;">
+            <div style="font-size:11.5px; font-weight:800; color:#475569; margin-bottom:3px;">🔌 ${escapeHtml(t('js.zuken.otherConn'))}: ${escapeHtml(ld.clean)}:${escapeHtml(p.pin)} → ${escapeHtml(e.clean)}:${escapeHtml(e.pin)}</div>
+            <div style="display:flex; gap:9px; align-items:flex-start; padding:5px 0;">
+              ${numBadge()}
+              <div style="flex:1; min-width:0; font-size:11.5px;">
+                ${escapeHtml(t('js.zuken.expectedLink'))} <span style="font-family:var(--font-mono,monospace); font-weight:700;">${escapeHtml(ld.clean)}:${escapeHtml(p.pin)} ↔ ${escapeHtml(e.clean)}:${escapeHtml(e.pin)}</span>
+                <button type="button" data-dev="${escapeHtml(e.clean)}" onclick="jumpToWireDevice(this.dataset.dev)" title="${escapeHtml(t('ui.zuken.wirePathJump'))}" style="background:none; border:none; cursor:pointer; color:#0284c7; font-size:12px; padding:0 4px;">⇲</button>
+                <div style="color:var(--text-muted); margin-top:1px;">${segs}</div>
+              </div>
+            </div>
+          </div>`);
+        });
       }
     });
   };
@@ -10178,7 +10434,7 @@ function connHalfInfo(connMeta, clean, devSfx) {
 // Uwaga: u TE „Plug Housing" (Superseal, MATE-N-LOK) mieści styki żeńskie → F.
 function connFaceLayout(info) {
   const art = (info.article || '').trim(), desc = info.desc || '', blob = art + ' ' + desc;
-  let gender = '', fam = '', rows = 0, cols = 0;
+  let gender = '', fam = '', rows = 0, cols = 0, tee = false;
   let n = parseInt(info.pins, 10) || 0;
   const cn = desc.match(/(\d+)\s*circuits?/i) || desc.match(/PIN:\s*(\d+)/i)
           || desc.match(/(\d+)\s*pos/i) || desc.match(/(\d+)\s*pole/i) || desc.match(/(\d+)[\s-]*way/i);
@@ -10197,7 +10453,12 @@ function connFaceLayout(info) {
       if (/\bplug\b|wtyk/i.test(blob)) gender = 'M';
     }
   } else if (/micro[\s-]?fit/i.test(desc) || /^4302[05]-|^4364[05]-/.test(art)) {
-    if (/single\s*row/i.test(desc)) return null; // 1-rzędowe Micro-Fit: niezweryfikowane
+    if (/single\s*row/i.test(desc) || /^4364[05]-/.test(art)) {
+      // 1-rzędowe Micro-Fit (43645 gniazdo / 43640 wtyk): kierunek numeracji niezweryfikowany
+      const g = /^43645-/.test(art) || /receptacle/i.test(blob) ? 'F'
+        : (/^43640-/.test(art) || /\bplug\b/i.test(blob) ? 'M' : '');
+      return g && n ? { fam: 'ROW', gender: g, cols: n, rows: 1, n, tee: false, unverified: true } : null;
+    }
     fam = 'MICROFIT'; rows = 2; cols = n / 2;
     if (/^43025-/.test(art) || /receptacle/i.test(blob)) gender = 'F';
     if (/^43020-/.test(art) || /\bplug\b|wtyk/i.test(blob)) gender = 'M';
@@ -10218,12 +10479,30 @@ function connFaceLayout(info) {
     if (/receptacle/i.test(blob)) gender = 'F';
     else if (/tab/i.test(blob) || /\bplug\b|wtyk/i.test(blob)) gender = 'M';
     if (!gender) gender = 'F'; // domyślnie gniazdo, gdy opis niejasny
+    // 180907 (gniazdo) / 180908 (wtyk): styki prostopadłe — układ T
+    tee = n === 2 && /(^|-)18090[78](-|$)/.test(art);
   } else if (/terminal\s*block.*pluggable|pluggable.*terminal\s*block/i.test(desc) || /^TBP\d/i.test(art)) {
     // Wtyczki sterownika Acetech (CUI TBP01P1-508-18BE): kostka 1-rzędowa, raster 5.08
     fam = 'TBP'; rows = 1; cols = n; gender = 'F';
+  } else if (/^770-\d{3}/.test(art)) {
+    // WAGO WINSTA 770: 1 rząd, piny L/N/PE — kolejność wg oznaczeń na obudowie
+    const k = +(art.match(/^770-\d(\d)/) || [])[1];
+    return { fam: 'ROW', gender: k === 1 ? 'M' : 'F', cols: 3, rows: 1, n: 3, tee: false,
+             labels: ['L', 'N', 'PE'], unverified: true };
+  } else if (/^DTP0[46]-\dP?S?/i.test(art)) {
+    // Deutsch DTP: 2/4 pozycje w 1 rzędzie; DTP06 = gniazda żeńskie, DTP04 = piny męskie
+    const nn = +(art.match(/^DTP0[46]-(\d)/i) || [])[1] || n;
+    return { fam: 'ROW', gender: /^DTP06/i.test(art) ? 'F' : 'M', cols: nn, rows: 1, n: nn, tee: false, unverified: true };
+  } else if (/relay\s*socket\s*9/i.test(desc) || /^8JA\s*003\s*526/i.test(art)) {
+    // gniazdo przekaźnika mini ISO 5/9 (Hella): siatka 3x3, pozycje 1-3 w dolnym rzędzie
+    fam = 'RELAY9'; rows = 3; cols = 3; n = 9; gender = 'F';
+  } else if (/\bRCA\b/i.test(desc) || /^ACPR-/i.test(art)) {
+    // wtyk/gniazdo RCA (cinch): pin 1 = styk środkowy, COL = kołnierz (masa/ekran)
+    fam = 'RCA'; rows = 1; cols = 2; n = 2;
+    gender = /męsk|\bmale\b|wtyk|\bplug\b/i.test(desc) ? 'M' : 'F';
   }
   if (!fam || !gender || !cols || !rows || cols !== Math.floor(cols) || rows !== Math.floor(rows)) return null;
-  return { fam, gender, cols, rows, n };
+  return { fam, gender, cols, rows, n, tee };
 }
 
 // Numer gniazda w komórce (r=0 góra, c=0 lewa) patrząc OD STRONY PRZEWODÓW.
@@ -10253,6 +10532,9 @@ function connFacePinAt(L, r, c) {
                               : (r === 0 ? cols - c : n - c);
     case 'SUPERSEAL':
       return n - c;
+    case 'ROW':
+      // ogólny 1 rząd (kierunek niezweryfikowany — w podglądzie adnotacja)
+      return L.labels ? L.labels[c] : c + 1;
     case 'TBP':
       // TBP (Acetech): kostka krawędziowa — od modułu wpięta w listwę, przewody
       // wsuwane w otwory z drugiej strony i przykręcane. Wg schematu pin 1 z lewej
@@ -10285,12 +10567,82 @@ function connFaceSvg(L, pin, opt) {
   const lw = mini ? 20 : 48;
   let s = `<svg ${nest} viewBox="0 0 ${W} ${H}" style="${mini ? '' : 'width:100%; '}display:block;" xmlns="http://www.w3.org/2000/svg">`;
 
+  // gniazdo przekaźnika 5/9 od strony przewodów (= przekaźnik od strony nóżek):
+  // 87 i 87a poziomo (równoległe), 30 pionowo pod nimi, 86/85 po bokach,
+  // narożniki 1/3/7/9 — małe gniazda 2,8 mm. Numeracja zgodna z raportem Zuken.
+  if (L.fam === 'RELAY9') {
+    const term = { 2: '30', 4: '86', 5: '87a', 6: '85', 8: '87' };
+    const grid = [[[7, 'vs'], [8, 'h'], [9, 'vs']], [[4, 'v'], [5, 'h'], [6, 'v']], [[1, 'vs'], [2, 'v'], [3, 'vs']]];
+    const cw9 = mini ? 13 : 50, ch9 = mini ? 13 : 58, p9 = mini ? 2 : 8;
+    const W9 = p9 * 2 + cw9 * 3, H9 = p9 * 2 + ch9 * 3;
+    const nest9 = opt.nested ? `x="${opt.x || 0}" y="${opt.y || 0}" width="${opt.width || W9}" height="${opt.height || H9}"` : '';
+    let s9 = `<svg ${nest9} viewBox="0 0 ${W9} ${H9}" style="${mini ? '' : 'width:100%; max-width:220px; margin:0 auto; '}display:block;" xmlns="http://www.w3.org/2000/svg">`;
+    s9 += `<rect x="1" y="1" width="${W9 - 2}" height="${H9 - 2}" rx="${mini ? 2 : 6}" fill="var(--bg-card,#fff)" stroke="var(--border,#94a3b8)" stroke-width="${mini ? 0.8 : 1.4}"/>`;
+    grid.forEach((row, r) => row.forEach(([p, k], c) => {
+      const hot = pinSet.has(String(p)) || (term[p] && pinSet.has(term[p]));
+      const cxs = p9 + c * cw9 + cw9 / 2, cys = p9 + r * ch9 + (mini ? ch9 / 2 : ch9 * 0.4);
+      const u = mini ? cw9 : 40;
+      const [w, h] = k === 'h' ? [u * 0.62, u * 0.16] : k === 'v' ? [u * 0.16, u * 0.62] : [u * 0.13, u * 0.36];
+      s9 += `<rect x="${cxs - w / 2}" y="${cys - h / 2}" width="${w}" height="${h}" rx="${mini ? 0.6 : 1.5}" fill="${hot ? '#0284c7' : 'var(--text-muted,#64748b)'}" stroke="${hot ? '#0284c7' : 'none'}" stroke-width="${hot ? 2 : 0}"/>`;
+      if (!mini) {
+        const lbl = term[p] ? `${p} · ${term[p]}` : String(p);
+        s9 += `<text x="${cxs}" y="${p9 + r * ch9 + ch9 * 0.9}" text-anchor="middle" font-size="${term[p] ? 9.5 : 8}" font-weight="${hot ? 800 : 600}" fill="${hot ? '#0284c7' : 'var(--text-muted,#475569)'}" font-family="monospace">${lbl}</text>`;
+      }
+    }));
+    return s9 + '</svg>';
+  }
+
+  // RCA: koncentrycznie — kołnierz (COL) jako pierścień, pin 1 jako styk środkowy
+  if (L.fam === 'RCA') {
+    const hotC = pinSet.has('COL'), hot1 = pinSet.has('1');
+    const S = mini ? 22 : 110, c0 = S / 2, rO = S * 0.44, rI = S * 0.3, r1 = S * 0.12;
+    const nestR = opt.nested ? `x="${opt.x || 0}" y="${opt.y || 0}" width="${opt.width || S}" height="${opt.height || S}"` : '';
+    const lbl = (x, y, txt, hot, fs) => `<text x="${x}" y="${y}" text-anchor="middle" font-size="${fs}" font-weight="${hot ? 800 : 600}" fill="${hot ? '#fff' : 'var(--text-muted,#475569)'}" font-family="monospace">${txt}</text>`;
+    let sR = `<svg ${nestR} viewBox="0 0 ${S} ${S}" style="${mini ? '' : 'width:100%; max-width:160px; margin:0 auto; '}display:block;" xmlns="http://www.w3.org/2000/svg">`;
+    sR += `<circle cx="${c0}" cy="${c0}" r="${(rO + rI) / 2}" fill="none" stroke="${hotC ? '#0284c7' : 'var(--bg-card-subtle,#e2e8f0)'}" stroke-width="${rO - rI}"/>`;
+    sR += `<circle cx="${c0}" cy="${c0}" r="${rO}" fill="none" stroke="${hotC ? '#0284c7' : 'var(--border,#94a3b8)'}" stroke-width="${mini ? 0.8 : 1.3}"/>`;
+    sR += `<circle cx="${c0}" cy="${c0}" r="${rI}" fill="var(--bg-card,#fff)" stroke="var(--border,#94a3b8)" stroke-width="${mini ? 0.8 : 1.3}"/>`;
+    sR += `<circle cx="${c0}" cy="${c0}" r="${r1}" fill="${hot1 ? '#0284c7' : 'var(--bg-card-subtle,#e2e8f0)'}" stroke="${hot1 ? '#0284c7' : 'var(--border,#94a3b8)'}" stroke-width="${mini ? 0.8 : 1.3}"/>`;
+    if (!mini) {
+      sR += lbl(c0, c0 + 3.5, '1', hot1, 10);
+      sR += lbl(c0, c0 - (rO + rI) / 2 + 3.5, 'COL', hotC, 9);
+    }
+    return sR + '</svg>';
+  }
+
   // FASTIN-FASTON: rysunek uwzględniający cechy antyodwrotne (ścięte narożniki,
   // boczne wypustki), tak jak na schemacie Zuken.
   if (L.fam === 'FASTIN') {
+    const stroke = 'var(--border,#94a3b8)', fill = 'var(--bg-card,#fff)', subtle = 'var(--bg-card-subtle,#e2e8f0)';
+    // szczelina na styk 6,3 mm (prostokątna; vert = obrócona o 90°)
+    const slot = (x, y, w, h, p) => {
+      const hot = pinSet.has(String(p));
+      return `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${mini ? 1 : 2}" fill="${hot ? '#0284c7' : subtle}" stroke="${hot ? '#0284c7' : stroke}" stroke-width="${hot ? 2 : 1}"/>`
+           + `<text x="${x + w / 2}" y="${y + h / 2 + (mini ? 2 : 3.5)}" text-anchor="middle" font-size="${mini ? 5.5 : 10}" font-weight="${hot ? 800 : 600}" fill="${hot ? '#fff' : 'var(--text-muted,#475569)'}" font-family="monospace">${p}</text>`;
+    };
+    if (L.tee) {
+      // 2-pozycyjne 180907/180908: styki prostopadłe (T). Poziomy = pin 2 (GND),
+      // pionowy = pin 1. Wtyk (M) rysowany obrócony o 180° (poziomy na dole).
+      // Obudowa też w kształcie T: szeroka belka (komora pozioma) + węższa
+      // „nóżka" (komora pionowa), rozdzielone wspólną ścianką.
+      const sl = mini ? 16 : 40, ss = mini ? 7 : 14, wl = mini ? 2.5 : 8;
+      const Wt = sl + wl * 2, H1 = ss + wl * 2, Ht = H1 + sl + wl;
+      const sx0 = (Wt - ss) / 2 - wl, sx1 = (Wt + ss) / 2 + wl;
+      const top = L.gender !== 'M';
+      const fy = y => top ? y : Ht - y;
+      const nestT = opt.nested ? `x="${opt.x || 0}" y="${opt.y || 0}" width="${opt.width || Wt}" height="${opt.height || Ht}"` : '';
+      let sT = `<svg ${nestT} viewBox="-1 -1 ${Wt + 2} ${Ht + 2}" style="${mini ? '' : 'width:100%; max-width:180px; margin:0 auto; '}display:block;" xmlns="http://www.w3.org/2000/svg">`;
+      const outline = [[0, 0], [Wt, 0], [Wt, H1], [sx1, H1], [sx1, Ht], [sx0, Ht], [sx0, H1], [0, H1]]
+        .map(([x, y]) => `${x},${fy(y)}`).join(' ');
+      sT += `<polygon points="${outline}" fill="${fill}" stroke="${stroke}" stroke-width="1.3" stroke-linejoin="round"/>`;
+      const hy = top ? wl : Ht - wl - ss, vy = top ? H1 : wl;
+      sT += slot(wl, hy, sl, ss, 2) + slot((Wt - ss) / 2, vy, ss, sl, 1);
+      return sT + '</svg>';
+    }
+    const fcw = mini ? 14 : 44, fch = mini ? 10 : 24, fpad = mini ? 3 : 8;
     const latchW = mini ? 3.5 : 8;
-    const bodyW = pad * 2 + L.cols * cw;
-    const bodyH = pad * 2 + L.rows * ch;
+    const bodyW = fpad * 2 + L.cols * fcw;
+    const bodyH = fpad * 2 + L.rows * fch;
     const Wf = bodyW + latchW * 2;
     const Hf = bodyH;
     const bx = latchW, by = 0;
@@ -10298,7 +10650,6 @@ function connFaceSvg(L, pin, opt) {
     const r4 = mini ? 3 : 5;
     const nestF = opt.nested ? `x="${opt.x || 0}" y="${opt.y || 0}" width="${opt.width || Wf}" height="${opt.height || Hf}"` : '';
     let sF = `<svg ${nestF} viewBox="0 0 ${Wf} ${Hf}" style="${mini ? '' : 'width:100%; '}display:block;" xmlns="http://www.w3.org/2000/svg">`;
-    const stroke = 'var(--border,#94a3b8)', fill = 'var(--bg-card,#fff)', subtle = 'var(--bg-card-subtle,#e2e8f0)';
     // obudowa ze ściętymi narożnikami u dołu (przy pinach 3 i 4)
     sF += `<path d="M ${bx + r4} ${by} L ${bx + bodyW - r4} ${by} Q ${bx + bodyW} ${by} ${bx + bodyW} ${by + r4} L ${bx + bodyW} ${by + bodyH - cut} L ${bx + bodyW - cut} ${by + bodyH} L ${bx + cut} ${by + bodyH} L ${bx} ${by + bodyH - cut} L ${bx} ${by + r4} Q ${bx} ${by} ${bx + r4} ${by} Z" fill="${fill}" stroke="${stroke}" stroke-width="1.3"/>`;
     // lewa wypustka półokrągła (pomiędzy pinami 1 i 3)
@@ -10306,16 +10657,14 @@ function connFaceSvg(L, pin, opt) {
     sF += `<path d="M ${bx} ${cy - semiR} A ${semiR} ${semiR} 0 0 0 ${bx} ${cy + semiR}" fill="${fill}" stroke="${stroke}" stroke-width="1.3"/>`;
     // prawe dwie wypustki (przy pinach 2 i 4)
     const rw = mini ? 2.5 : 5, rh = mini ? 3 : 6;
-    const cyTop = by + pad + ch / 2, cyBot = by + pad + ch + ch / 2;
+    const cyTop = by + fpad + fch / 2, cyBot = by + fpad + fch + fch / 2;
     sF += `<rect x="${bx + bodyW}" y="${cyTop - rh/2}" width="${rw}" height="${rh}" rx="1" fill="${fill}" stroke="${stroke}" stroke-width="1.3"/>`;
     sF += `<rect x="${bx + bodyW}" y="${cyBot - rh/2}" width="${rw}" height="${rh}" rx="1" fill="${fill}" stroke="${stroke}" stroke-width="1.3"/>`;
+    const sw = fcw - (mini ? 2 : 6), sh = mini ? 7 : 14;
     for (let r = 0; r < L.rows; r++)
       for (let c = 0; c < L.cols; c++) {
-        const p = connFacePinAt(L, r, c);
-        const hot = pinSet.has(String(p));
-        const x = bx + pad + c * cw, y = by + pad + r * ch;
-        sF += `<rect x="${x + 1}" y="${y + 1}" width="${cw - 2}" height="${ch - 2}" rx="3" fill="${hot ? '#0284c7' : subtle}" stroke="${hot ? '#0284c7' : stroke}" stroke-width="${hot ? 2 : 1}"/>`;
-        sF += `<text x="${x + cw / 2}" y="${y + ch / 2 + (mini ? 2.5 : 3.5)}" text-anchor="middle" font-size="${mini ? 6 : 10}" font-weight="${hot ? 800 : 600}" fill="${hot ? '#fff' : 'var(--text-muted,#475569)'}" font-family="monospace">${p}</text>`;
+        const x = bx + fpad + c * fcw, y = by + fpad + r * fch;
+        sF += slot(x + (fcw - sw) / 2, y + (fch - sh) / 2, sw, sh, connFacePinAt(L, r, c));
       }
     return sF + '</svg>';
   }
@@ -10345,16 +10694,18 @@ function closeConnFace() {
   document.getElementById('conn-face-overlay')?.remove();
 }
 
-async function showConnFace(el) {
+async function showConnFace(el, ev) {
   const d = el.dataset;
+  // Ctrl+klik na węźle diagramu — od razu obwód tego elementu
+  if (ev && (ev.ctrlKey || ev.metaKey)) { goZukenEntity(d.dev || d.clean); return; }
   const cp = ZUKEN_STATE.lastCircuit || {};
   const connMeta = cp.conn_meta || {};
   const sfxs = [d.dev];
   if (d.mate) sfxs.push(d.mate);
   const infos = sfxs.map(sfx => ({ sfx, ...connHalfInfo(connMeta, d.clean, sfx) }));
   const lays = infos.map(i => connFaceLayout(i));
+  // typ bez rysunku (np. nowy projekt): okno i tak pokazuje przewody i pinout
   const ki = lays.findIndex(Boolean);
-  if (ki < 0) return;
 
   // Pełny pinout połówek złącza z zestawienia (cache per PS+złącze)
   const ps = cp.ps_code || (typeof STATE !== 'undefined' ? STATE.lastSelectedPS : '') || '';
@@ -10387,15 +10738,16 @@ async function showConnFace(el) {
           <td colspan="5" style="padding:1px 6px; font-size:10px; color:var(--text-muted);">—</td></tr>`;
       return conns.map(c => {
         const cs = (c.cross_section || '').replace(/\s*mm²?$/i, '');
-        const tgt = ((c.target_device || '').split('-').pop() || '') + (c.target_pin ? ':' + c.target_pin : '');
+        const tgtDev = (c.target_device || '').split('-').pop() || '';
+        const tgt = tgtDev + (c.target_pin ? ':' + c.target_pin : '');
         const tgtDesc = (c.target_desc || '').split('→').pop().trim();
         return `<tr style="${hot ? 'background:rgba(2,132,199,0.12); font-weight:700;' : ''}">
           <td style="padding:1px 6px; font-family:var(--font-mono,monospace); font-weight:700; white-space:nowrap;">${escapeHtml(String(p.pin))}</td>
-          <td style="padding:1px 6px; font-family:var(--font-mono,monospace); white-space:nowrap;"><span style="display:inline-block; width:11px; height:4px; border-radius:2px; background:${circuitWireStroke(c.wire_color)}; margin-right:4px; vertical-align:middle;"></span>${escapeHtml(c.wire_number || c.signal || '')}</td>
+          <td style="padding:1px 6px; font-family:var(--font-mono,monospace); white-space:nowrap;"><span style="display:inline-block; width:11px; height:4px; border-radius:2px; background:${circuitWireStroke(c.wire_color)}; margin-right:4px; vertical-align:middle;"></span>${entLink(c.wire_number || c.signal || '')}</td>
           <td style="padding:1px 6px; font-size:10px; white-space:nowrap;">${escapeHtml(c.signal_name || '')}</td>
           <td style="padding:1px 6px; font-size:9.5px; color:var(--text-muted); white-space:nowrap;">${escapeHtml([c.wire_color, cs ? cs + ' mm²' : ''].filter(Boolean).join(' · '))}</td>
           <td style="padding:1px 6px; font-family:var(--font-mono,monospace); font-size:10px; white-space:nowrap; text-align:right;">${(c.length && c.length !== '0') ? escapeHtml(fmtWireLength(c.length)) : ''}</td>
-          <td style="padding:1px 6px; font-family:var(--font-mono,monospace); font-size:10px; white-space:nowrap;">→ ${escapeHtml(tgt)}${tgtDesc ? ` <span style="color:var(--text-muted); font-family:inherit; font-size:9px;">${escapeHtml(tgtDesc)}</span>` : ''}</td>
+          <td style="padding:1px 6px; font-family:var(--font-mono,monospace); font-size:10px; white-space:nowrap;">→ ${tgtDev ? entLink(tgtDev, tgt) : escapeHtml(tgt)}${tgtDesc ? ` <span style="color:var(--text-muted); font-family:inherit; font-size:9px;">${escapeHtml(tgtDesc)}</span>` : ''}</td>
         </tr>`;
       }).join('');
     }).join('');
@@ -10414,11 +10766,10 @@ async function showConnFace(el) {
     </div>`;
   };
   // połówka bez własnego artykułu → odpowiednik (odwrotna płeć, ta sama rodzina)
-  lays.forEach((L, i) => {
+  if (ki >= 0) lays.forEach((L, i) => {
     if (!L) {
       const ref = lays[ki];
-      lays[i] = { fam: ref.fam, gender: ref.gender === 'F' ? 'M' : 'F',
-                  cols: ref.cols, rows: ref.rows, n: ref.n, inferred: true };
+      lays[i] = { ...ref, gender: ref.gender === 'F' ? 'M' : 'F', inferred: true };
     }
   });
 
@@ -10436,7 +10787,7 @@ async function showConnFace(el) {
       const key = `${oClean}|${oPin}|${h.wire_number || h.signal || ''}|${h.wire_color || ''}|${h.cross_section || ''}`;
       if (seen.has(key)) return;
       seen.add(key);
-      out.push({ h, label: oClean + (oPin ? ':' + oPin : '') });
+      out.push({ h, dev: oClean, label: oClean + (oPin ? ':' + oPin : '') });
     }))));
     return out;
   };
@@ -10447,21 +10798,30 @@ async function showConnFace(el) {
       : wireLabelAttrs(h).join(' · ');
     return `<div style="display:flex; gap:6px; align-items:baseline; font-size:11px; margin-top:3px; text-align:left;">
       <span style="display:inline-block; width:14px; height:4px; border-radius:2px; flex-shrink:0; align-self:center; background:${circuitWireStroke(h.wire_color)};"></span>
-      <span style="font-family:var(--font-mono,monospace); font-weight:600; color:var(--text-muted); white-space:nowrap;">→ ${escapeHtml(w.label)}</span>
+      <span style="font-family:var(--font-mono,monospace); font-weight:600; color:var(--text-muted); white-space:nowrap;">→ ${w.dev ? entLink(w.dev, w.label) : escapeHtml(w.label)}</span>
       <span style="color:var(--text-main); min-width:0; word-break:break-word;">${escapeHtml(attrs)}</span>
     </div>`;
   };
 
   const panel = (i) => {
     const L = lays[i], info = infos[i];
-    const gen = t(L.gender === 'F' ? 'js.zuken.connFemale' : 'js.zuken.connMale');
-    const art = info.article || (L.inferred ? t('js.zuken.connCounterpart') : '');
+    const gen = L ? t(L.gender === 'F' ? 'js.zuken.connFemale' : 'js.zuken.connMale') : (info.desc || '');
+    const art = info.article || (L && L.inferred ? t('js.zuken.connCounterpart') : '');
     const wires = d.pin ? wiresAt(info.sfx).map(wireRow).join('') : '';
+    const note = !L ? t('js.zuken.connNoDrawing') : L.unverified ? t('js.zuken.connOrderUnverified') : '';
+    // przycisk obwodu — pomijamy, gdy to element, o który właśnie pytano
+    const curQ = (ZUKEN_STATE.lastQuery || '').toUpperCase().replace(/[:\s].*$/, '');
+    const circBtn = info.sfx && info.sfx.toUpperCase() !== curQ
+      ? `<button type="button" data-ent-q="${escapeHtml(info.sfx)}" style="padding:3px 10px; font-size:11.5px; font-weight:700; border:1px solid rgba(2,132,199,0.4); border-radius:7px; background:rgba(2,132,199,0.1); color:#0284c7; cursor:pointer;">⚡ ${escapeHtml(t('js.zuken.showCircuitOf', { v: info.sfx }))}</button>` : '';
     return `<div style="width:100%; max-width:640px; margin:0 auto;">
-      <div style="font-family:var(--font-mono,monospace); font-weight:800; font-size:13px; color:var(--text-main);">${escapeHtml(info.sfx)}${d.pin ? ':' + escapeHtml(d.pin) : ''}</div>
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
+        <div style="font-family:var(--font-mono,monospace); font-weight:800; font-size:13px; color:var(--text-main);">${escapeHtml(info.sfx)}${d.pin ? ':' + escapeHtml(d.pin) : ''}</div>
+        ${circBtn}
+      </div>
       <div style="font-size:11px; color:var(--text-muted); margin:2px 0 6px;">${escapeHtml(gen)}${art ? ' · ' + escapeHtml(art) : ''}</div>
+      ${note ? `<div style="font-size:11px; color:#b45309; margin:0 0 6px;">⚠️ ${escapeHtml(note)}</div>` : ''}
       <div style="display:flex; gap:12px; align-items:center; justify-content:center; flex-wrap:wrap;">
-        <div style="flex:1 1 280px; max-width:340px;">${connFaceSvg(L, d.pin)}</div>
+        ${L ? `<div style="flex:1 1 280px; max-width:340px;">${connFaceSvg(L, d.pin)}</div>` : ''}
         ${info.image ? `<img src="${escapeHtml(info.image)}" alt="${escapeHtml(info.article || '')}" style="max-width:220px; max-height:130px; object-fit:contain; border:1px solid var(--border); border-radius:6px; background:#fff;">` : ''}
       </div>
       ${wires ? `<div style="margin-top:6px; border-top:1px dashed var(--border); padding-top:5px;">${wires}</div>` : ''}
@@ -10472,7 +10832,7 @@ async function showConnFace(el) {
       ${panel(0)}
       ${lays.length > 1 ? `<div style="display:flex; align-items:center; justify-content:center; color:#7c3aed; font-size:20px; font-weight:800; line-height:1;">↕</div>${panel(1)}` : ''}
     </div>
-    <div style="margin-top:10px; font-size:11px; color:var(--text-muted);">${escapeHtml(t('js.zuken.connWireSide'))}</div>`;
+    ${ki >= 0 ? `<div style="margin-top:10px; font-size:11px; color:var(--text-muted);">${escapeHtml(t('js.zuken.connWireSide'))}</div>` : ''}`;
 
   closeConnFace();
   const overlay = document.createElement('div');
@@ -10653,7 +11013,8 @@ function circuitSvgForLoad(ld, connMeta, opts) {
     nd._splice = !_L && nd.role === '' && (/splice/i.test(connHalfInfo(connMeta, nd.clean, _sfx).desc)
       || /splice/i.test((hopMeta[nd.dev + ':' + nd.pin] || {}).fn || ''));
     const fastinLatch = _L && (_L.fam === 'FASTIN' || _L.fam === 'TBP');
-    const gh = _L ? ((fastinLatch ? 0 : 6) + 6 + _L.rows * 10) : 0;  // latch 6 + pad 3+3 + rzędy po 10
+    const gh = !_L ? 0 : _L.tee ? 34                                  // T: 3+7+2+16+3 (+ramka)
+      : ((fastinLatch ? 0 : 6) + 6 + _L.rows * 10);  // latch 6 + pad 3+3 + rzędy po 10
     nd._gh = gh;
     nodeH[i] = nd._relay
       ? (nd._relay.coil && (nd._relay.coil.ends || []).length ? 112 : 76)
@@ -10722,7 +11083,8 @@ function circuitSvgForLoad(ld, connMeta, opts) {
     const pinFrac = nd.pin ? (nd._lay ? `${nd.pin}/${nd._lay.n}` : (cm.pins ? `${nd.pin}/${cm.pins}` : '')) : '';
     const devSfx = (nd.dev || '').split('-').pop() || nd.clean;
     const ownSfx = devSfx;
-    const canFace = !!nd._lay;
+    // złącze z zestawienia bez rysunku też otwiera okno (przewody + pinout)
+    const canFace = !!nd._lay || !!(nd.pin && (cm.article || cm.desc || (cm.halves && Object.keys(cm.halves).length)));
     if (nd._splice) {
       const hm = hopMeta[nd.dev + ':' + nd.pin] || {};
       const ccx = cx + boxW / 2, ccy = y + SPLICE_R;
@@ -10774,7 +11136,7 @@ function circuitSvgForLoad(ld, connMeta, opts) {
       return;
     }
     if (canFace)
-      svg += `<g style="cursor:pointer" onclick="showConnFace(this)" data-clean="${escapeHtml(nd.clean)}" data-dev="${escapeHtml(devSfx)}" data-mate="${escapeHtml(nd.mate || '')}" data-pin="${escapeHtml(nd.pin)}"><title>${escapeHtml(t('js.zuken.connViewTitle'))}</title>`;
+      svg += `<g style="cursor:pointer" onclick="showConnFace(this, event)" data-clean="${escapeHtml(nd.clean)}" data-dev="${escapeHtml(devSfx)}" data-mate="${escapeHtml(nd.mate || '')}" data-pin="${escapeHtml(nd.pin)}"><title>${escapeHtml(t('js.zuken.connViewTitle') + '\n' + t('js.zuken.ctrlClickHint'))}</title>`;
     svg += `<rect x="${x}" y="${y}" width="${boxW}" height="${nodeH[i]}" rx="7" fill="${fill}" stroke="${rs.stroke}" stroke-width="2"/>`;
     const nodeTitle = (nd.ml ? `${nd.ml.module} · ${nd.ml.code}` : `${ownSfx}${nd.pin ? ':' + nd.pin : ''}`) + (nd.mate ? ` ⇄ ${nd.mate}` : '');
     const hm = hopMeta[nd.dev + ':' + nd.pin] || {};
@@ -10827,7 +11189,7 @@ function circuitSvgForLoad(ld, connMeta, opts) {
     // odnoga do złącza o znanym układzie (np. wtyczka sterownika X393) — klik otwiera widok złącza
     const eLay = e.pin ? connFaceLayout(connHalfInfo(connMeta, e.clean, eSfx)) : null;
     svg += eLay
-      ? `<g style="cursor:pointer" onclick="showConnFace(this)" data-clean="${escapeHtml(e.clean)}" data-dev="${escapeHtml(eSfx)}" data-mate="" data-pin="${escapeHtml(e.pin)}"><title>${escapeHtml(t('js.zuken.connViewTitle') + '\n' + tip)}</title>`
+      ? `<g style="cursor:pointer" onclick="showConnFace(this, event)" data-clean="${escapeHtml(e.clean)}" data-dev="${escapeHtml(eSfx)}" data-mate="" data-pin="${escapeHtml(e.pin)}"><title>${escapeHtml(t('js.zuken.connViewTitle') + '\n' + tip + '\n' + t('js.zuken.ctrlClickHint'))}</title>`
       : `<g><title>${escapeHtml(tip)}</title>`;
     svg += `<rect x="${stubX}" y="${y - 15}" width="${stubW}" height="30" rx="6" fill="var(--bg-card, #fff)" stroke="${rm.color}" stroke-width="1.4" stroke-dasharray="3 2"/>`;
     svg += `<text x="${stubX + 7}" y="${y - 1}" font-size="10" font-weight="700" fill="${rm.color}" font-family="monospace">${rm.icon} ${escapeHtml(stubTitle.slice(0, 40))}</text>`;
@@ -10893,6 +11255,19 @@ function circuitDiagramPartsHtml(cp) {
       }).join('');
     } else {
       svg = circuitSvgForLoad(ld, meta);
+      // piny sygnałowe (SYNCHRO, PATTERN...) — diagram główny rysuje tylko
+      // zasilanie i masę, więc każdy pozostały pin dostaje własny diagram
+      const pins = ld.pins || [];
+      const gndP = pins.find(p => p.role === 'gnd');
+      const drawnFeed = pins.find(p => p.role === 'feed') || pins.find(p => p !== gndP);
+      svg += pins.filter(p => p.role === 'other' && p !== drawnFeed && (p.ends || []).length).map(p => {
+        const s = circuitSvgForLoad({ ...ld, pins: [{ pin: p.pin, role: 'feed', ends: p.ends }] }, meta);
+        const h0 = ((p.ends[0].path || [])[0]) || {};
+        const sig = h0.signal_name || h0.signal || '';
+        return s ? `<div style="margin:8px 0 0 0; padding:7px 10px; border:1px dashed #94a3b8; border-radius:6px; background:rgba(100,116,139,0.05);">
+          <div style="font-size:11px; font-weight:800; color:#475569;">🔌 ${escapeHtml(t('js.zuken.otherConn'))} — ${escapeHtml(t('js.zuken.pinLabel'))} ${escapeHtml(p.pin)}${sig ? ' · ' + escapeHtml(sig) : ''}</div>
+          ${s}</div>` : '';
+      }).join('');
       if (!svg) return '';
     }
     const dspName = rv ? rv.relay_clean + (rv.socket ? ` (${rv.socket})` : '')
@@ -10915,15 +11290,21 @@ function circuitDiagramPartsHtml(cp) {
   }).join('');
 }
 
-async function runCircuitTrace() {
+async function runCircuitTrace(opts = {}) {
   const inp = document.getElementById('zuken-search-input');
   const query = (inp.value || '').trim();
   const resBody = document.getElementById('zuken-results-body');
   if (!query) { inp.focus(); return; }
+  if (!opts.fromNav) zukenNavPush(query, 'circuit');
+  ZUKEN_STATE.lastQuery = query;
+  const runId = ++ZUKEN_STATE.runSeq;
   resBody.innerHTML = `<div style="text-align:center; padding:40px 20px; color:var(--text-muted);"><div class="spinner" style="width:28px; height:28px; border:3px solid var(--border); border-top-color:var(--primary); border-radius:50%; animation:spin 0.8s linear infinite; margin:0 auto 12px auto;"></div>${escapeHtml(t('js.zuken.analyzing'))}</div>`;
   const ps = ZUKEN_STATE.currentContext.projekt || '';
   try {
-    const cp = await apiCall(`/api/zuken/circuit-path?ps=${encodeURIComponent(ps)}&q=${encodeURIComponent(query)}`);
+    const [cp] = await Promise.all([
+      apiCall(`/api/zuken/circuit-path?ps=${encodeURIComponent(ps)}&q=${encodeURIComponent(query)}`),
+      ensureKnownDevs(ps)]);
+    if (runId !== ZUKEN_STATE.runSeq) return;
     ZUKEN_STATE.lastCircuit = cp;
     const card = circuitCardHtml(cp, query);
     resBody.innerHTML = card || `<div style="padding:20px; color:var(--text-muted); text-align:center; font-size:13px;">⚠️ ${escapeHtml(t('js.zuken.circuitNotFound'))}: „${escapeHtml(query)}"</div>`;

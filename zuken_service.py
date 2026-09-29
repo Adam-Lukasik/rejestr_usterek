@@ -8192,6 +8192,42 @@ def trace_circuit(ps_code, query, lang="pl"):
             "reworks": reworks}
 
 
+def get_ps_connector_types(ps_code):
+    """Lekka lista złączy PS (bez pinoutu) z artykułem/opisem obu źródeł —
+    do raportu typów złączy bez rysunku (rozpoznawanie rodzin jest we frontendzie).
+    Artykuł połówki z BOM ma pierwszeństwo, jak w conn_meta diagramu obwodu."""
+    if not ps_code:
+        return {"items": []}
+    ps_code = str(ps_code).strip().upper()
+    init_zuken_tables()
+    conn = get_db()
+    halves = {}
+    for r in conn.execute("""
+        SELECT d.device_code, i.article_number, i.description
+        FROM zuken_bom_devices d
+        JOIN zuken_bom_items i ON d.bom_item_id = i.id
+        JOIN zuken_projects p ON i.project_id = p.id
+        WHERE p.ps_codes LIKE '%' || ? || '%'
+          AND i.article_number IS NOT NULL AND TRIM(i.article_number) != ''
+        ORDER BY p.revision_date DESC
+    """, (ps_code,)):
+        halves.setdefault(r["device_code"], (r["article_number"], r["description"] or ""))
+    items = []
+    for r in conn.execute("""
+        SELECT device_code, device_clean, pin_count, description, article_number, supplier
+        FROM zuken_ps_connectors WHERE ps_code = ?
+    """, (ps_code,)):
+        h = halves.get(r["device_code"])
+        items.append({
+            "device_code": r["device_code"], "device_clean": r["device_clean"],
+            "pin_count": r["pin_count"] or 0, "supplier": r["supplier"] or "",
+            "article_number": (h[0] if h else "") or r["article_number"] or "",
+            "description": (h[1] if h else "") or r["description"] or "",
+        })
+    conn.close()
+    return {"items": items}
+
+
 def get_ps_connectors(ps_code, search="", system_filter="", limit=100, offset=0, lang="pl"):
     """Pobiera listę złączy z pinoutem dla projektu PS z filtrowaniem i paginacją."""
     if not ps_code:
@@ -8389,6 +8425,183 @@ def _pdf_page_label_positions(schem_id, filepath, page_num, file_mtime=None):
     conn.close()
     _PDF_PAGE_LABELS[key] = items
     return items
+
+
+# ═══ Asystent: listy elementów wg kategorii ('bezpiecznik 7,5A', 'przekaźnik') ═══
+_ASSIST_RATING_RE = re.compile(r"(?<![\w.,])(\d+(?:[.,]\d+)?)\s*A(?![A-Z0-9])")
+_ASSIST_NUM_RE = re.compile(r"(?<![\w.,])(\d+(?:[.,]\d+)?)(?![\w.,])")
+_ASSIST_GENERIC_LABELS = {v.upper() for k in ("installCircuit", "relayCtrl")
+                          for v in ZS_MSG[k].values()}
+
+
+def _assist_category(tok):
+    if tok.startswith(("BEZPIECZNIK", "SICHERUNG")) or tok in ("FUSE", "FUSES"):
+        return "fuse"
+    if tok.startswith(("PRZEKAZNIK", "STYCZNIK")) or tok in (
+            "RELAY", "RELAYS", "RELAIS", "CONTACTOR", "CONTACTORS"):
+        return "relay"
+    return ""
+
+
+def _assist_amp(txt):
+    m = _ASSIST_RATING_RE.search((txt or "").upper())
+    return float(m.group(1).replace(",", ".")) if m else None
+
+
+def _assist_fmt_amp(v):
+    return (f"{v:g}".replace(".", ",")) + "A"
+
+
+def _assist_text_match(q_toks, hay):
+    h_toks = set(_circuit_tokens(" ".join(x for x in hay if x)))
+    return all(any(_tokens_match(q, t) for t in h_toks) for q in q_toks)
+
+
+def assistant_list(ps_code, query, lang="pl"):
+    """Zapytanie kategorii -> klikalna lista elementów projektu PS.
+    'bezpiecznik 7,5A' / '7,5A' / 'fuse 10A' -> bezpieczniki o tym prądzie,
+    'przekaźnik' / 'relay horn' -> przekaźniki; pozostałe słowa zapytania
+    filtrują po nazwach obwodów/sygnałów/funkcji."""
+    q = (query or "").strip()
+    ps = (ps_code or "").strip().upper()
+    if not q or not ps:
+        return {"ok": False}
+    folded = q.translate(_PL_FOLD).upper()
+    cat = ""
+    rest = folded
+    for tok in re.findall(r"[A-Z]+", folded):
+        c = _assist_category(tok)
+        if c:
+            cat = cat or c
+            rest = re.sub(r"\b" + tok + r"\b", " ", rest)
+    # samo '30A' bywa też numerem przewodu — lista tylko gdy są trafienia
+    explicit = bool(cat)
+    amp = None
+    m = _ASSIST_RATING_RE.search(rest)
+    if m and cat in ("", "fuse"):
+        amp = float(m.group(1).replace(",", "."))
+        rest = rest[:m.start()] + " " + rest[m.end():]
+        cat = "fuse"
+    if not cat:
+        return {"ok": False}
+
+    if cat == "fuse":
+        data = get_ps_fuses(ps, limit=100000, lang=lang)
+        if amp is None:
+            mn = _ASSIST_NUM_RE.search(rest)
+            if mn:
+                v = float(mn.group(1).replace(",", "."))
+                if any(_assist_amp(d.get("rating")) == v for d in data["items"]):
+                    amp = v
+                    rest = rest[:mn.start()] + " " + rest[mn.end():]
+        q_toks = _circuit_tokens(rest)
+        items = []
+        for d in data["items"]:
+            if amp is not None and _assist_amp(d.get("rating")) != amp:
+                continue
+            sigs = list(dict.fromkeys(
+                (w.get("signal_name") or w.get("signal") or "").strip()
+                for w in d.get("wires") or () if (w.get("signal_name") or w.get("signal"))))
+            circ = (d.get("circuits") or "").strip()
+            if circ.upper() in _ASSIST_GENERIC_LABELS:
+                circ = ""
+            if q_toks and not _assist_text_match(
+                    q_toks, [circ, d.get("description"), d.get("fuse_type"),
+                             d.get("device_clean"), d.get("holder_real_clean"), *sigs]):
+                continue
+            label = circ or ", ".join(sigs[:4]) or (d.get("description") or "")
+            holder = d.get("holder_real_clean") or d.get("holder_clean") or ""
+            items.append({
+                "q": d.get("device_clean") or "",
+                "code": d.get("device_code") or "",
+                "badge": d.get("rating") or "",
+                "label": label,
+                "sub": " · ".join(x for x in (
+                    (d.get("system") or "") + (d.get("location") or ""),
+                    holder if holder != d.get("device_clean") else "",
+                    d.get("fuse_type") or "") if x),
+            })
+        return {"ok": True, "category": "fuse", "ps_code": ps, "explicit": explicit,
+                "rating": _assist_fmt_amp(amp) if amp is not None else "",
+                "filter": " ".join(q_toks), "items": items, "total": len(items)}
+
+    data = get_ps_relays(ps, limit=100000, lang=lang)
+    q_toks = _circuit_tokens(rest)
+    items = []
+    for d in data["items"]:
+        func = (d.get("function") or "").strip()
+        if func.upper() in _ASSIST_GENERIC_LABELS:
+            func = ""
+        sigs = list(dict.fromkeys(
+            (c.get("signal_name") or c.get("signal") or "").strip()
+            for c in d.get("contacts") or () if (c.get("signal_name") or c.get("signal"))))
+        if q_toks and not _assist_text_match(
+                q_toks, [func, d.get("description"), d.get("relay_type"),
+                         d.get("device_clean"), clean_device_code(d.get("socket_code")), *sigs]):
+            continue
+        sock = clean_device_code(d.get("socket_code")) or ""
+        items.append({
+            "q": d.get("device_clean") or "",
+            "code": d.get("device_code") or "",
+            "badge": "",
+            "label": func or (d.get("description") or d.get("relay_type") or ""),
+            "sub": " · ".join(x for x in (
+                (d.get("system") or "") + (d.get("location") or ""),
+                sock if sock != d.get("device_clean") else "",
+                d.get("relay_type") or "") if x),
+        })
+    return {"ok": True, "category": "relay", "ps_code": ps, "explicit": True, "rating": "",
+            "filter": " ".join(q_toks), "items": items, "total": len(items)}
+
+
+_KNOWN_DEV_CACHE = {}
+
+
+def get_ps_device_codes(ps_code):
+    """Kody aparatów projektu PS (końcówki '-X34', 'FH51', 'K1') — do
+    zamiany kodów w tekstach asystenta na linki."""
+    init_zuken_tables()
+    conn = get_db()
+    cur = conn.cursor()
+    conn_ids, bom_ids = _ps_project_ids(cur, (ps_code or "").strip().upper())
+    ids = conn_ids + bom_ids
+    if not ids:
+        conn.close()
+        return []
+    ph = ",".join("?" for _ in ids)
+    cur.execute(f"SELECT COUNT(*), COALESCE(MAX(id),0) FROM zuken_connections WHERE project_id IN ({ph});", ids)
+    key = (tuple(ids), tuple(cur.fetchone()))
+    if key in _KNOWN_DEV_CACHE:
+        conn.close()
+        return _KNOWN_DEV_CACHE[key]
+    devs = set()
+    if conn_ids:
+        phc = ",".join("?" for _ in conn_ids)
+        cur.execute(f"""
+            SELECT from_device FROM zuken_connections WHERE project_id IN ({phc})
+            UNION SELECT to_device FROM zuken_connections WHERE project_id IN ({phc});
+        """, conn_ids + conn_ids)
+        devs.update(r[0] for r in cur.fetchall() if r[0])
+    if bom_ids:
+        phb = ",".join("?" for _ in bom_ids)
+        cur.execute(f"""
+            SELECT DISTINCT d.device_code FROM zuken_bom_devices d
+            JOIN zuken_bom_items i ON i.id = d.bom_item_id
+            WHERE i.project_id IN ({phb});
+        """, bom_ids)
+        devs.update(r[0] for r in cur.fetchall() if r[0])
+    conn.close()
+    out = set()
+    for d in devs:
+        sfx = d.strip().split("-")[-1].upper()
+        if re.fullmatch(r"[A-Z]{1,4}\d{1,5}[A-Z']*", sfx):
+            out.add(sfx)
+        c = (clean_device_code(d) or "").upper()
+        if re.fullmatch(r"[A-Z]{1,4}\d{1,5}[A-Z']*", c):
+            out.add(c)
+    res = sorted(out, key=_natural_sort_key)
+    _KNOWN_DEV_CACHE[key] = res
+    return res
 
 
 def get_ps_fuses(ps_code, search="", limit=100, offset=0, lang="pl"):
@@ -8859,7 +9072,7 @@ def get_ps_fuses(ps_code, search="", limit=100, offset=0, lang="pl"):
         known_devs.update(r[0] for r in cur.fetchall() if r[0])
 
     clean_to_devs = {}
-    for dev in known_devs:
+    for dev in sorted(known_devs):
         c = clean_device_code(dev)
         if c:
             clean_to_devs.setdefault(c, []).append(dev)
@@ -8904,6 +9117,11 @@ def get_ps_fuses(ps_code, search="", limit=100, offset=0, lang="pl"):
     merged_codes = set()
     for d in items:
         hrow = by_code.get(d.get("holder_real") or "")
+        # wiersz oprawki z innym prądem to osobny bezpiecznik (np. =CAB+TWR-FH1
+        # 30A), nie gniazdo tego — nie scalamy
+        if hrow is not None and hrow is not d and hrow.get("rating") \
+                and d.get("rating") and hrow["rating"] != d["rating"]:
+            continue
         if hrow is not None and hrow is not d:
             d["holder_article"] = hrow.get("article_number") or ""
             d["holder_supplier"] = hrow.get("supplier") or ""
