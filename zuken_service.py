@@ -7110,11 +7110,15 @@ def _circuit_extend_adjacency(cur, adj, ps_code, dev_funcs=None, bom_names=None)
                           pin_names={f"{dev}|{p30}": "30",
                                      f"{dev}|{p87}": tname})
         # styczniki bez numeracji 30/87 (np. K2 zasilania inwertera):
-        # dokladnie 2 styki robocze bez relay_pin = para styku glownego
+        # dokladnie 2 styki robocze bez relay_pin = para styku glownego.
+        # Tylko aparaty K* — zlacza X* (np. X187: FASTIN 2-pos) nie zwieraja
+        # pinow wewnetrznie; para laczona jest dopiero przez wtyk odbiornika.
+        _dc_clean = (r["device_clean"] or clean_device_code(dev) or "")
         work = sorted({str(ct.get("pin") or "").strip() for ct in contacts
                        if str(ct.get("pin") or "").strip()
                        and not str(ct.get("relay_pin") or "").strip()
-                       and "Styk roboczy" in (ct.get("role") or "")})
+                       and "Styk roboczy" in (ct.get("role") or "")}
+                      ) if re.match(r"^K\d", _dc_clean) else []
         if len(work) == 2:
             _link(dev, work[0], work[1], "relay", f"{label} styk",
                   relay_dev=dev,
@@ -7237,6 +7241,43 @@ def _circuit_extend_adjacency(cur, adj, ps_code, dev_funcs=None, bom_names=None)
                 da, db = dlist[i], dlist[j]
                 for p in dev_pins[da] & dev_pins[db]:
                     _link_nodes((da, p), (db, p), "mate", f"{c} \u21c4")
+
+    # ── szyny zbiorcze skrzynek Mega/MIDI: raport okablowuje tylko
+    # jednopinowe uchwyty -U; elementy topikowe -F i listwę zbiorczą
+    # dokładamy jako krawędzie syntetyczne (slot -U <-> element -F <->
+    # węzeł szyny), bo bez nich sieć zasilania z akumulatora jest
+    # rozłączona. Krawędź element<->szyna niesie meta _rail_* —
+    # trace_circuit pozwala torowi wyjść z szyny tylko przez element
+    # zasilający (feed), żeby gałęzie sąsiednich bezpieczników nie
+    # mieszały się do obwodu.
+    try:
+        _rci, _rbm = _ps_project_ids(cur, ps_code)
+        _rails = _ps_fuse_rails(cur, _rci, ps_code, adj)
+    except Exception:
+        _rails = {"slots": {}, "groups": []}
+    for gi, g in enumerate(_rails["groups"], 1):
+        members = [m for m in g["members"] if (m["slot"], "") in adj]
+        if len(members) < 2:
+            continue
+        rail_dev = (members[0]["slot"].rsplit("-", 1)[0]
+                    + f"-SZYNA{gi}")
+        rail_node = (rail_dev, "")
+        adj.setdefault(rail_node, {})
+        internal_devs.add(rail_dev)
+        for m in members:
+            slot_node = (m["slot"], "")
+            elem_node = (m["elem"], "")
+            adj.setdefault(elem_node, {})
+            label = m["clean"] + (f" {m['rating']}" if m["rating"] else "")
+            _link_nodes(slot_node, elem_node, "fuse", label)
+            if rail_node not in adj.get(elem_node, {}):
+                rrow = _mark("fuse", label)
+                rrow["_rail_rail"] = rail_dev
+                rrow["_rail_elem"] = m["elem"]
+                rrow["_rail_feed"] = g["feed"] or ""
+                adj[elem_node][rail_node] = rrow
+                adj[rail_node][elem_node] = rrow
+            internal_devs.add(m["elem"])
     return adj, internal_devs, relay_coils
 
 
@@ -7381,7 +7422,11 @@ def _circuit_end_role(ed, last_row, dev_funcs=None, bom_names=None):
     if _CIRCUIT_RELAY_RE.match(c):
         return "relay"
     info = ((dev_funcs or {}).get(ed) or (dev_funcs or {}).get(c) or "").upper()
-    is_gnd_by_func = any(k in info for k in ("GND", "GROUND", "MASSA", "MASOWA", "MINUS", "NEG", "-"))
+    # minus bieguna to dopisek na końcu funkcji ('Fluid Warmer -', 'PIR-') —
+    # myślnik w środku ('NOT START - 12V', 'ACETECH - OXP3') to separator
+    is_gnd_by_func = (any(k in info for k in
+                          ("GND", "GROUND", "MASSA", "MASOWA", "MINUS", "NEG"))
+                      or info.rstrip().endswith("-"))
     if _CIRCUIT_RT_RE.match(c):
         sig = ""
         if last_row is not None:
@@ -7492,8 +7537,13 @@ def trace_circuit(ps_code, query, lang="pl"):
             relay_clean2dev.setdefault(rc, rdev)
         for cnd in rinfo.get("coil_nodes") or ():
             node_relay.setdefault(cnd, rdev)
+    rail_nodes = set()
+    rail_elems = set()
     for (rd_d, rd_p), rd_nbrs in adj.items():
         for rd_nb, rd_row in rd_nbrs.items():
+            if isinstance(rd_row, dict) and rd_row.get("_rail_rail"):
+                rail_nodes.add(rd_row["_rail_rail"])
+                rail_elems.add(rd_row["_rail_elem"])
             rdv = rd_row.get("_relay_dev") if isinstance(rd_row, dict) else ""
             if rdv:
                 relay_contacts.setdefault(rdv, set()).add((rd_d, rd_p))
@@ -7568,6 +7618,48 @@ def trace_circuit(ps_code, query, lang="pl"):
     # 30->87 / 30->87a + obwód cewki (zapytanie o przekaźnik, jego gniazdo
     # albo przewód dochodzący wyłącznie do styków/cewki przekaźnika)
     relay_view_devs = []
+    # bezpiecznik znany tylko z zestawu PS ('F51' — przewody raportu są
+    # na oprawce '=BOX+TWR-FH51', element -F nie występuje w grafie):
+    # zasiej piny oprawki z holder_code, tor przejdzie przez wewnętrzną
+    # krawędź 'fuse' dokładaną w _circuit_extend_adjacency.
+    # fuse_miss: bezpiecznik rozpoznany, ale oprawka nie jest okablowana
+    # (duże topiki F10/F17 spoza raportu) — nie zgadujemy po sygnałach.
+    fuse_miss = False
+    fuse_rows = []
+    if dev_q:
+        try:
+            fuse_rows = cur.execute(
+                "SELECT device_clean, holder_code, rating, circuits"
+                " FROM zuken_ps_fuses"
+                " WHERE UPPER(device_clean) = ?"
+                "   AND (? = '' OR ps_code = ?)",
+                (dev_q, ps_code or "", ps_code or "")).fetchall()
+        except Exception:
+            fuse_rows = []
+    if fuse_rows and not dev_nodes:
+        holders = {(fr["holder_code"] or "").strip().split("-")[-1].upper()
+                   for fr in fuse_rows if (fr["holder_code"] or "").strip()}
+        for (ndev, npin) in adj.keys():
+            if (ndev or "").split("-")[-1].upper() in holders:
+                dev_nodes.setdefault(ndev, set()).add(npin)
+        if not dev_nodes:
+            # uchwyty Mega/MIDI są w raporcie jako urządzenia -U o jednym
+            # pinie (oba zaciski = jeden węzeł); element -F nie występuje —
+            # slot poznajemy po geometrii schematu (F10 -> U8, F17 -> U2)
+            slots = _ps_fuse_rails(cur, conn_ids, ps_code, adj) \
+                .get("slots", {}).get(dev_q) or ()
+            for sd in slots:
+                for (ndev, npin) in adj.keys():
+                    if ndev == sd:
+                        dev_nodes.setdefault(ndev, set()).add(npin)
+    if fuse_rows:
+        fr0 = next((fr for fr in fuse_rows
+                    if (fr["holder_code"] or "").strip()), fuse_rows[0])
+        rating = (fr0["rating"] or "").strip()
+        circ = (fr0["circuits"] or "").strip()
+        func_label = (dev_q + (f" {rating}" if rating else "")
+                      + (f" ({circ})" if circ else ""))
+        fuse_miss = not dev_nodes
     if not dev_nodes and dev_q:
         rdev = relay_clean2dev.get(dev_q)
         if not rdev:
@@ -7596,7 +7688,8 @@ def trace_circuit(ps_code, query, lang="pl"):
             dev_nodes = {}
     # opis odbiornika bez kodu i bez pasującego sygnału ('gniazdo 7/12V'):
     # szukaj po funkcji urządzenia z BOM (X192 'Socket 7/12V DEFI' -> X193/X194)
-    if not dev_nodes and not relay_view_devs and not _match_signals(q, sig_nodes):
+    if (not dev_nodes and not relay_view_devs and not fuse_miss
+            and not _match_signals(q, sig_nodes)):
         by_clean = {}
         for (ndev, npin) in adj:
             by_clean.setdefault((clean_device_code(ndev) or ndev).upper(), {}) \
@@ -7614,7 +7707,7 @@ def trace_circuit(ps_code, query, lang="pl"):
     # dodatkowy trop do sygnału (np. A313 -> 'ProCar ... USB socket')
     bom_descs = []
     wire_nodes = set()
-    if dev_q and not dev_nodes and not relay_view_devs:
+    if dev_q and not dev_nodes and not relay_view_devs and not fuse_miss:
         bom_descs = _bom_device_descriptions(cur, bom_ids, dev_q)
         wire_nodes = _wire_number_nodes(cur, conn_ids, q)
     conn.close()
@@ -7637,6 +7730,11 @@ def trace_circuit(ps_code, query, lang="pl"):
                 if m:
                     pins = m
             seed_devices.append((ndev, pins))
+    elif fuse_miss:
+        # bezpiecznik z zestawu, ale oprawka bez przewodów w raportach
+        # (np. F10/F17) — karta bez toru zamiast błędnego diagramu
+        resolved = {"kind": "device",
+                    "label": func_label or dev_q}
     else:
         sig_matches = _match_signals(q, sig_nodes)
         if wire_nodes:
@@ -7739,13 +7837,58 @@ def trace_circuit(ps_code, query, lang="pl"):
             node = (ndev, npin)
             if not adj.get(node):
                 continue
-            ends = _wire_net_paths(adj, node, max_nodes=800, max_ends=32,
-                                   pass_fn=pass_fn)
+            # element topikowy (oprawka FH/F, tulejka FR, rozdzielacz U):
+            # krawędź wewnętrzna zwiera piny — każdy pin prowadzimy tylko
+            # swoją stroną obwodu, bez przechodzenia przez sam element;
+            # sąsiednie bezpieczniki na szynie kończą gałąź (pokazujemy
+            # 'szyna zasila też F52...'), a nie wchodzimy w ich obwody
+            pin_ban = ()
+            pfn = pass_fn
+            if _CIRCUIT_FUSE_RE.match(clean):
+                pin_ban = {(ndev, p) for p in (dev_nodes.get(ndev) or pins)
+                           if p != npin}
+
+                def pfn(nd, _pf=pass_fn):
+                    if not _pf(nd):
+                        return False
+                    c2 = clean_device_code(nd[0]) or ""
+                    if not _CIRCUIT_FUSE_RE.match(c2):
+                        return True
+                    # jednopinowe uchwyty -U są w raporcie węzłami-złączami
+                    # (oba zaciski to jeden węzeł) — przechodzimy; węzły
+                    # elementów/szyn syntetycznych też są przechodnie
+                    return (nd[0] in rail_nodes or nd[0] in rail_elems
+                            or bool(re.match(r"^U\d", c2)))
+            ends = _wire_net_paths(adj, node, banned=pin_ban, max_nodes=800,
+                                   max_ends=32, pass_fn=pfn)
+            if rail_nodes:
+                # szyna zbiorcza: po zejściu na szynę od strony odbiornika
+                # (element niebędący zasilaniem) wychodzimy tylko przez
+                # element zasilający — gałęzie sąsiednich bezpieczników
+                # nie są torem tego obwodu
+                def _rail_violation(path):
+                    for i, (a, b, row) in enumerate(path):
+                        if not (isinstance(row, dict)
+                                and row.get("_rail_rail")
+                                and b[0] == row["_rail_rail"]):
+                            continue
+                        feed = row.get("_rail_feed") or ""
+                        if not feed or row.get("_rail_elem") == feed:
+                            continue
+                        if i + 1 < len(path):
+                            nr = path[i + 1][2]
+                            if (isinstance(nr, dict)
+                                    and nr.get("_rail_rail") == row["_rail_rail"]
+                                    and nr.get("_rail_elem") != feed):
+                                return True
+                    return False
+                ends = [e for e in ends if not _rail_violation(e[1])]
             if len(ends) >= 32 and not any(_ground_end(ed, p) for (ed, _ep), p in ends):
                 # sieć masy z rozgałęźnikami (U31 łączy ~40 odbiorników):
                 # punkty masy leżą za limitem pierwszego przebiegu
-                deep = _wire_net_paths(adj, node, max_nodes=4000, max_ends=600,
-                                       pass_fn=pass_fn)
+                deep = _wire_net_paths(adj, node, banned=pin_ban,
+                                       max_nodes=4000, max_ends=600,
+                                       pass_fn=pfn)
                 if any(_ground_end(ed, p) for (ed, _ep), p in deep):
                     ends = deep
             seen_e = set()
@@ -7946,8 +8089,12 @@ def trace_circuit(ps_code, query, lang="pl"):
         feed_p = next((p for p in ld["pins"] if p["role"] == "feed"), None) \
             or next((p for p in ld["pins"] if p["role"] != "gnd"), None)
         gnd_p = next((p for p in ld["pins"] if p["role"] == "gnd"), None)
+        # widok bezpiecznika: strona odbiornika ląduje na pinie 'other' —
+        # skanuj wszystkie piny, żeby dołączyć cewkę przekaźnika obwodu
+        scan_pins = (ld["pins"] if _CIRCUIT_FUSE_RE.match(ld["clean"] or "")
+                     else (feed_p, gnd_p))
         seen_rd = []
-        for p in (feed_p, gnd_p):
+        for p in scan_pins:
             if not p:
                 continue
             for e in p["ends"]:
@@ -8427,6 +8574,270 @@ def _pdf_page_label_positions(schem_id, filepath, page_num, file_mtime=None):
     return items
 
 
+_FUSE_BAT_RE = re.compile(r"BATTERY|AKUM|BATT", re.IGNORECASE)
+_FUSE_RAILS_CACHE = {}
+
+
+def _net_reaches_battery(adj, start, max_nodes=600):
+    """Czy sieć przewodów węzła sięga krawędzi opisanej jako zasilanie
+    z akumulatora ('BATTERY FUSE AUX', 'BATTERY-FUSE COMMS' itd.)."""
+    if start not in adj:
+        return False
+    seen = {start}
+    dq = deque([start])
+    while dq and len(seen) <= max_nodes:
+        n = dq.popleft()
+        for nb, row in adj.get(n, {}).items():
+            try:
+                sig = f"{row['signal'] or ''} {row['signal_name'] or ''}"
+            except (TypeError, KeyError, IndexError):
+                sig = ""
+            if _FUSE_BAT_RE.search(sig):
+                return True
+            if nb not in seen:
+                seen.add(nb)
+                dq.append(nb)
+    return False
+
+
+def _ps_fuse_rails(cur, conn_ids, ps_code, adj):
+    """Elementy topikowe -F -> sloty uchwytów -U i szyny zbiorcze skrzynek.
+
+    Raport okablowania wskazuje uchwyty Mega/MIDI jako jednopinowe
+    urządzenia -U (wszystkie przewody podkręcone pod slot to jeden węzeł).
+    Elementy topikowe (-F9, -F10) i wewnętrzna listwa zbiorcza nie są
+    przewodami, więc w grafie nie występują. Parowanie elementu ze slotem
+    odtwarzamy z geometrii schematu: etykieta -F nad zaciskiem -RT, który
+    raport wiąże z danym -U (etykiety -U3..-U17 nie są drukowane; -U1/-U2
+    bywają). Grupę na wspólnej szynie rozpoznajemy jako rząd >=3 elementów
+    na tej samej wysokości strony (przerwa >120 pt dzieli podgrupy —
+    np. rząd COMMS obok rzędu AUX na jednej listwie). Strony-zestawienia
+    rysują wszystkie bezpieczniki w jednym rzędzie, więc elementy łączymy
+    tylko gdy są razem w grupie na KAŻDEJ stronie, na której występują
+    (sygnatura współwystępowania). Elementy z oprawkami -FH mają własne
+    przewody w raporcie i nie potrzebują syntezy.
+
+    Zwraca {'slots': {fuse_clean: [slot_dev...]},
+            'groups': [{'feed': feed_elem_dev | '',
+                        'members': [{'clean': 'F9', 'elem': '=BOX+TWR-F9',
+                                     'slot': '=BOX+TWR-U9',
+                                     'rating': '150A'}]}]}."""
+    row = None
+    if ps_code:
+        row = cur.execute("""
+            SELECT id, filepath, file_mtime FROM zuken_pdf_schematics
+            WHERE ps_code = ? AND is_active = 1
+              AND COALESCE(doc_kind, 'schematic') = 'schematic'
+            ORDER BY id DESC LIMIT 1;
+        """, ((ps_code or "").upper(),)).fetchone()
+    if not row:
+        row = cur.execute("""
+            SELECT id, filepath, file_mtime FROM zuken_pdf_schematics
+            WHERE is_active = 1 AND COALESCE(doc_kind, 'schematic') = 'schematic'
+            ORDER BY id DESC LIMIT 1;
+        """).fetchone()
+    key = ((ps_code or "").upper(), tuple(conn_ids or ()),
+           row["id"] if row else 0,
+           row["file_mtime"] if row else 0.0, len(adj or {}))
+    if key in _FUSE_RAILS_CACHE:
+        return _FUSE_RAILS_CACHE[key]
+    out = {"slots": {}, "groups": []}
+    if not (row and conn_ids):
+        _FUSE_RAILS_CACHE[key] = out
+        return out
+    schem_id, schem_path, schem_mtime = row["id"], row["filepath"], row["file_mtime"]
+    schem_path = resolve_kb_filepath(schem_path, heal_db=True)
+    if not (schem_path and pypdf is not None and os.path.exists(schem_path)):
+        _FUSE_RAILS_CACHE[key] = out
+        return out
+
+    # strony schematu z symbolami -F<n>
+    fuse_pages = set()
+    for pg, sname in cur.execute(
+            "SELECT page_number, symbol_name FROM zuken_pdf_symbols"
+            " WHERE schematic_id = ? AND symbol_name LIKE '-F%';",
+            (schem_id,)):
+        if re.fullmatch(r"-F\d+", sname or ""):
+            fuse_pages.add(pg)
+    if not fuse_pages:
+        _FUSE_RAILS_CACHE[key] = out
+        return out
+
+    # powiązanie -U <-> -RT z raportu połączeń
+    rt_to_u = {}
+    ph = ",".join("?" for _ in conn_ids)
+    for fd, td in cur.execute(
+            f"SELECT from_device, to_device FROM zuken_connections"
+            f" WHERE project_id IN ({ph});", conn_ids):
+        for a, b in ((fd, td), (td, fd)):
+            if a and b and re.fullmatch(r".*-U\d+", a) \
+                    and re.fullmatch(r".*-RT\d+", b):
+                rt_to_u.setdefault(clean_device_code(b) or "", set()).add(a)
+    if not rt_to_u:
+        _FUSE_RAILS_CACHE[key] = out
+        return out
+
+    # elementy z zestawu PS (device_code + prąd do etykiet krawędzi)
+    fuse_info = {}
+    for fr in cur.execute(
+            "SELECT device_code, device_clean, rating"
+            " FROM zuken_ps_fuses WHERE ps_code = ?",
+            ((ps_code or "").upper(),)):
+        fuse_info.setdefault(fr["device_clean"], []).append(
+            (fr["device_code"] or "", (fr["rating"] or "").strip()))
+
+    devs_by_clean = {}
+    for (d, _p) in adj:
+        devs_by_clean.setdefault(clean_device_code(d) or "", []).append(d)
+
+    def _u_dev(usuffix, pref=""):
+        cands = sorted(devs_by_clean.get(usuffix, ()), key=_natural_sort_key)
+        for d in cands:
+            if pref and d.startswith(pref):
+                return d
+        return cands[0] if cands else ""
+
+    fuse_slot = {}   # fuse_clean -> {page: {slot_dev,...}} — decyduje
+                     # najwcześniejsza strona (szczegółowa plansza skrzynki;
+                     # strony-zestawienia mają inne offsety etykiet -RT)
+    page_groups = [] # [fuse_clean...] rzędy elementów per strona
+    for pg in sorted(fuse_pages):
+        items = _pdf_page_label_positions(schem_id, schem_path, pg, schem_mtime)
+        if not items:
+            continue
+        holders = [(x, y, l) for x, y, l in items
+                   if l.startswith("-FH") or re.fullmatch(r"-U\d+", l)]
+        fuses = [(x, y, l) for x, y, l in items if re.fullmatch(r"-F\d+", l)]
+        relays = [(x, y, l) for x, y, l in items if re.fullmatch(r"-RT\d+", l)]
+        if not fuses:
+            continue
+        # -F -> drukowana etykieta -FH/-U (jak w _pdf_geometry_candidates)
+        edges = []
+        for fi, (fx, fy, fl) in enumerate(fuses):
+            for hi, (hx, hy, hl) in enumerate(holders):
+                d2 = (hx - fx) ** 2 + (hy - fy) ** 2
+                lim = 140 if hl.startswith("-FH") else 90
+                if d2 <= lim * lim:
+                    edges.append((d2, fi, hi))
+        assign = _min_cost_pairs(edges, len(fuses), len(holders))
+        # -F bez oprawki obok: przewód schodzi pionowo do zacisku -RT,
+        # który raport wiąże ze slotem -U
+        edges_rt = []
+        for fi, (fx, fy, fl) in enumerate(fuses):
+            if fi in assign:
+                continue
+            for ri, (rx, ry, rl) in enumerate(relays):
+                dx, dy = rx - fx, fy - ry
+                if abs(dx) <= 40 and dy >= 20:
+                    edges_rt.append((dx * dx + dy * dy, fi, ri))
+        assign_rt = _min_cost_pairs(edges_rt, len(fuses), len(relays))
+        members_pg = []
+        for fi, (fx, fy, fl) in enumerate(fuses):
+            fc = fl[1:]
+            pref = ""
+            for dev, _rt in fuse_info.get(fc, ()):
+                pref = dev.rsplit("-", 1)[0] if "-" in dev else ""
+                break
+            slots = []
+            hi = assign.get(fi)
+            if hi is not None and re.fullmatch(r"-U\d+", holders[hi][2]):
+                ud = _u_dev(holders[hi][2].lstrip("-"), pref)
+                if ud:
+                    slots.append(ud)
+            elif assign.get(fi) is None:
+                ri = assign_rt.get(fi)
+                if ri is not None:
+                    for ud in sorted(rt_to_u.get(
+                            relays[ri][2].lstrip("-"), ()),
+                            key=_natural_sort_key):
+                        slots.append(ud)
+            for sd in slots:
+                fuse_slot.setdefault(fc, {}).setdefault(pg, set()).add(sd)
+            if slots:
+                members_pg.append((fx, fy, fc))
+        # rzędy: ta sama wysokość ±15 pt; przerwa >120 pt w osi X dzieli
+        members_pg.sort(key=lambda m: (m[1], m[0]))
+        rows = []
+        for m in members_pg:
+            if rows and abs(m[1] - rows[-1][0][1]) <= 15:
+                rows[-1].append(m)
+            else:
+                rows.append([m])
+        for r in rows:
+            r.sort(key=lambda m: m[0])
+            cur_grp = [r[0]]
+            for m in r[1:]:
+                if m[0] - cur_grp[-1][0] > 120:
+                    page_groups.append(cur_grp)
+                    cur_grp = [m]
+                else:
+                    cur_grp.append(m)
+            page_groups.append(cur_grp)
+
+    # elementy są na jednej szynie, gdy współwystępują w grupie na każdej
+    # stronie, na której którykolwiek z nich jest zgrupowany — identyczne
+    # sygnatury (page -> klucz grupy) = ta sama szyna
+    sig_map = {}
+    for gi, g in enumerate(page_groups):
+        if len(g) < 3:
+            continue
+        fs = frozenset(m[2] for m in g)
+        for m in g:
+            sig_map.setdefault(m[2], []).append((gi, fs))
+    by_sig = {}
+    for fc, sig in sig_map.items():
+        by_sig.setdefault(tuple(sig), []).append(fc)
+    merged = []
+    for sig, fcs in by_sig.items():
+        if len(fcs) >= 3:
+            merged.append(sorted(fcs,
+                                 key=lambda f: _natural_sort_key(f)))
+
+    def _fuse_slot(fc):
+        """Slot -U elementu — bierzemy parowanie z najwcześniejszej strony
+        schematu (szczegółowa plansza ma poprawne offsety etykiet -RT)."""
+        pgs = fuse_slot.get(fc) or {}
+        if not pgs:
+            return ""
+        return sorted(pgs[min(pgs)], key=_natural_sort_key)[0]
+
+    groups = []
+    for fcs in merged:
+        members = []
+        for fc in fcs:
+            slot = _fuse_slot(fc)
+            if not slot:
+                continue
+            pref = slot.rsplit("-", 1)[0] if "-" in slot else ""
+            edev = ""
+            for dev, _rt in fuse_info.get(fc, ()):
+                if not pref or dev.startswith(pref):
+                    edev = dev
+                    break
+            if not edev and fuse_info.get(fc):
+                edev = fuse_info[fc][0][0]
+            if not edev:
+                edev = f"{pref}-{fc}" if pref else f"-{fc}"
+            rating = next((rt for d, rt in fuse_info.get(fc, ()) if d == edev),
+                          fuse_info.get(fc, [("", "")])[0][1])
+            members.append({"clean": fc, "elem": edev, "slot": slot,
+                            "rating": rating})
+        members = [m for m in members if (m["slot"], "") in adj]
+        if len(members) < 2:
+            continue
+        # źródło szyny: slot, którego sieć przewodów sięga akumulatora
+        feeds = [m["elem"] for m in members
+                 if _net_reaches_battery(adj, (m["slot"], ""))]
+        groups.append({"feed": feeds[0] if len(feeds) == 1 else "",
+                       "members": members})
+    out["groups"] = groups
+    out["slots"] = {fc: sorted(fuse_slot[fc][min(fuse_slot[fc])],
+                               key=_natural_sort_key)
+                    for fc in fuse_slot}
+    _FUSE_RAILS_CACHE[key] = out
+    return out
+
+
 # ═══ Asystent: listy elementów wg kategorii ('bezpiecznik 7,5A', 'przekaźnik') ═══
 _ASSIST_RATING_RE = re.compile(r"(?<![\w.,])(\d+(?:[.,]\d+)?)\s*A(?![A-Z0-9])")
 _ASSIST_NUM_RE = re.compile(r"(?<![\w.,])(\d+(?:[.,]\d+)?)(?![\w.,])")
@@ -8751,14 +9162,25 @@ def get_ps_fuses(ps_code, search="", limit=100, offset=0, lang="pl"):
         # Akceptuj tylko parowanie powtórzone na >=2 arkuszach albo bez konkurencji
         return best if (votes[best] >= 2 or len(votes) == 1) else ""
 
-    # Aktywny schemat PDF i strony, na których narysowano etykiety -F<n>
+    # Aktywny schemat PDF tego PS i strony, na których narysowano
+    # etykiety -F<n> — parowanie geometria etykiet musi brać schemat
+    # projektu, a nie najnowszy aktywny globalnie (ten może być innego PS)
     cur.execute("""
         SELECT id, filepath, file_mtime FROM zuken_pdf_schematics
         WHERE is_active = 1 AND COALESCE(doc_kind, 'schematic') = 'schematic'
+          AND ps_code = ?
         ORDER BY id DESC LIMIT 1;
-    """)
+    """, (ps_code,))
     _schem = cur.fetchone()
-    schem_path = _schem["filepath"] if _schem else None
+    if not _schem:
+        cur.execute("""
+            SELECT id, filepath, file_mtime FROM zuken_pdf_schematics
+            WHERE is_active = 1 AND COALESCE(doc_kind, 'schematic') = 'schematic'
+            ORDER BY id DESC LIMIT 1;
+        """)
+        _schem = cur.fetchone()
+    schem_path = resolve_kb_filepath(_schem["filepath"], heal_db=True) \
+        if _schem else None
     schem_mtime = _schem["file_mtime"] if _schem else None
     fuse_page_map = {}
     if _schem and schem_path and pypdf is not None and os.path.exists(schem_path):
