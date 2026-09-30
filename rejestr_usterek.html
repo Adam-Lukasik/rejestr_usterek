@@ -7855,6 +7855,9 @@ async function runAiDiagnosisSearch(opts = {}) {
         }
       }
     } catch (e) { /* lista to dodatek */ }
+    // centruj widok na zapytanym aparacie — po wszystkich wstawkach,
+    // żeby karta listy nad diagramem nie zepsuła wyliczonej pozycji
+    setTimeout(() => scrollToCircuitSeed(resBody), 80);
   } catch (err) {
     resBody.innerHTML = `
       <div style="padding:20px; background:var(--red-bg); color:var(--red-text); border-radius:var(--radius-md); font-size:13px;">
