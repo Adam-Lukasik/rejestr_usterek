@@ -8276,7 +8276,8 @@ def trace_circuit(ps_code, query, lang="pl"):
     cleans = set()
     for ld in loads_out:
         cleans.add(ld["clean"])
-        for p in ld["pins"]:
+        # piny odbiornika + gałęzie obwodu cewki przekaźnika (relay_coils)
+        for p in list(ld["pins"]) + list(ld.get("relay_coils") or []):
             for e in p["ends"]:
                 cleans.add(e["clean"])
                 for h in e["path"]:
