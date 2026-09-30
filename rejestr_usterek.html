@@ -10299,7 +10299,7 @@ function circuitOverlay(title, bodyHtml, wide) {
         <div style="font-weight:800; font-size:14px; color:var(--text-main);">${escapeHtml(title)}</div>
         <button onclick="closeCircuitOverlay()" style="background:none; border:none; font-size:18px; cursor:pointer; color:var(--text-muted); line-height:1;">✕</button>
       </div>
-      <div style="padding:10px 18px; overflow-y:auto;">${bodyHtml}</div>
+      <div class="cov-scroll" style="padding:10px 18px; overflow-y:auto;">${bodyHtml}</div>
       <div style="padding:12px 18px; border-top:1px solid var(--border); display:flex; justify-content:flex-end;">
         <button class="btn" onclick="closeCircuitOverlay()" style="padding:7px 14px; font-size:12px; font-weight:700; border:1px solid var(--border); border-radius:8px; background:var(--bg-card-subtle); color:var(--text-main); cursor:pointer;">${escapeHtml(t('ui.zuken.wirePathClose'))}</button>
       </div>
@@ -10850,6 +10850,18 @@ async function showConnFace(el, ev) {
   document.body.appendChild(overlay);
 }
 
+// dla oprawek i elementów bezpieczników (FH51, F10, U8, FR25): piny
+// oprawki zwiera topik — obwód pinu 'other' rysujemy jako przedłużenie
+// POD węzłem oprawki, żeby zapytany aparat był pośrodku diagramu
+// (zasilanie w górę, odbiornik w dół — jak przy parze złączy)
+function circuitFuseDownPin(ld) {
+  const pins = ld.pins || [];
+  if (!/^(FH|FR|F|U)\d/i.test(ld.clean || '')) return null;
+  const gndP = pins.find(p => p.role === 'gnd');
+  const feedP = pins.find(p => p.role === 'feed') || pins.find(p => p !== gndP);
+  return pins.find(p => p.role === 'other' && p !== feedP && (p.ends || []).length) || null;
+}
+
 function circuitSvgForLoad(ld, connMeta, opts) {
   opts = opts || {};
   const gndPin = (ld.pins || []).find(p => p.role === 'gnd');
@@ -10888,6 +10900,11 @@ function circuitSvgForLoad(ld, connMeta, opts) {
   } else {
     src = endsF.length ? pickEnd(endsF) : null;
   }
+  // oprawka bezpiecznika jako seed: tor pinu 'other' kontynuujemy pod
+  // węzłem oprawki (połączony wewnętrzną krawędzią topika)
+  const downPin = opts.thruEnds ? null : circuitFuseDownPin(ld);
+  const downEnd = downPin
+    ? (downPin.ends.find(e => e.role === 'load') || downPin.ends[0]) : null;
   const g = gndPin ? ((gndPin.ends || []).find(e => e.role === 'gnd') || (gndPin.ends || [])[0]) : null;
   if (!src && !thruEnd && !g) return '';
 
@@ -10917,6 +10934,19 @@ function circuitSvgForLoad(ld, connMeta, opts) {
         trunk.push({ dev: h.to, pin: h.to_pin, clean: h.to_clean, edge: h, role: '', info: '' }));
       const last = trunk[trunk.length - 1];
       last.role = thruEnd.role; last.info = thruEnd.function || thruEnd.desc || '';
+    } else if (downEnd) {
+      // seed pośrodku: węzeł oprawki pin->pin przez topik, potem tor
+      // odbiornika (FH51:2 ← zasilanie | FH51:1 → X707 → przekaźnik → X164)
+      const mid = trunk[trunk.length - 1];
+      mid.role = ''; mid.info = ld.function || ld.desc || '';
+      trunk.push({ dev: ld.device, pin: downPin.pin, clean: ld.clean,
+                   edge: { internal: 'fuse',
+                           internal_label: `${ld.clean} ${feedPin.pin}\u2192${downPin.pin}` },
+                   role: '', info: '' });
+      (downEnd.path || []).forEach(h =>
+        trunk.push({ dev: h.to, pin: h.to_pin, clean: h.to_clean, edge: h, role: '', info: '' }));
+      const last = trunk[trunk.length - 1];
+      last.role = downEnd.role; last.info = downEnd.function || downEnd.desc || '';
     } else {
       const trunkLast = trunk.length - 1;
       trunk[trunkLast].role = 'load';
@@ -10988,6 +11018,7 @@ function circuitSvgForLoad(ld, connMeta, opts) {
     stubs.push({ e, at });
   };
   if (src || thruEnd) (feedPin.ends || []).forEach(e => { if (e !== src && e !== thruEnd) addStub(e); });
+  if (downPin) (downPin.ends || []).forEach(e => { if (e !== downEnd) addStub(e); });
   if (g) (gndPin.ends || []).forEach(e => { if (e !== g) addStub(e); });
 
   const edgeLabel = h => (h.internal === 'fuse' || h.internal === 'relay')
@@ -11002,6 +11033,12 @@ function circuitSvgForLoad(ld, connMeta, opts) {
 
   // Zmienne wysokości węzłów: złącze ze znanym layoutem dostaje mini-siatkę pinów w węźle
   const allNodes = trunk2.concat(gndChain2);
+  // węzły pytanego aparatu (oba piny oprawki / obie połówki złącza
+  // X300/X300') — dostają grubą przerywaną ramkę i kotwicę autoscrolla
+  const seedBase = (ld.clean || '').replace(/'+$/, '');
+  allNodes.forEach(nd => {
+    nd._seed = !!(seedBase && nd.clean && nd.clean.replace(/'+$/, '') === seedBase);
+  });
   const nodeH = [], yOf = [], SPLICE_R = 13;
   let _acc = 22;
   allNodes.forEach((nd, i) => {
@@ -11159,6 +11196,26 @@ function circuitSvgForLoad(ld, connMeta, opts) {
     if (canFace) svg += '</g>';
   });
 
+  // sedno zapytania: kolejne węzły pytanego aparatu obejmujemy jedną
+  // grubą przerywaną ramką (np. para X300/X300' albo FH51:2 + FH51:1)
+  {
+    const seedIdx = allNodes.map((nd, i) => nd._seed ? i : -1).filter(i => i >= 0);
+    let run = [];
+    const flushRun = () => {
+      if (!run.length) return;
+      const y0 = yOf[run[0]] - 7;
+      const y1 = yOf[run[run.length - 1]] + nodeH[run[run.length - 1]] + 7;
+      svg += `<rect x="${cx - 8}" y="${y0}" width="${boxW + 16}" height="${y1 - y0}" rx="12" fill="none" stroke="#2563eb" stroke-width="2.6" stroke-dasharray="9 5" pointer-events="none"/>`;
+      svg += `<rect class="c-seed-anchor" x="${cx + boxW / 2}" y="${(y0 + y1) / 2}" width="1" height="1" fill="none" pointer-events="none"/>`;
+      run = [];
+    };
+    seedIdx.forEach(i => {
+      if (run.length && i !== run[run.length - 1] + 1) flushRun();
+      run.push(i);
+    });
+    flushRun();
+  }
+
   stubLayout.forEach(sl => {
     if (sl.overflow) {
       svg += `<text x="${stubX + 7}" y="${sl.sy + 4}" font-size="9.5" fill="var(--text-muted, #64748b)">+${sl.overflow} ${escapeHtml(t('js.zuken.moreEnds'))}</text>`;
@@ -11204,11 +11261,23 @@ function circuitSvgForLoad(ld, connMeta, opts) {
   return `<svg viewBox="0 0 ${W} ${H}" style="width:100%; max-width:${W}px; display:block; margin:0 auto;" xmlns="http://www.w3.org/2000/svg">${svg}</svg>`;
 }
 
+// przewija kontener diagramu tak, żeby zapytany aparat (kotwica
+// .c-seed-anchor w ramce wyróżnienia) był na środku widoku —
+// operator scrolluje od niego w górę lub w dół
+function scrollToCircuitSeed(root) {
+  const a = root && root.querySelector ? root.querySelector('.c-seed-anchor') : null;
+  if (!a) return;
+  const cRect = root.getBoundingClientRect();
+  const aRect = a.getBoundingClientRect();
+  root.scrollTop += (aRect.top + aRect.height / 2) - (cRect.top + cRect.height / 2);
+}
+
 function showCircuitDiagram() {
   const cp = ZUKEN_STATE.lastCircuit;
   if (!cp || !(cp.loads || []).length) return;
   closeWirePath();
   circuitOverlay(t('js.zuken.diagramTitle'), circuitDiagramPartsHtml(cp) || `<div style="color:var(--text-muted); font-size:12px;">—</div>`, true);
+  setTimeout(() => scrollToCircuitSeed(document.querySelector('#circuit-overlay .cov-scroll')), 80);
 }
 
 // Diagramy odbiorników obwodu — w karcie wyników asystenta i w oknie powiększenia
@@ -11256,11 +11325,13 @@ function circuitDiagramPartsHtml(cp) {
     } else {
       svg = circuitSvgForLoad(ld, meta);
       // piny sygnałowe (SYNCHRO, PATTERN...) — diagram główny rysuje tylko
-      // zasilanie i masę, więc każdy pozostały pin dostaje własny diagram
+      // zasilanie i masę, więc każdy pozostały pin dostaje własny diagram;
+      // pin scalony pod węzłem oprawki bezpiecznika pomijamy
       const pins = ld.pins || [];
       const gndP = pins.find(p => p.role === 'gnd');
       const drawnFeed = pins.find(p => p.role === 'feed') || pins.find(p => p !== gndP);
-      svg += pins.filter(p => p.role === 'other' && p !== drawnFeed && (p.ends || []).length).map(p => {
+      const mergedPin = circuitFuseDownPin(ld);
+      svg += pins.filter(p => p.role === 'other' && p !== drawnFeed && p !== mergedPin && (p.ends || []).length).map(p => {
         const s = circuitSvgForLoad({ ...ld, pins: [{ pin: p.pin, role: 'feed', ends: p.ends }] }, meta);
         const h0 = ((p.ends[0].path || [])[0]) || {};
         const sig = h0.signal_name || h0.signal || '';
@@ -11308,6 +11379,7 @@ async function runCircuitTrace(opts = {}) {
     ZUKEN_STATE.lastCircuit = cp;
     const card = circuitCardHtml(cp, query);
     resBody.innerHTML = card || `<div style="padding:20px; color:var(--text-muted); text-align:center; font-size:13px;">⚠️ ${escapeHtml(t('js.zuken.circuitNotFound'))}: „${escapeHtml(query)}"</div>`;
+    setTimeout(() => scrollToCircuitSeed(resBody), 80);
   } catch (err) {
     resBody.innerHTML = `<div style="padding:20px; background:var(--red-bg); color:var(--red-text); border-radius:var(--radius-md); font-size:13px;">⚠️ ${escapeHtml(err.message || String(err))}</div>`;
   }
