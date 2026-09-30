@@ -66,8 +66,11 @@ Wersja wielojęzykowa: `SUPPORTED_LANGS = ("pl", "en", "de")`, tłumaczenia w
 
 - Rysunki złączy (widok od strony przewodów): `connFaceLayout()` rozpoznaje rodzinę
   po artykule/opisie z `zuken_ps_connectors`/BOM, `connFacePinAt()` numeruje gniazda,
-  `connFaceSvg()` rysuje. Rodziny: JPT, MINIFIT, MICROFIT, SUPERSEAL, MATENLOK,
-  FASTIN, TBP, RELAY9 (Hella 5/9), RCA, ROW (ogólny 1-rząd, `unverified`).
+  `connFaceSvg()` rysuje. Rodziny: JPT, MCP (AMP 2.8 3-rzędowe), MINIFIT,
+  MICROFIT, MOLEXSR (Micro-Fit 1-rzędowy), SUPERSEAL, MATENLOK, TE2P (MQS/MCON
+  2p), CIRC7 (TE okrągłe 7p, komórki kołowe), DF11 (Hirose 2-rzęd.),
+  FASTIN/FF250 (2-kolumnowe pionowe), TBP, RELAY9 (Hella 5/9), RCA,
+  ROW (ogólny 1-rząd, `unverified`), USER (ręczny pinout, `/api/zuken/conn-pinouts`).
   Nowe rodziny dodawać tylko ze zweryfikowaną numeracją (rysunek katalogowy/zdjęcie
   od Adama); niepewny kierunek → `unverified: true` (ostrzeżenie w oknie złącza).
   Typ bez rysunku: węzeł i tak klikalny — okno pokazuje przewody i pinout.
