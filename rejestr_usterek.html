@@ -5943,6 +5943,7 @@ async function deleteRework(id) {
 
 /* Standalone widok obudowy złącza dla reworka — bez kontekstu obwodu. */
 async function showReworkConnFace(connector, reworkId) {
+  await ensureConnUserPinouts();
   const rw = (REWORKS_STATE.items || []).find(x => x.id === reworkId) || {};
   const pins = (rw.pin_changes || []).flatMap(p => [p.a, p.b]).filter(Boolean);
   let item = null;
@@ -7817,6 +7818,7 @@ async function runAiDiagnosisSearch(opts = {}) {
       ? apiCall(`/api/zuken/assist-list?ps=${encodeURIComponent(psForPath)}&q=${encodeURIComponent(query)}`).catch(() => null)
       : Promise.resolve(null);
     const knownPromise = ensureKnownDevs(psForPath);
+    const pinoutPromise = ensureConnUserPinouts();
 
     const res = await apiCall('/api/ai/diagnose', 'POST', payload);
     await knownPromise;
@@ -7827,6 +7829,7 @@ async function runAiDiagnosisSearch(opts = {}) {
     let ccard = '';
     try {
       const cp = await circuitPromise;
+      await pinoutPromise;
       if (runId !== ZUKEN_STATE.runSeq) return;
       ccard = (cp && cp.ok) ? circuitCardHtml(cp, query) : '';
       if (ccard) {
@@ -9546,6 +9549,7 @@ function debounceZukenConnectorsSearch() {
 async function showConnectorDrawingReport() {
   const ps = ZUKEN_SUMM_STATE.currentPs;
   if (!ps) return;
+  await ensureConnUserPinouts();
   let items = [];
   try {
     items = (await apiCall(`/api/zuken/summaries/connector-types?ps=${encodeURIComponent(ps)}`)).items || [];
@@ -9577,6 +9581,7 @@ async function showConnectorDrawingReport() {
           <span style="font-family:var(--font-mono,monospace); font-weight:700;">${escapeHtml(g.art || '—')}</span>
           ${g.sup ? `<span style="color:var(--text-muted);">${escapeHtml(g.sup)}</span>` : ''}
           <span style="color:var(--text-muted);">· ${escapeHtml(t('ui.zuken.pinCount', { n: [...g.pins].sort((a, b) => a - b).join('/') }))}</span>
+          ${g.art ? `<button type="button" class="tag-project" style="cursor:pointer; border:none; font-size:10.5px; color:#b45309;" data-art="${escapeHtml(g.art)}" data-pins="${[...g.pins][0] || 0}" data-desc="${escapeHtml((g.desc || '').slice(0, 120))}" onclick="connPinoutEditFromReport(this)">✏️ ${escapeHtml(t('js.zuken.connPinoutDefine'))}</button>` : ''}
         </div>
         ${g.desc ? `<div style="color:var(--text-muted); font-size:11px; margin-top:1px;">${escapeHtml(g.desc.slice(0, 140))}</div>` : ''}
         <div style="margin-top:3px; display:flex; gap:4px; flex-wrap:wrap;">${g.devs.slice(0, 16).map(d =>
@@ -10421,6 +10426,18 @@ function showCircuitChecklist() {
 // (widok "CONTACT CAVITY NUMBERS" = strona łączenia; od strony przewodów = lustro).
 const CONN_JPT_COLS = { 4: 2, 6: 3, 8: 4, 10: 5, 14: 7, 18: 9, 22: 11 };
 
+// Pinouty złączy wprowadzone ręcznie przez użytkownika — klucz: nr artykułu
+// (UPPER). Ładowane leniwie; connFaceLayout() sprawdza je PRZED wbudowanymi
+// rodzinami (użytkownik może nadpisać lub uzupełnić brakujący rysunek).
+let CONN_USER_PINOUTS = null;
+async function ensureConnUserPinouts(force) {
+  if (CONN_USER_PINOUTS && !force) return;
+  try {
+    const res = await apiCall('/api/zuken/conn-pinouts');
+    CONN_USER_PINOUTS = res.items || {};
+  } catch (e) { CONN_USER_PINOUTS = {}; }
+}
+
 function connHalfInfo(connMeta, clean, devSfx) {
   const cm = (connMeta || {})[clean] || {};
   const h = (cm.halves || {})[devSfx] || null;
@@ -10442,6 +10459,15 @@ function connFaceLayout(info) {
   const cn = desc.match(/(\d+)\s*circuits?/i) || desc.match(/PIN:\s*(\d+)/i)
           || desc.match(/(\d+)\s*pos/i) || desc.match(/(\d+)\s*pole/i) || desc.match(/(\d+)[\s-]*way/i);
   if (cn) n = +cn[1];
+
+  // ręczny pinout użytkownika (per nr artykułu) — pierwszeństwo przed wbudowanymi
+  const u = art && CONN_USER_PINOUTS && CONN_USER_PINOUTS[art.toUpperCase()];
+  if (u && u.rows > 0 && u.cols > 0 && Array.isArray(u.map) && u.map.length) {
+    return { fam: 'USER', gender: u.gender === 'M' ? 'M' : 'F',
+             cols: u.cols, rows: u.rows,
+             n: u.map.filter(x => x !== '' && x != null).length || n,
+             tee: false, order: u.map, custom: true };
+  }
 
   if (/junior\s*(power\s*)?timer/i.test(desc) || /^(\d+-)?92950[45]-/.test(art)) {
     fam = 'JPT'; rows = 2; cols = CONN_JPT_COLS[n] || 0;
@@ -10523,6 +10549,9 @@ function connFaceLayout(info) {
 function connFacePinAt(L, r, c) {
   const cols = L.cols, n = L.n;
   switch (L.fam) {
+    case 'USER':
+      // pinout użytkownika: mapa row-major, '' = puste gniazdo
+      return (L.order || [])[r * cols + c] ?? '';
     case 'JPT': {
       const fi = cols - 1 - c, odd = 2 * fi + 1, even = 2 * fi + 2;
       return L.gender === 'F' ? (r === 0 ? odd : even) : (r === 0 ? even : odd);
@@ -10697,16 +10726,169 @@ function closeConnFace() {
   document.getElementById('conn-face-overlay')?.remove();
 }
 
+function closeConnPinoutEditor() {
+  document.getElementById('conn-pinout-overlay')?.remove();
+}
+
+// Ręczna numeracja pinów złącza, zapisywana per nr artykułu (zuken_conn_pinouts).
+// Siatka = widok od strony przewodów; klikanie gniazd przypisuje kolejne numery,
+// ponowne kliknięcie usuwa numer (kolejność = kolejność kliknięć).
+let _connPinEd = null;
+async function openConnPinoutEditor(arg) {
+  const info = typeof arg === 'number' ? (ZUKEN_STATE._connFaceInfos || [])[arg] : arg;
+  if (!info || !(info.article || '').trim()) return;
+  await ensureConnUserPinouts();
+  const art = info.article.trim();
+  const saved = (CONN_USER_PINOUTS || {})[art.toUpperCase()] || null;
+  const n0 = parseInt(info.pins, 10) || 0;
+  _connPinEd = {
+    art, sfx: info.sfx || '', desc: info.desc || '', pins: n0,
+    rows: saved ? saved.rows : (n0 > 8 ? 2 : 1),
+    cols: saved ? saved.cols : Math.max(1, Math.ceil((n0 || 4) / (n0 > 8 ? 2 : 1))),
+    gender: saved ? (saved.gender || 'F') : 'F',
+    // kliknięte komórki w kolejności = numery pinów 1..N (z mapy row-major)
+    order: saved ? saved.map.map((p, k) => k)
+                        .filter(k => saved.map[k] !== '' && saved.map[k] != null)
+                        .sort((a, b) => (parseFloat(saved.map[a]) || 0) - (parseFloat(saved.map[b]) || 0))
+                 : [],
+    has: !!saved,
+  };
+  const ed = _connPinEd;
+  closeConnPinoutEditor();
+  const overlay = document.createElement('div');
+  overlay.id = 'conn-pinout-overlay';
+  overlay.style.cssText = 'position:fixed; inset:0; background:rgba(0,0,0,0.45); z-index:10020; display:flex; align-items:center; justify-content:center; padding:20px;';
+  overlay.onclick = ev => { if (ev.target === overlay) closeConnPinoutEditor(); };
+  const btn = 'padding:5px 12px; font-size:12px; font-weight:700; border-radius:7px; cursor:pointer;';
+  overlay.innerHTML = `
+    <div style="background:var(--bg-card,#fff); border-radius:12px; max-width:700px; width:100%; max-height:85vh; display:flex; flex-direction:column; box-shadow:0 20px 50px rgba(0,0,0,0.35); border:1px solid var(--border);">
+      <div style="padding:12px 18px; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; gap:10px;">
+        <div style="font-weight:800; font-size:14px; color:var(--text-main);">✏️ ${escapeHtml(t('js.zuken.connPinoutTitle', { v: ed.art }))}${ed.sfx ? ` <span style="color:var(--text-muted); font-weight:600;">— ${escapeHtml(ed.sfx)}</span>` : ''}</div>
+        <button onclick="closeConnPinoutEditor()" style="background:none; border:none; font-size:18px; cursor:pointer; color:var(--text-muted); line-height:1;">✕</button>
+      </div>
+      <div style="padding:14px 18px; overflow-y:auto;">
+        ${ed.desc ? `<div style="font-size:11px; color:var(--text-muted); margin-bottom:6px;">${escapeHtml(ed.desc.slice(0, 160))}</div>` : ''}
+        <div style="font-size:11.5px; color:#b45309; background:rgba(217,119,6,0.08); border:1px solid rgba(217,119,6,0.3); border-radius:6px; padding:6px 10px; margin-bottom:10px;">${escapeHtml(t('js.zuken.connPinoutHint'))}</div>
+        <div style="display:flex; gap:14px; align-items:center; flex-wrap:wrap; margin-bottom:10px; font-size:11.5px; color:var(--text-muted);">
+          <label>${escapeHtml(t('js.zuken.connPinoutRows'))} <input id="conn-pin-ed-rows" type="number" min="1" max="8" value="${ed.rows}" onchange="connPinEdResize()" style="width:56px;"></label>
+          <label>${escapeHtml(t('js.zuken.connPinoutCols'))} <input id="conn-pin-ed-cols" type="number" min="1" max="20" value="${ed.cols}" onchange="connPinEdResize()" style="width:56px;"></label>
+          <label>${escapeHtml(t('js.zuken.connPinoutLatch'))}
+            <select id="conn-pin-ed-latch">
+              <option value="F"${ed.gender !== 'M' ? ' selected' : ''}>${escapeHtml(t('js.zuken.connPinoutLatchTop'))}</option>
+              <option value="M"${ed.gender === 'M' ? ' selected' : ''}>${escapeHtml(t('js.zuken.connPinoutLatchBottom'))}</option>
+            </select></label>
+          <span style="margin-left:auto;">${escapeHtml(t('js.zuken.connPinoutPins'))}: <b id="conn-pin-ed-count"></b></span>
+        </div>
+        <div id="conn-pin-ed-grid" style="display:grid; gap:5px; justify-content:center; padding:12px; border:1px dashed var(--border); border-radius:8px;"></div>
+        <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:12px; flex-wrap:wrap;">
+          ${ed.has ? `<button type="button" onclick="connPinEdDelete()" style="${btn} border:1px solid rgba(185,28,28,0.4); background:rgba(185,28,28,0.08); color:#b91c1c;">🗑 ${escapeHtml(t('js.zuken.connPinoutDelete'))}</button>` : ''}
+          <button type="button" onclick="connPinEdClear()" style="${btn} border:1px solid var(--border); background:var(--bg-card-subtle,#f1f5f9); color:var(--text-muted);">⟲ ${escapeHtml(t('js.zuken.connPinoutClear'))}</button>
+          <button type="button" onclick="connPinEdSave()" style="${btn} border:none; background:var(--primary,#0284c7); color:#fff;">💾 ${escapeHtml(t('js.zuken.connPinoutSave'))}</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  document.getElementById('conn-pin-ed-grid').onclick = ev => {
+    const c = ev.target.closest('.conn-pin-ed-cell');
+    if (c) connPinEdClick(+c.dataset.ci);
+  };
+  connPinEdRender();
+}
+
+function connPinEdRender() {
+  const ed = _connPinEd;
+  const el = document.getElementById('conn-pin-ed-grid');
+  if (!ed || !el) return;
+  el.style.gridTemplateColumns = `repeat(${ed.cols}, 46px)`;
+  const cellPin = new Map(ed.order.map((ci, k) => [ci, k + 1]));
+  const base = 'width:44px; height:36px; display:flex; align-items:center; justify-content:center; border-radius:6px; cursor:pointer; font-family:var(--font-mono,monospace); font-weight:700; font-size:13px; user-select:none;';
+  let h = '';
+  for (let k = 0; k < ed.rows * ed.cols; k++) {
+    const p = cellPin.get(k);
+    h += `<div class="conn-pin-ed-cell" data-ci="${k}" style="${base}${p
+      ? 'background:rgba(2,132,199,0.18); border:2px solid #0284c7; color:#0284c7;'
+      : 'background:var(--bg-card-subtle,#f1f5f9); border:1px solid var(--border); color:var(--text-muted);'}">${p || '·'}</div>`;
+  }
+  el.innerHTML = h;
+  const nEl = document.getElementById('conn-pin-ed-count');
+  if (nEl) nEl.textContent = `${ed.order.length}${ed.pins ? ' / ' + ed.pins : ''}`;
+}
+
+function connPinEdClick(ci) {
+  const ed = _connPinEd;
+  const i = ed.order.indexOf(ci);
+  if (i >= 0) ed.order.splice(i, 1); else ed.order.push(ci);
+  connPinEdRender();
+}
+
+function connPinEdResize() {
+  const ed = _connPinEd;
+  ed.rows = Math.max(1, Math.min(8, +document.getElementById('conn-pin-ed-rows').value || 1));
+  ed.cols = Math.max(1, Math.min(20, +document.getElementById('conn-pin-ed-cols').value || 1));
+  ed.order = ed.order.filter(ci => ci < ed.rows * ed.cols);
+  connPinEdRender();
+}
+
+function connPinEdClear() {
+  _connPinEd.order = [];
+  connPinEdRender();
+}
+
+// po zapisie/usunięciu odświeża otwarte okno złącza (dataset zachowany)
+function connPinEdRefreshFace() {
+  if (document.getElementById('conn-face-overlay') && ZUKEN_STATE._connFaceDs)
+    showConnFace({ dataset: ZUKEN_STATE._connFaceDs });
+}
+
+async function connPinEdSave() {
+  const ed = _connPinEd;
+  if (!ed.order.length) { showToast(t('js.zuken.connPinoutEmpty'), 'error'); return; }
+  const map = new Array(ed.rows * ed.cols).fill('');
+  ed.order.forEach((ci, k) => { map[ci] = String(k + 1); });
+  const gender = document.getElementById('conn-pin-ed-latch').value;
+  try {
+    await apiCall('/api/zuken/conn-pinouts', 'POST', {
+      article: ed.art, rows: ed.rows, cols: ed.cols, gender, map });
+    CONN_USER_PINOUTS[ed.art.toUpperCase()] = { rows: ed.rows, cols: ed.cols, gender, map };
+    closeConnPinoutEditor();
+    showToast(t('js.zuken.connPinoutSaved', { v: ed.art }), 'success');
+    connPinEdRefreshFace();
+  } catch (e) { showToast(e.message || String(e), 'error'); }
+}
+
+async function connPinEdDelete() {
+  const ed = _connPinEd;
+  try {
+    await apiCall(`/api/zuken/conn-pinouts?article=${encodeURIComponent(ed.art)}`, 'DELETE');
+    delete CONN_USER_PINOUTS[ed.art.toUpperCase()];
+    closeConnPinoutEditor();
+    showToast(t('js.zuken.connPinoutDeleted', { v: ed.art }), 'success');
+    connPinEdRefreshFace();
+  } catch (e) { showToast(e.message || String(e), 'error'); }
+}
+
+function connPinoutEditFromReport(btn) {
+  openConnPinoutEditor({
+    article: btn.dataset.art || '',
+    pins: +(btn.dataset.pins || 0),
+    sfx: btn.dataset.sfx || '',
+    desc: btn.dataset.desc || '',
+  });
+}
+
 async function showConnFace(el, ev) {
   const d = el.dataset;
   // Ctrl+klik na węźle diagramu — od razu obwód tego elementu
   if (ev && (ev.ctrlKey || ev.metaKey)) { goZukenEntity(d.dev || d.clean); return; }
+  ZUKEN_STATE._connFaceDs = { ...d };
+  await ensureConnUserPinouts();
   const cp = ZUKEN_STATE.lastCircuit || {};
   const connMeta = cp.conn_meta || {};
   const sfxs = [d.dev];
   if (d.mate) sfxs.push(d.mate);
   const infos = sfxs.map(sfx => ({ sfx, ...connHalfInfo(connMeta, d.clean, sfx) }));
   const lays = infos.map(i => connFaceLayout(i));
+  ZUKEN_STATE._connFaceInfos = infos;
   // typ bez rysunku (np. nowy projekt): okno i tak pokazuje przewody i pinout
   const ki = lays.findIndex(Boolean);
 
@@ -10811,18 +10993,21 @@ async function showConnFace(el, ev) {
     const gen = L ? t(L.gender === 'F' ? 'js.zuken.connFemale' : 'js.zuken.connMale') : (info.desc || '');
     const art = info.article || (L && L.inferred ? t('js.zuken.connCounterpart') : '');
     const wires = d.pin ? wiresAt(info.sfx).map(wireRow).join('') : '';
-    const note = !L ? t('js.zuken.connNoDrawing') : L.unverified ? t('js.zuken.connOrderUnverified') : '';
+    const note = !L ? t('js.zuken.connNoDrawing') : L.custom ? t('js.zuken.connPinoutCustom') : L.unverified ? t('js.zuken.connOrderUnverified') : '';
     // przycisk obwodu — pomijamy, gdy to element, o który właśnie pytano
     const curQ = (ZUKEN_STATE.lastQuery || '').toUpperCase().replace(/[:\s].*$/, '');
     const circBtn = info.sfx && info.sfx.toUpperCase() !== curQ
       ? `<button type="button" data-ent-q="${escapeHtml(info.sfx)}" style="padding:3px 10px; font-size:11.5px; font-weight:700; border:1px solid rgba(2,132,199,0.4); border-radius:7px; background:rgba(2,132,199,0.1); color:#0284c7; cursor:pointer;">⚡ ${escapeHtml(t('js.zuken.showCircuitOf', { v: info.sfx }))}</button>` : '';
+    // edytor ręcznego pinoutu — dla artykułu (nadpisuje/uzupełnia wbudowany rysunek)
+    const pinBtn = info.article
+      ? `<button type="button" onclick="openConnPinoutEditor(${i})" style="padding:3px 10px; font-size:11.5px; font-weight:700; border:1px solid rgba(217,119,6,0.45); border-radius:7px; background:rgba(217,119,6,0.08); color:#b45309; cursor:pointer;">✏️ ${escapeHtml(t(L && L.custom ? 'js.zuken.connPinoutEdit' : 'js.zuken.connPinoutDefine'))}</button>` : '';
     return `<div style="width:100%; max-width:640px; margin:0 auto;">
       <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
         <div style="font-family:var(--font-mono,monospace); font-weight:800; font-size:13px; color:var(--text-main);">${escapeHtml(info.sfx)}${d.pin ? ':' + escapeHtml(d.pin) : ''}</div>
-        ${circBtn}
+        <div style="display:flex; gap:6px; align-items:center;">${pinBtn}${circBtn}</div>
       </div>
       <div style="font-size:11px; color:var(--text-muted); margin:2px 0 6px;">${escapeHtml(gen)}${art ? ' · ' + escapeHtml(art) : ''}</div>
-      ${note ? `<div style="font-size:11px; color:#b45309; margin:0 0 6px;">⚠️ ${escapeHtml(note)}</div>` : ''}
+      ${note ? `<div style="font-size:11px; color:${L && L.custom ? '#0284c7' : '#b45309'}; margin:0 0 6px;">${L && L.custom ? 'ℹ️' : '⚠️'} ${escapeHtml(note)}</div>` : ''}
       <div style="display:flex; gap:12px; align-items:center; justify-content:center; flex-wrap:wrap;">
         ${L ? `<div style="flex:1 1 280px; max-width:340px;">${connFaceSvg(L, d.pin)}</div>` : ''}
         ${info.image ? `<img src="${escapeHtml(info.image)}" alt="${escapeHtml(info.article || '')}" style="max-width:220px; max-height:130px; object-fit:contain; border:1px solid var(--border); border-radius:6px; background:#fff;">` : ''}
@@ -11377,7 +11562,7 @@ async function runCircuitTrace(opts = {}) {
   try {
     const [cp] = await Promise.all([
       apiCall(`/api/zuken/circuit-path?ps=${encodeURIComponent(ps)}&q=${encodeURIComponent(query)}`),
-      ensureKnownDevs(ps)]);
+      ensureKnownDevs(ps), ensureConnUserPinouts()]);
     if (runId !== ZUKEN_STATE.runSeq) return;
     ZUKEN_STATE.lastCircuit = cp;
     const card = circuitCardHtml(cp, query);

@@ -668,6 +668,21 @@ def init_db():
         )
     """)
 
+    # 12. Pinouty złączy wprowadzone ręcznie — klucz: nr artykułu z BOM.
+    # pins_map: JSON row-major z etykietą pinu w każdej komórce ('' = puste
+    # gniazdo), gender: 'F' zatrzask u góry / 'M' obudowa obrócona o 180°.
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS zuken_conn_pinouts (
+            article TEXT PRIMARY KEY,
+            rows INTEGER NOT NULL,
+            cols INTEGER NOT NULL,
+            gender TEXT DEFAULT 'F',
+            pins_map TEXT NOT NULL,
+            note TEXT DEFAULT '',
+            updated_at TEXT
+        )
+    """)
+
     # Migracja: przenieś opisNaprawa do tabeli solutions jako "Wariant 1"
     # oraz przypisz pierwsze zdjęcie do usterki, a kolejne zdjęcia (od 2 wzwyż) do Wariantu 1
     # (tylko dla rekordów które mają opis naprawy, a nie mają jeszcze żadnych wariantów)
@@ -2953,6 +2968,34 @@ def api_zuken_summaries_connector_types():
         if not ps_code:
             return jsonify({"error": smsg("psParamRequired")}), 400
         return jsonify(zuken_service.get_ps_connector_types(ps_code))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/zuken/conn-pinouts", methods=["GET", "POST", "DELETE"])
+def api_zuken_conn_pinouts():
+    """Pinouty złączy zdefiniowane ręcznie przez użytkownika (per nr artykułu)."""
+    try:
+        if request.method == "GET":
+            return jsonify({"items": zuken_service.get_conn_pinouts()})
+        if request.method == "DELETE":
+            art = (request.args.get("article") or "").strip()
+            if not art:
+                return jsonify({"error": "article required"}), 400
+            zuken_service.delete_conn_pinout(art)
+            return jsonify({"status": "success"})
+        data = request.get_json(silent=True) or {}
+        art = (data.get("article") or "").strip()
+        rows = int(data.get("rows") or 0)
+        cols = int(data.get("cols") or 0)
+        pmap = data.get("map")
+        if not art or rows < 1 or cols < 1 or not isinstance(pmap, list):
+            return jsonify({"error": "article/rows/cols/map required"}), 400
+        zuken_service.save_conn_pinout(
+            art, rows, cols, pmap,
+            gender=data.get("gender") or "F",
+            note=data.get("note") or "")
+        return jsonify({"status": "success"})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 

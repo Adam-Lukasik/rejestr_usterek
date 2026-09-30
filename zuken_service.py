@@ -8375,6 +8375,65 @@ def get_ps_connector_types(ps_code):
     return {"items": items}
 
 
+def get_conn_pinouts():
+    """Pinouty złączy wprowadzone ręcznie — słownik {ARTYKUŁ(upper): {rows, cols,
+    gender, map, note}}. map = lista row-major z etykietą pinu ('' = puste gniazdo)."""
+    conn = get_db()
+    try:
+        out = {}
+        for r in conn.execute(
+                "SELECT article, rows, cols, gender, pins_map, note"
+                " FROM zuken_conn_pinouts"):
+            try:
+                mp = json.loads(r["pins_map"] or "[]")
+            except Exception:
+                mp = []
+            art = (r["article"] or "").strip().upper()
+            if not art:
+                continue
+            out[art] = {
+                "rows": r["rows"], "cols": r["cols"],
+                "gender": r["gender"] or "F",
+                "map": [str(p) for p in mp],
+                "note": r["note"] or ""}
+        return out
+    finally:
+        conn.close()
+
+
+def save_conn_pinout(article, rows, cols, pins_map, gender="F", note=""):
+    """Zapisuje/aktualizuje ręczny pinout złącza dla numeru artykułu."""
+    conn = get_db()
+    try:
+        conn.execute(
+            "INSERT INTO zuken_conn_pinouts"
+            " (article, rows, cols, gender, pins_map, note, updated_at)"
+            " VALUES (?,?,?,?,?,?,?)"
+            " ON CONFLICT(article) DO UPDATE SET rows=excluded.rows,"
+            " cols=excluded.cols, gender=excluded.gender,"
+            " pins_map=excluded.pins_map, note=excluded.note,"
+            " updated_at=excluded.updated_at",
+            (article.strip().upper(), int(rows), int(cols),
+             str(gender or "F").upper()[:1],
+             json.dumps([str(p) for p in pins_map]),
+             note or "",
+             datetime.now().isoformat(timespec="seconds")))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def delete_conn_pinout(article):
+    """Usuwa ręczny pinout złącza."""
+    conn = get_db()
+    try:
+        conn.execute("DELETE FROM zuken_conn_pinouts WHERE article=?",
+                     ((article or "").strip().upper(),))
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def get_ps_connectors(ps_code, search="", system_filter="", limit=100, offset=0, lang="pl"):
     """Pobiera listę złączy z pinoutem dla projektu PS z filtrowaniem i paginacją."""
     if not ps_code:
