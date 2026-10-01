@@ -86,10 +86,13 @@ Wersja wielojęzykowa: `SUPPORTED_LANGS = ("pl", "en", "de")`, tłumaczenia w
   zamyka okna złącza/ścieżki). Historia ◀ ▶ + ścieżka: `ZUKEN_STATE.nav`,
   `zukenNavPush/zukenNavGo`. Ctrl+klik na węźle diagramu = od razu obwód.
 - Listy kategorii: `zuken_service.assistant_list()` → `/api/zuken/assist-list`
-  (bezpieczniki z prądem „7,5A”, przekaźniki + filtr słowami); karta `assistListCardHtml()`.
-  Plan dalej: etap 3 — edytowalne aliasy firmowe (NAK = gniazdo zewnętrzne 115/230V →
-  SHORELINE/EJECT/AUTO-EJECT) w tabeli DB + ekran w Słownikach, listy gniazd USB/12V/
-  zapalniczka; tylko wybrany PS.
+  (bezpieczniki z prądem „7,5A”, przekaźniki, gniazda — „gniazdo 12V”,
+  „gniazdo usb”, „zapalniczka”, „gniazdo NAK”); karta `assistListCardHtml()`.
+- Aliasy firmowe: tabela `zuken_query_aliases` + wbudowane `_ASSIST_BUILTIN_ALIASES`
+  (NAK → EJECT/SHORELINE/+NAK itd.); edycja w widoku Słowników, API
+  `/api/zuken/aliases` (GET/POST/DELETE). „;” w terminach = osobne wymagane
+  grupy (`SOCKET;12V` = tylko gniazda 12V). Grupy tokenów z aliasami:
+  `_query_token_groups()` używane w `trace_circuit` i `assistant_list`.
 - Test UI bez klikania: headless Edge + CDP (node 22 ma globalny WebSocket),
   `openAiDiagnosisModal({projekt, default_query})`, zrzut `Page.captureScreenshot`.
 

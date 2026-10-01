@@ -368,6 +368,17 @@ def init_zuken_tables():
         );
     """)
 
+    # Nazwy firmowe/robocze używane w zapytaniach do asystenta
+    # ('gniazdo NAK' -> urządzenia z lokalizacji +NAK albo sygnałów EJECT/SHORELINE)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS zuken_query_aliases (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            phrase TEXT NOT NULL UNIQUE COLLATE NOCASE,
+            terms TEXT NOT NULL,
+            created_at TEXT DEFAULT (datetime('now'))
+        );
+    """)
+
     # Tabele dla wektorowych schematów PDF wyeksportowanych z Zuken E3
     cur.execute("""
         CREATE TABLE IF NOT EXISTS zuken_pdf_schematics (
@@ -6720,14 +6731,15 @@ def _wire_number_nodes(cur, conn_proj_ids, wire_no):
     return out
 
 
-def _match_signals(query, sig_nodes, limit=6):
-    """Dopasowuje zapytanie do nazw sygnałów: każdy token zapytania musi
-    pasować do tokenu sygnału (dokładnie albo przez synonim).
+def _match_signals(query, sig_nodes, limit=6, groups=None):
+    """Dopasowuje zapytanie do nazw sygnałów: każda grupa tokenów zapytania
+    musi pasować do tokenu sygnału (dokładnie albo przez synonim/alias).
     Sortowanie: najmniej nadmiarowych tokenów w sygnale."""
-    q_toks = _circuit_tokens(query)
-    if not q_toks:
-        return []
-    groups = [{tk} | _CIRCUIT_SYNONYMS.get(tk, set()) for tk in q_toks]
+    if groups is None:
+        q_toks = _circuit_tokens(query)
+        if not q_toks:
+            return []
+        groups = [{tk} | _CIRCUIT_SYNONYMS.get(tk, set()) for tk in q_toks]
     allv = set().union(*groups)
     scored = []
     for sig in sig_nodes:
@@ -6750,13 +6762,16 @@ def _tokens_match(a, b):
     return len(a) >= 4 and len(b) >= 4 and (a.startswith(b) or b.startswith(a))
 
 
-def _match_devices_by_function(query, dev_funcs, wired_cleans, limit=3):
-    """Zapytanie opisowe ('gniazdo 7/12V') -> urządzenia po nazwie funkcji
-    BOM (X192 'Socket 7/12V DEFI'): każdy token zapytania musi trafić
-    w token funkcji (dokładnie, synonim, przedrostek). Urządzenie spoza
-    raportu połączeń (gniazdo z samymi konektorami w wiązce) mostkujemy
-    do urządzeń w wiązce, których funkcja jest podzbiorem jego funkcji
-    (X193 'Socket Defi +', X194 'Socket Defi -').
+def _match_devices_by_function(query, dev_funcs, wired_cleans, limit=3,
+                               dev_hay=None, groups=None):
+    """Zapytanie opisowe ('gniazdo 7/12V', 'gniazdo NAK') -> urządzenia po
+    nazwie funkcji BOM (X192 'Socket 7/12V DEFI'). Każda grupa tokenów
+    zapytania musi trafić w token opisu urządzenia (dokładnie, synonim,
+    alias firmowy, przedrostek). dev_hay: clean -> dodatkowy tekst
+    (opis BOM + pełny kod urządzenia z lokalizacją, np. '=KKK+NAK-G4').
+    Urządzenie spoza raportu połączeń (gniazdo z samymi konektorami w wiązce)
+    mostkujemy do urządzeń w wiązce, których funkcja jest podzbiorem jego
+    funkcji (X193 'Socket Defi +', X194 'Socket Defi -').
     Zwraca (hits [(clean, funkcja)], wired [clean])."""
     q_toks = _circuit_tokens(query)
     if not q_toks or all(t.isdigit() for t in q_toks):
@@ -6766,10 +6781,18 @@ def _match_devices_by_function(query, dev_funcs, wired_cleans, limit=3):
         c = (clean_device_code(k) or k).upper()
         if f and c not in funcs:
             funcs[c] = f
+    if dev_hay:
+        for c, extra in dev_hay.items():
+            extra = " ".join(extra) if isinstance(extra, (list, tuple)) else extra
+            if not extra:
+                continue
+            funcs[c] = (funcs.get(c, "") + " " + extra).strip()
     ftoks = {c: set(_circuit_tokens(f)) for c, f in funcs.items()}
-    scored = sorted((len(ft) - len(q_toks), _natural_sort_key(c), c)
+    grps = groups or [{tk} | _CIRCUIT_SYNONYMS.get(tk, set()) for tk in q_toks]
+    scored = sorted((len(ft) - len(grps), _natural_sort_key(c), c)
                     for c, ft in ftoks.items()
-                    if ft and all(any(_tokens_match(q, t) for t in ft) for q in q_toks))
+                    if ft and all(any(_tokens_match(gt, t) for gt in g for t in ft)
+                                  for g in grps))
     hits = [(c, funcs[c]) for _, _, c in scored[:limit]]
     wired = []
     for c, _f in hits:
@@ -6785,6 +6808,129 @@ def _match_devices_by_function(query, dev_funcs, wired_cleans, limit=3):
             if d not in wired:
                 wired.append(d)
     return hits, wired
+
+
+# Aliasy firmowe wbudowane: fraza robocza -> tokeny występujące w danych
+# projektu (funkcje BOM, opisy, nazwy sygnałów, kody lokalizacji).
+# 'NAK' = firmowe określenie gniazda zewnętrznego 115/230V (auto-eject);
+# w projektach istnieje też kod lokalizacji +NAK (np. '=KKK+NAK-G4'),
+# więc alias dopasowuje też tokeny kodów urządzeń.
+# ';' w terminach dzieli alias na części — każda część to osobna,
+# wymagana grupa alternatyw ('zapalniczka' -> SOCKET;12V = gniazda 12V,
+# bo urządzenie musi trafić i w SOCKET i w 12V).
+_ASSIST_BUILTIN_ALIASES = [
+    ("NAK", "EJECT AUTO-EJECT SHORELINE DISCONNECT"),
+    ("GNIAZDO NAK", "EJECT AUTO-EJECT SHORELINE DISCONNECT"),
+    ("GNIAZDO ZEWNĘTRZNE", "EJECT AUTO-EJECT SHORELINE DISCONNECT"),
+    ("GNIAZDO SIECIOWE", "EJECT AUTO-EJECT SHORELINE DISCONNECT"),
+    ("ZAPALNICZKA", "SOCKET OUTLET; 12V"),
+    ("GNIAZDO ZAPALNICZKOWE", "SOCKET OUTLET; 12V"),
+]
+
+
+def _alias_map(cur):
+    """frozenset(tokenów frazy) -> [set(tokenów części), ...].
+    Tokeny w obrębie części to alternatywy (OR); części rozdzielone ';'
+    to osobne, wymagane grupy (AND). Aliasy z bazy (zuken_query_aliases)
+    zlewane z wbudowanymi — fraza użytkownika o tym samym brzmieniu
+    rozszerza wbudowaną."""
+    m = {}
+
+    def add(phrase, terms):
+        pt = frozenset(_circuit_tokens(phrase))
+        parts = [set(_circuit_tokens(p)) for p in str(terms or "").split(";")]
+        parts = [p for p in parts if p]
+        if pt and parts:
+            m.setdefault(pt, []).extend(parts)
+
+    for p, t in _ASSIST_BUILTIN_ALIASES:
+        add(p, t)
+    try:
+        for r in cur.execute("SELECT phrase, terms FROM zuken_query_aliases"):
+            add(r["phrase"], r["terms"])
+    except Exception:
+        pass
+    return m
+
+
+def _query_token_groups(query, cur=None):
+    """Grupy tokenów zapytania do dopasowania:
+    {token} ∪ synonimy ∪ tokeny aliasów frazowych. Alias jednosłowowy
+    ('NAK') rozszerza swój token; alias wielowyrazowy ('gniazdo zewnętrzne')
+    scala wszystkie swoje tokeny w jedną grupę — cały jego wynik liczy
+    się jedną alternatywą (sygnał 'SHORELINE' spełnia całą frazę).
+    Części aliasu po ';' dają osobne wymagane grupy."""
+    q_toks = _circuit_tokens(query)
+    if not q_toks:
+        return []
+    covered = set()
+    groups = []
+    if cur is not None:
+        for ptoks, parts in _alias_map(cur).items():
+            if not all(any(_tokens_match(p, t) for t in q_toks) for p in ptoks):
+                continue
+            hits = {t for t in q_toks if any(_tokens_match(p, t) for p in ptoks)}
+            if not hits:
+                continue
+            covered |= hits
+            for part in parts:
+                g = set(part)
+                if len(ptoks) == 1:
+                    # alias jednosłowowy: sam token + synonimy ('NAK' trafia
+                    # też w 'NAK Kl.50' / kod '+NAK-X9')
+                    g |= hits
+                    for t in hits:
+                        g |= _CIRCUIT_SYNONYMS.get(t, set())
+                else:
+                    # fraza wielowyrazowa: tylko wyraziste (nie-kategorialne)
+                    # słowa frazy dołączają do każdej części — 'NAK' tak,
+                    # ale 'GNIAZDO' w 'gniazdo zapalniczkowe' nie może
+                    # przepuścić każdego gniazda przez grupę '12V'
+                    g |= {t for t in hits if not _assist_category(t)}
+                groups.append(g)
+    for t in q_toks:
+        if t not in covered:
+            groups.append({t} | _CIRCUIT_SYNONYMS.get(t, set()))
+    return groups
+
+
+def list_query_aliases():
+    """Lista aliasów asystenta: wbudowane + zdefiniowane przez użytkownika."""
+    init_zuken_tables()
+    conn = get_db()
+    cur = conn.cursor()
+    rows = [{"phrase": p, "terms": t, "builtin": True}
+            for p, t in _ASSIST_BUILTIN_ALIASES]
+    for r in cur.execute(
+            "SELECT id, phrase, terms FROM zuken_query_aliases ORDER BY phrase COLLATE NOCASE"):
+        rows.append({"id": r["id"], "phrase": r["phrase"],
+                     "terms": r["terms"], "builtin": False})
+    conn.close()
+    return {"aliases": rows}
+
+
+def upsert_query_alias(phrase, terms):
+    init_zuken_tables()
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO zuken_query_aliases (phrase, terms) VALUES (?, ?)
+        ON CONFLICT(phrase) DO UPDATE SET terms = excluded.terms;
+    """, ((phrase or "").strip(), (terms or "").strip()))
+    conn.commit()
+    conn.close()
+    return list_query_aliases()
+
+
+def delete_query_alias(phrase):
+    init_zuken_tables()
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM zuken_query_aliases WHERE phrase = ? COLLATE NOCASE",
+                ((phrase or "").strip(),))
+    conn.commit()
+    conn.close()
+    return list_query_aliases()
 
 
 def _bom_device_descriptions(cur, bom_ids, dev_clean):
@@ -7561,6 +7707,8 @@ def trace_circuit(ps_code, query, lang="pl"):
                 if (rd_d, rd_p) < rd_nb:
                     relay_edges.setdefault(rdv, []).append(((rd_d, rd_p), rd_nb, rd_row))
     sig_nodes = _signal_node_map(cur, conn_ids)
+    # grupy tokenów zapytania z aliasami firmowymi (NAK, zapalniczka…)
+    groups = _query_token_groups(q, cur)
     ctrl = get_controller_diagnostic_info(ps_code, q, lang=lang) or {}
 
     def _is_pass(nd):
@@ -7696,15 +7844,24 @@ def trace_circuit(ps_code, query, lang="pl"):
                         relay_view_devs.append(rd)
         if relay_view_devs:
             dev_nodes = {}
-    # opis odbiornika bez kodu i bez pasującego sygnału ('gniazdo 7/12V'):
-    # szukaj po funkcji urządzenia z BOM (X192 'Socket 7/12V DEFI' -> X193/X194)
+    # opis odbiornika bez kodu i bez pasującego sygnału ('gniazdo 7/12V',
+    # 'gniazdo NAK'): szukaj po funkcji urządzenia z BOM rozszerzonej
+    # o opis pozycji i tokeny pełnego kodu (lokalizacja +NAK itd.)
     if (not dev_nodes and not relay_view_devs and not fuse_miss
-            and not _match_signals(q, sig_nodes)):
+            and not _match_signals(q, sig_nodes, groups=groups)):
         by_clean = {}
         for (ndev, npin) in adj:
             by_clean.setdefault((clean_device_code(ndev) or ndev).upper(), {}) \
                     .setdefault(ndev, set()).add(npin)
-        f_hits, f_wired = _match_devices_by_function(q, dev_funcs, by_clean)
+        dev_hay = {}
+        for k in dev_funcs:
+            c = (clean_device_code(k) or k).upper()
+            dev_hay.setdefault(c, []).append(k)
+        for c, n in (bom_names or {}).items():
+            if c:
+                dev_hay.setdefault(c.upper(), []).append(n)
+        f_hits, f_wired = _match_devices_by_function(
+            q, dev_funcs, by_clean, dev_hay=dev_hay, groups=groups)
         for c in f_wired:
             for ndev, pins in by_clean[c].items():
                 dev_nodes.setdefault(ndev, set()).update(pins)
@@ -7746,7 +7903,7 @@ def trace_circuit(ps_code, query, lang="pl"):
         resolved = {"kind": "device",
                     "label": func_label or dev_q}
     else:
-        sig_matches = _match_signals(q, sig_nodes)
+        sig_matches = _match_signals(q, sig_nodes, groups=groups)
         if wire_nodes:
             # numer przewodu ('66A') — dokładne trafienie idzie na początek
             wkey = next((s for s in sig_nodes if s.upper() == q.upper()), q.upper())
@@ -8921,6 +9078,10 @@ def _assist_category(tok):
     if tok.startswith(("PRZEKAZNIK", "STYCZNIK")) or tok in (
             "RELAY", "RELAYS", "RELAIS", "CONTACTOR", "CONTACTORS"):
         return "relay"
+    if tok.startswith(("GNIAZD", "STECKDOSE", "ZAPALNICZ")) or tok in (
+            "SOCKET", "SOCKETS", "OUTLET", "OUTLETS", "JACK", "DOSE",
+            "CIGARETTE", "LIGHTER"):
+        return "socket"
     return ""
 
 
@@ -8938,23 +9099,48 @@ def _assist_text_match(q_toks, hay):
     return all(any(_tokens_match(q, t) for t in h_toks) for q in q_toks)
 
 
+def _assist_groups_match(groups, hay):
+    """Jak _assist_text_match, ale dla grup tokenów (aliasy firmowe):
+    każda grupa musi mieć trafienie w tokenach pola/funkcji."""
+    h_toks = set(_circuit_tokens(" ".join(x for x in hay if x)))
+    return all(any(_tokens_match(gt, t) for gt in g for t in h_toks)
+               for g in groups)
+
+
 def assistant_list(ps_code, query, lang="pl"):
     """Zapytanie kategorii -> klikalna lista elementów projektu PS.
     'bezpiecznik 7,5A' / '7,5A' / 'fuse 10A' -> bezpieczniki o tym prądzie,
-    'przekaźnik' / 'relay horn' -> przekaźniki; pozostałe słowa zapytania
-    filtrują po nazwach obwodów/sygnałów/funkcji."""
+    'przekaźnik' / 'relay horn' -> przekaźniki, 'gniazdo 12V' / 'gniazdo NAK'
+    / 'zapalniczka' -> gniazda; pozostałe słowa zapytania filtrują po nazwach
+    obwodów/sygnałów/funkcji i aliasach firmowych."""
     q = (query or "").strip()
     ps = (ps_code or "").strip().upper()
     if not q or not ps:
         return {"ok": False}
     folded = q.translate(_PL_FOLD).upper()
-    cat = ""
+    conn = get_db()
+    cur = conn.cursor()
+    q_toks_all = _circuit_tokens(folded)
+    # tokeny objęte frazą aliasu ('zapalniczka' w 'ZAPALNICZKA -> SOCKET;12V')
+    # zostają filtrem kategorii — inaczej 'zapalniczka' dałaby wszystkie gniazda
+    covered = set()
+    for ptoks in _alias_map(cur):
+        if all(any(_tokens_match(p, t) for t in q_toks_all) for p in ptoks):
+            covered |= {t for t in q_toks_all
+                        if any(_tokens_match(p, t) for p in ptoks)}
+    cats = set()
     rest = folded
     for tok in re.findall(r"[A-Z]+", folded):
         c = _assist_category(tok)
         if c:
-            cat = cat or c
-            rest = re.sub(r"\b" + tok + r"\b", " ", rest)
+            cats.add(c)
+            if tok not in covered:
+                rest = re.sub(r"\b" + tok + r"\b", " ", rest)
+    # kategorie bezpiecznik/przekaźnik wygrywają ze słowem 'gniazdo'
+    # ('gniazdo przekaźnika' -> lista gniazd przekaźników)
+    cat = ("fuse" if "fuse" in cats else
+           "relay" if "relay" in cats else
+           "socket" if "socket" in cats else "")
     # samo '30A' bywa też numerem przewodu — lista tylko gdy są trafienia
     explicit = bool(cat)
     amp = None
@@ -8965,6 +9151,69 @@ def assistant_list(ps_code, query, lang="pl"):
         cat = "fuse"
     if not cat:
         return {"ok": False}
+
+    rest_groups = _query_token_groups(rest, cur)
+
+    if cat == "socket":
+        # Gniazda: urządzenia BOM o funkcji/opisie z 'socket/gniazdo/outlet'
+        # albo z kodem lokalizacji trafionym aliasem ('+NAK' dla 'gniazdo
+        # NAK'). Filtry reszty zapytania (12V, USB, zewnętrzne…) idą przez
+        # grupy tokenów z aliasami firmowymi.
+        _cids, bom_ids = _ps_project_ids(cur, ps)
+        items = []
+        if bom_ids:
+            ph = ",".join("?" for _ in bom_ids)
+            sock_tok = {"SOCKET", "SOCKETS", "OUTLET", "OUTLETS", "JACK",
+                        "GNIAZDO", "GNIAZDKO"}
+            seen = {}
+            for r in cur.execute(f"""
+                    SELECT d.device_code, d.device_clean, d.function,
+                           i.description
+                    FROM zuken_bom_devices d
+                    JOIN zuken_bom_items i ON i.id = d.bom_item_id
+                    WHERE i.project_id IN ({ph});""", bom_ids):
+                code = (r["device_code"] or "").strip()
+                clean = ((r["device_clean"] or "").strip()
+                         or clean_device_code(code) or code)
+                if not clean:
+                    continue
+                func = (r["function"] or "").strip()
+                desc = (r["description"] or "").strip()
+                # tokeny lokalizacji/systemu z pełnego kodu (+NAK-...)
+                code_toks = set(_circuit_tokens(code))
+                hay = func + " " + desc + " " + code
+                ft = set(_circuit_tokens(hay))
+                is_sock = bool(ft & sock_tok)
+                # alias objęty tokenem kodu (np. NAK w '+NAK-G4')
+                code_hit = bool(rest_groups) and any(
+                    len(g) > 1 and (g & code_toks) for g in rest_groups)
+                if not (is_sock or code_hit):
+                    continue
+                # elementy-etykiety BOM ('Generic Label White') to szum
+                if "LABEL" in ft and not (ft & sock_tok):
+                    continue
+                if rest_groups and not _assist_groups_match(
+                        rest_groups, [func, desc, code]):
+                    continue
+                if clean in seen:
+                    continue
+                seen[clean] = True
+                loc_m = re.search(r"\+([A-Z0-9]+)", code)
+                items.append({
+                    "q": clean,
+                    "code": code,
+                    "badge": "+" + loc_m.group(1) if loc_m else "",
+                    "label": func or desc,
+                    "sub": desc if func and desc and desc != func else "",
+                })
+        conn.close()
+        items.sort(key=lambda d: _natural_sort_key(d["q"]))
+        return {"ok": True, "category": "socket", "ps_code": ps,
+                "explicit": True, "rating": "",
+                "filter": " ".join(_circuit_tokens(rest)),
+                "items": items, "total": len(items)}
+
+    conn.close()
 
     if cat == "fuse":
         data = get_ps_fuses(ps, limit=100000, lang=lang)
@@ -8986,9 +9235,9 @@ def assistant_list(ps_code, query, lang="pl"):
             circ = (d.get("circuits") or "").strip()
             if circ.upper() in _ASSIST_GENERIC_LABELS:
                 circ = ""
-            if q_toks and not _assist_text_match(
-                    q_toks, [circ, d.get("description"), d.get("fuse_type"),
-                             d.get("device_clean"), d.get("holder_real_clean"), *sigs]):
+            if rest_groups and not _assist_groups_match(
+                    rest_groups, [circ, d.get("description"), d.get("fuse_type"),
+                                  d.get("device_clean"), d.get("holder_real_clean"), *sigs]):
                 continue
             label = circ or ", ".join(sigs[:4]) or (d.get("description") or "")
             holder = d.get("holder_real_clean") or d.get("holder_clean") or ""
@@ -9016,9 +9265,9 @@ def assistant_list(ps_code, query, lang="pl"):
         sigs = list(dict.fromkeys(
             (c.get("signal_name") or c.get("signal") or "").strip()
             for c in d.get("contacts") or () if (c.get("signal_name") or c.get("signal"))))
-        if q_toks and not _assist_text_match(
-                q_toks, [func, d.get("description"), d.get("relay_type"),
-                         d.get("device_clean"), clean_device_code(d.get("socket_code")), *sigs]):
+        if rest_groups and not _assist_groups_match(
+                rest_groups, [func, d.get("description"), d.get("relay_type"),
+                              d.get("device_clean"), clean_device_code(d.get("socket_code")), *sigs]):
             continue
         sock = clean_device_code(d.get("socket_code")) or ""
         items.append({

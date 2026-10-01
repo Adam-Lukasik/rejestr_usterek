@@ -1817,6 +1817,20 @@
             </div>
             <div id="dict-list-typy" style="display:flex; flex-direction:column; gap:6px; max-height:360px; overflow-y:auto;"></div>
           </div>
+
+          <!-- Nazwy firmowe / aliasy asystenta -->
+          <div class="detail-section-card">
+            <div class="section-card-title">
+              <span data-i18n="ui.dict.listAliases">Nazwy firmowe (aliasy asystenta)</span>
+            </div>
+            <div style="font-size:11px; color:var(--text-muted); margin-bottom:10px;" data-i18n="ui.dict.aliasHint"></div>
+            <div style="display:flex; flex-direction:column; gap:8px; margin-bottom:12px;">
+              <input type="text" id="inp-new-alias" data-i18n-placeholder="ui.dict.aliasPhrasePh" placeholder="np. NAK albo gniazdo przewodowe" onkeydown="if(event.key==='Enter'){event.preventDefault();document.getElementById('inp-new-alias-terms').focus();}">
+              <input type="text" id="inp-new-alias-terms" data-i18n-placeholder="ui.dict.aliasTermsPh" placeholder="np. EJECT AUTO-EJECT SHORELINE" onkeydown="if(event.key==='Enter'){event.preventDefault();addAliasItem();}">
+              <button class="btn-primary-action" onclick="addAliasItem()" data-i18n="ui.dict.btnAdd">+ Dodaj</button>
+            </div>
+            <div id="dict-list-aliasy" style="display:flex; flex-direction:column; gap:6px; max-height:300px; overflow-y:auto;"></div>
+          </div>
         </div>
       </div>
     </section>
@@ -6170,6 +6184,55 @@ function renderDictionaries() {
       </div>
     `).join('');
   }
+
+  renderAliases();
+}
+
+// Nazwy firmowe / aliasy asystenta (tabela zuken_query_aliases + wbudowane)
+async function renderAliases() {
+  const box = document.getElementById('dict-list-aliasy');
+  if (!box) return;
+  let rows = [];
+  try {
+    rows = (await apiCall('/api/zuken/aliases')).aliases || [];
+  } catch (e) { rows = []; }
+  box.innerHTML = rows.map(a => `
+    <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 10px; background:var(--bg-card-subtle); border:1px solid var(--border); border-radius:var(--radius-md);">
+      <div style="min-width:0; overflow:hidden;">
+        <b style="font-size:12.5px; color:var(--text-main);">${escapeHtml(a.phrase)}</b>
+        <span style="font-size:11.5px; color:var(--text-muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="${escapeHtml(a.terms)}"> → ${escapeHtml(a.terms)}</span>
+      </div>
+      ${a.builtin
+        ? `<span class="tag-project" style="font-size:10px; flex-shrink:0;">${escapeHtml(t('ui.dict.aliasBuiltin'))}</span>`
+        : `<button class="btn-secondary-action" style="padding:2px 6px; font-size:11px; color:var(--red); flex-shrink:0;" onclick="deleteAliasItem('${escapeHtml(a.phrase).replace(/'/g, "\\'")}')">✕</button>`}
+    </div>`).join('');
+}
+
+async function addAliasItem() {
+  const inpP = document.getElementById('inp-new-alias');
+  const inpT = document.getElementById('inp-new-alias-terms');
+  const phrase = (inpP.value || '').trim();
+  const terms = (inpT.value || '').trim();
+  if (!phrase || !terms) return;
+  try {
+    await apiCall('/api/zuken/aliases', 'POST', { phrase, terms });
+    inpP.value = ''; inpT.value = '';
+    showToast(t('ui.dict.aliasAdded'), 'success');
+    renderAliases();
+  } catch (e) {
+    showToast(e.message, 'error');
+  }
+}
+
+async function deleteAliasItem(phrase) {
+  if (!confirm(t('ui.dict.confirmDeleteItem', { v: phrase }))) return;
+  try {
+    await apiCall('/api/zuken/aliases', 'DELETE', { phrase });
+    showToast(t('ui.dict.aliasRemoved'), 'success');
+    renderAliases();
+  } catch (e) {
+    showToast(e.message, 'error');
+  }
 }
 
 async function addDictionaryItem(key, inputId) {
@@ -7569,7 +7632,8 @@ function assistListCardHtml(lst) {
   const items = lst.items || [];
   if (!items.length && !lst.explicit) return '';
   const isFuse = lst.category === 'fuse';
-  const title = t(isFuse ? 'js.zuken.listFuses' : 'js.zuken.listRelays')
+  const title = t(lst.category === 'fuse' ? 'js.zuken.listFuses'
+    : lst.category === 'socket' ? 'js.zuken.listSockets' : 'js.zuken.listRelays')
     + (lst.rating ? ' ' + lst.rating : '') + (lst.filter ? ` · „${lst.filter}”` : '');
   const rows = items.map(it => `<div class="ent-link-row" data-ent-q="${escapeHtml(it.q)}" title="${escapeHtml(t('js.zuken.entLinkTitle', { v: it.q }))}">
       <span class="ent-row-code">${escapeHtml(it.q)}</span>
@@ -7579,7 +7643,7 @@ function assistListCardHtml(lst) {
     </div>`).join('');
   return `<div id="zuken-assist-list" style="padding:12px 16px; background:linear-gradient(135deg, rgba(217,119,6,0.08), rgba(2,132,199,0.05)); border:1px solid rgba(217,119,6,0.35); border-radius:var(--radius-md);">
     <div style="display:flex; justify-content:space-between; align-items:baseline; gap:8px; flex-wrap:wrap; margin-bottom:8px;">
-      <div style="font-size:12px; font-weight:800; color:#b45309; text-transform:uppercase; letter-spacing:0.5px;">${isFuse ? '⏛' : '🔁'} ${escapeHtml(title)} <span style="color:var(--text-muted); font-weight:700;">(${items.length})</span></div>
+      <div style="font-size:12px; font-weight:800; color:#b45309; text-transform:uppercase; letter-spacing:0.5px;">${isFuse ? '⏛' : (lst.category === 'socket' ? '🔌' : '🔁')} ${escapeHtml(title)} <span style="color:var(--text-muted); font-weight:700;">(${items.length})</span></div>
       <div style="font-size:11px; color:var(--text-muted);">${escapeHtml(items.length ? t('js.zuken.listHint') : t('js.zuken.listEmpty', { ps: lst.ps_code || '' }))}</div>
     </div>
     ${rows ? `<div style="display:flex; flex-direction:column; gap:4px;">${rows}</div>` : ''}
@@ -11427,8 +11491,12 @@ function circuitSvgForLoad(ld, connMeta, opts) {
       const dash = (internal && !axis) ? ' stroke-dasharray="5 3"' : '';
       svg += `<line x1="${cx + boxW / 2}" y1="${yPrev}" x2="${cx + boxW / 2}" y2="${yCur}" stroke="${stroke}" stroke-width="${(internal && !axis) ? 1.6 : 2.4}"${dash}/>`;
       const lbl = axis ? '' : edgeLabel(h);
-      // etykiety rysowane na końcu (nad odnogami), z obwódką w kolorze tła
-      if (lbl) edgeLbls += `<text x="${cx + boxW / 2 + 8}" y="${(yPrev + yCur) / 2 + 3}" font-size="9.5" fill="${internal ? '#d97706' : 'var(--text-main, #0f172a)'}" font-family="monospace" paint-order="stroke" stroke="var(--bg-card, #fff)" stroke-width="3" stroke-linejoin="round">${escapeHtml(lbl)}</text>`;
+      // etykiety rysowane na końcu (nad odnogami), z obwódką w kolorze tła.
+      // Etykieta przewodu/aparatu jest klikalna — prowadzi do jego obwodu
+      // (numer przewodu / sygnał, przy krawędziach wewnętrznych — aparat)
+      const lblQ = internal ? ((h.internal_label || '').split(' ')[0] || '')
+                            : (h.wire_number || h.signal || '');
+      if (lbl) edgeLbls += `<text ${lblQ ? `class="ent-link" data-ent-q="${escapeHtml(lblQ)}" style="cursor:pointer" fill="#0284c7"` : `fill="${internal ? '#d97706' : 'var(--text-main, #0f172a)'}"`} x="${cx + boxW / 2 + 8}" y="${(yPrev + yCur) / 2 + 3}" font-size="9.5" font-family="monospace" paint-order="stroke" stroke="var(--bg-card, #fff)" stroke-width="3" stroke-linejoin="round">${lblQ ? `<title>${escapeHtml(t('js.zuken.entLinkTitle', { v: lblQ }))}</title>` : ''}${escapeHtml(lbl)}</text>`;
     }
     const rs = roleStyle[nd.role] || roleStyle[''];
     const fill = nd.role === 'gnd' ? '#1e293b' : 'var(--bg-card, #fff)';
@@ -11437,11 +11505,12 @@ function circuitSvgForLoad(ld, connMeta, opts) {
     const pinFrac = nd.pin ? (nd._lay ? `${nd.pin}/${nd._lay.n}` : (cm.pins ? `${nd.pin}/${cm.pins}` : '')) : '';
     const devSfx = (nd.dev || '').split('-').pop() || nd.clean;
     const ownSfx = devSfx;
-    // złącze z zestawienia bez rysunku też otwiera okno (przewody + pinout)
-    const canFace = !!nd._lay || !!(nd.pin && (cm.article || cm.desc || (cm.halves && Object.keys(cm.halves).length)));
+    // każdy węzeł z pinem otwiera okno (zestawienie lub przewody + pinout)
+    const canFace = !!nd.pin;
     if (nd._splice) {
       const hm = hopMeta[nd.dev + ':' + nd.pin] || {};
       const ccx = cx + boxW / 2, ccy = y + SPLICE_R;
+      svg += `<g class="ent-link" data-ent-q="${escapeHtml(ownSfx)}" style="cursor:pointer"><title>${escapeHtml(t('js.zuken.entLinkTitle', { v: ownSfx }))}</title>`;
       svg += `<circle cx="${ccx}" cy="${ccy}" r="${SPLICE_R}" fill="var(--bg-card, #fff)" stroke="${rs.stroke}" stroke-width="2"/>`;
       svg += `<circle cx="${ccx}" cy="${ccy}" r="3.5" fill="${rs.stroke}"/>`;
       // opis obok okręgu — nad odnogami, z obwódką w kolorze tła
@@ -11451,6 +11520,7 @@ function circuitSvgForLoad(ld, connMeta, opts) {
       if (info) edgeLbls += `<text x="${ccx + SPLICE_R + 7}" y="${ccy + 10}" font-size="9" fill="var(--text-muted, #64748b)" ${halo}>${escapeHtml(info.slice(0, 46))}</text>`;
       const rwS = rwTitles[(nd.clean || '').toUpperCase()];
       if (rwS) svg += `<text x="${ccx - SPLICE_R - 16}" y="${ccy + 4}" font-size="11" style="cursor:help">🔧<title>${escapeHtml(t('ui.reworks.badgeTitle'))}: ${escapeHtml(rwS.join(' | '))}</title></text>`;
+      svg += '</g>';
       return;
     }
     if (nd._relay) {
@@ -11458,6 +11528,7 @@ function circuitSvgForLoad(ld, connMeta, opts) {
       // styku od góry, przechodzi przez otwarty styk i wychodzi dołem;
       // obok prostokąt cewki z pinami sterowania na prawej krawędzi
       const rl = nd._relay, hgt = nodeH[i], axm = cx + boxW / 2;
+      svg += `<g class="ent-link" data-ent-q="${escapeHtml(nd.clean)}" style="cursor:pointer"><title>${escapeHtml(t('js.zuken.entLinkTitle', { v: nd.clean }))}</title>`;
       const pinOf = s => (rl.pin_names || {})[s.dev + '|' + s.pin] || s.pin || '';
       const pinA = pinOf(rl.a), pinB = pinOf(rl.b);
       svg += `<rect x="${x}" y="${y}" width="${boxW}" height="${hgt}" rx="7" fill="var(--bg-card, #fff)" stroke="${rs.stroke}" stroke-width="2"/>`;
@@ -11487,6 +11558,7 @@ function circuitSvgForLoad(ld, connMeta, opts) {
           if (cpins[k]) svg += `<text x="${crx + crw + 3}" y="${py + 3}" font-size="8" fill="#0891b2" font-family="monospace">${escapeHtml(cpins[k])}</text>`;
         });
       }
+      svg += '</g>';
       return;
     }
     if (canFace)
@@ -11564,7 +11636,7 @@ function circuitSvgForLoad(ld, connMeta, opts) {
     const eLay = e.pin ? connFaceLayout(connHalfInfo(connMeta, e.clean, eSfx)) : null;
     svg += eLay
       ? `<g style="cursor:pointer" onclick="showConnFace(this, event)" data-clean="${escapeHtml(e.clean)}" data-dev="${escapeHtml(eSfx)}" data-mate="" data-pin="${escapeHtml(e.pin)}"><title>${escapeHtml(t('js.zuken.connViewTitle') + '\n' + tip + '\n' + t('js.zuken.ctrlClickHint'))}</title>`
-      : `<g><title>${escapeHtml(tip)}</title>`;
+      : `<g class="ent-link" data-ent-q="${escapeHtml(eSfx)}" style="cursor:pointer"><title>${escapeHtml(tip + '\n' + t('js.zuken.entLinkTitle', { v: eSfx }))}</title>`;
     svg += `<rect x="${stubX}" y="${y - 15}" width="${stubW}" height="30" rx="6" fill="var(--bg-card, #fff)" stroke="${rm.color}" stroke-width="1.4" stroke-dasharray="3 2"/>`;
     svg += `<text x="${stubX + 7}" y="${y - 1}" font-size="10" font-weight="700" fill="${rm.color}" font-family="monospace">${rm.icon} ${escapeHtml(stubTitle.slice(0, 40))}</text>`;
     const sub = (ml && e.role === 'source')

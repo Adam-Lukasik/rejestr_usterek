@@ -3089,6 +3089,28 @@ def api_zuken_assist_list():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/zuken/aliases", methods=["GET", "POST", "DELETE"])
+def api_zuken_aliases():
+    """Nazwy firmowe/robocze dla asystenta ('gniazdo NAK' -> EJECT/SHORELINE).
+    GET: wbudowane + użytkownika; POST {phrase, terms}: dodaj/nadpisz;
+    DELETE {phrase}: usuń własny."""
+    try:
+        if request.method == "GET":
+            return jsonify(zuken_service.list_query_aliases())
+        data = request.get_json() or {}
+        phrase = (data.get("phrase") or "").strip()
+        if not phrase:
+            return jsonify({"error": smsg("psQRequired")}), 400
+        if request.method == "DELETE":
+            return jsonify(zuken_service.delete_query_alias(phrase))
+        terms = (data.get("terms") or "").strip()
+        if not terms:
+            return jsonify({"error": smsg("psQRequired")}), 400
+        return jsonify(zuken_service.upsert_query_alias(phrase, terms))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/api/zuken/known-devices", methods=["GET"])
 def api_zuken_known_devices():
     """Kody aparatów projektu PS — do linkowania kodów w odpowiedziach asystenta."""

@@ -416,7 +416,14 @@ const TRANSLATIONS = {
         alreadyExistsType: "Typ \"{v}\" jest już na liście i został wybrany.",
         alreadyExistsClient: "Klient \"{v}\" jest już na liście i został wybrany.",
         alreadyExistsModel: "Model \"{v}\" jest już na liście i został wybrany.",
-        saveError: "Błąd zapisu: {v}"
+        saveError: "Błąd zapisu: {v}",
+        listAliases: "Nazwy firmowe (aliasy asystenta)",
+        aliasHint: "Hasło wpisywane w asystencie → słowa, po których szukać w danych Zuken. „;” dzieli na osobne wymagane części.",
+        aliasPhrasePh: "np. NAK albo gniazdo przewodowe",
+        aliasTermsPh: "np. EJECT AUTO-EJECT SHORELINE",
+        aliasBuiltin: "wbudowana",
+        aliasAdded: "Alias dodany!",
+        aliasRemoved: "Alias usunięty"
       },
       users: {
         pageTitle: "Użytkownicy i Uprawnienia",
@@ -1158,6 +1165,7 @@ const TRANSLATIONS = {
         ctrlClickHint: "Ctrl+klik — od razu obwód tego elementu",
         listFuses: "Bezpieczniki",
         listRelays: "Przekaźniki",
+        listSockets: "Gniazda",
         listHint: "Kliknij pozycję, aby pokazać jej obwód",
         listEmpty: "Brak elementów spełniających kryteria w projekcie {ps}",
         btnCircuitTitle: "Tor zasilania + masa + rozgałęzienia dla wpisanego obwodu",
@@ -1643,7 +1651,14 @@ const TRANSLATIONS = {
         alreadyExistsType: "Type \"{v}\" is already on the list and has been selected.",
         alreadyExistsClient: "Client \"{v}\" is already on the list and has been selected.",
         alreadyExistsModel: "Model \"{v}\" is already on the list and has been selected.",
-        saveError: "Save error: {v}"
+        saveError: "Save error: {v}",
+        listAliases: "Company terms (assistant aliases)",
+        aliasHint: "Term typed into the assistant → words to search for in the Zuken data. \";\" splits into separate required parts.",
+        aliasPhrasePh: "e.g. NAK or shore socket",
+        aliasTermsPh: "e.g. EJECT AUTO-EJECT SHORELINE",
+        aliasBuiltin: "built-in",
+        aliasAdded: "Alias added!",
+        aliasRemoved: "Alias removed"
       },
       users: {
         pageTitle: "Users & Permissions",
@@ -2385,6 +2400,7 @@ const TRANSLATIONS = {
         ctrlClickHint: "Ctrl+click — go straight to this element's circuit",
         listFuses: "Fuses",
         listRelays: "Relays",
+        listSockets: "Sockets",
         listHint: "Click an item to show its circuit",
         listEmpty: "No matching items in project {ps}",
         btnCircuitTitle: "Supply path + ground + branches for the entered circuit",
@@ -2869,7 +2885,14 @@ const TRANSLATIONS = {
         alreadyExistsType: "Typ \"{v}\" ist bereits in der Liste und wurde ausgewählt.",
         alreadyExistsClient: "Kunde \"{v}\" ist bereits in der Liste und wurde ausgewählt.",
         alreadyExistsModel: "Modell \"{v}\" ist bereits in der Liste und wurde ausgewählt.",
-        saveError: "Speicherfehler: {v}"
+        saveError: "Speicherfehler: {v}",
+        listAliases: "Firmenbegriffe (Assistenten-Aliase)",
+        aliasHint: "Begriff im Assistenten → Begriffe für die Suche in den Zuken-Daten. „;“ trennt in eigene Pflichtteile.",
+        aliasPhrasePh: "z. B. NAK oder Außensteckdose",
+        aliasTermsPh: "z. B. EJECT AUTO-EJECT SHORELINE",
+        aliasBuiltin: "eingebaut",
+        aliasAdded: "Alias hinzugefügt!",
+        aliasRemoved: "Alias entfernt"
       },
       users: {
         pageTitle: "Benutzer & Berechtigungen",
@@ -3611,6 +3634,7 @@ const TRANSLATIONS = {
         ctrlClickHint: "Strg+Klick — direkt zum Stromkreis dieses Elements",
         listFuses: "Sicherungen",
         listRelays: "Relais",
+        listSockets: "Steckdosen",
         listHint: "Eintrag anklicken, um seinen Stromkreis anzuzeigen",
         listEmpty: "Keine passenden Elemente im Projekt {ps}",
         btnCircuitTitle: "Versorgungspfad + Masse + Abzweige für den eingegebenen Stromkreis",
