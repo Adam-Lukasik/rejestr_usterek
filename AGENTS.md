@@ -74,6 +74,8 @@ Wersja wielojęzykowa: `SUPPORTED_LANGS = ("pl", "en", "de")`, tłumaczenia w
   Nowe rodziny dodawać tylko ze zweryfikowaną numeracją (rysunek katalogowy/zdjęcie
   od Adama); niepewny kierunek → `unverified: true` (ostrzeżenie w oknie złącza).
   Typ bez rysunku: węzeł i tak klikalny — okno pokazuje przewody i pinout.
+  Wariant obrysu: `CONN_LEVER_ARTS` = artykuły z blokadą dźwigniową
+  (rama Π + ramiona ze sworzniami; VAG 4H0 906 231 / osłona 1-968321-2, X168).
   Podgląd SVG bez UI: wyciągnąć funkcje z HTML-a w node i zrzut przez headless Edge.
 
 - Klikalność w asystencie: `entLink(q, label)` (jawny link) i `entText(raw)` (escape +
