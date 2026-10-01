@@ -2708,7 +2708,7 @@ def api_zuken_bom_image(filename):
             return jsonify({"error": smsg("photoNotFound")}), 404
 
         response = send_from_directory(img_dir, clean_name)
-        response.headers["Cache-Control"] = "public, max-age=86400"
+        response.headers["Cache-Control"] = "no-cache"
         return response
     except Exception as e:
         return jsonify({"error": str(e)}), 500

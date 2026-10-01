@@ -10664,7 +10664,7 @@ function connFaceSvg(L, pin, opt) {
   // narożne, dźwignia po prawej stronie korpusu
   const midBand = lever && L.rows === 4 && L.cols === 10;
   const cw = mini ? 13 : (midBand ? 26 : 30), ch = mini ? 10 : (midBand ? 26 : 24), pad = mini ? 3 : 7;
-  const padX = midBand ? (mini ? 9 : 20) : pad, padY = midBand ? (mini ? 4 : 14) : pad;
+  const padX = midBand ? (mini ? 9 : 14) : pad, padY = midBand ? (mini ? 4 : 14) : pad;
   const bandH = midBand ? (mini ? 7 : Math.round(ch * 1.2)) : 0;
   const botEx = midBand ? (mini ? 3.5 : 8) : 0; // miejsce na wypusty pod korpusem
   const latchH = L.fam === 'TBP' ? (mini ? 0 : 16) : lever ? (mini ? 4 : 8) : (mini ? 6 : 13);
@@ -10800,9 +10800,10 @@ function connFaceSvg(L, pin, opt) {
         s += `<line x1="${rcx + rcW * k / 4}" y1="${ry + 0.8}" x2="${rcx + rcW * k / 4}" y2="${ry + rcH - 0.8}" stroke="var(--border,#94a3b8)" stroke-width="0.7"/>`;
     });
     if (midBand) {
-      // kołki/wypusty przy narożnikach obudowy (para przy każdym rogu)
+      // prowadnice przy krawędziach: po dwie z lewej strony, po jednej z prawej
+      // (u góry i u dołu — jak na zdjęciu czoła wtyku)
       const prW = mini ? 2.5 : 5, prH = mini ? 3 : 7;
-      [4, padX + cw * 0.8 - prW / 2, bodyR - padX - cw * 0.8 - prW / 2, bodyR - 4 - prW].forEach(px => {
+      [4, padX + cw * 0.9, bodyR - 4 - prW].forEach(px => {
         s += `<rect x="${px}" y="${boxY - prH + 1}" width="${prW}" height="${prH}" rx="1" fill="var(--bg-card,#fff)" stroke="var(--border,#94a3b8)" stroke-width="1"/>`;
         s += `<rect x="${px}" y="${boxY + bodyH - 1}" width="${prW}" height="${prH}" rx="1" fill="var(--bg-card,#fff)" stroke="var(--border,#94a3b8)" stroke-width="1"/>`;
       });
@@ -10824,13 +10825,6 @@ function connFaceSvg(L, pin, opt) {
     const sy = boxY + padY + 2 * ch + (bandH - sh) / 2;
     [padX + cw * 0.9, padX + cw * 5.9].forEach(sx =>
       s += `<rect x="${sx}" y="${sy}" width="${sw}" height="${sh}" rx="${sh / 2}" fill="var(--bg-card-subtle,#e2e8f0)" stroke="var(--border,#94a3b8)" stroke-width="1"/>`);
-    // wytłoczone numery skrajnych komór każdego rzędu (jak na obudowie)
-    const fs = mini ? 5 : 8;
-    for (let r = 0; r < L.rows; r++) {
-      const yc = cellY(r) + ch / 2 + fs * 0.36;
-      s += `<text x="${padX - 9}" y="${yc}" text-anchor="middle" font-size="${fs}" font-weight="600" fill="var(--text-muted,#64748b)" font-family="monospace">${connFacePinAt(L, r, 0)}</text>`;
-      s += `<text x="${padX + L.cols * cw + 9}" y="${yc}" text-anchor="middle" font-size="${fs}" font-weight="600" fill="var(--text-muted,#64748b)" font-family="monospace">${connFacePinAt(L, r, L.cols - 1)}</text>`;
-    }
   }
   for (let r = 0; r < L.rows; r++)
     for (let c = 0; c < L.cols; c++) {

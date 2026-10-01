@@ -1027,10 +1027,20 @@ def sanitize_article_code(code):
     return sanitized
 
 
+def _bom_image_url(fname, full_path):
+    """URL zdjęcia z parametrem wersji po mtime pliku — podmiana zdjęcia
+    zmienia URL, więc WebView2 nie poda starego obrazu z cache."""
+    try:
+        v = int(os.path.getmtime(full_path))
+    except OSError:
+        v = 0
+    return f"/api/zuken/bom/image/{fname}?v={v}"
+
+
 def find_local_component_image(article_number):
     """
     Sprawdza, czy w katalogu Baza wiedzy/zdjecia_komponentow/ istnieje zdjęcie dla artykułu.
-    Zwraca ścieżkę względną URL (/api/zuken/bom/image/<filename>) lub None.
+    Zwraca ścieżkę względną URL (/api/zuken/bom/image/<filename>?v=<mtime>) lub None.
     """
     if not article_number:
         return None
@@ -1043,14 +1053,14 @@ def find_local_component_image(article_number):
         candidate = f"{sanitized}{ext}"
         full_path = os.path.join(BOM_IMAGES_DIR, candidate)
         if os.path.isfile(full_path):
-            return f"/api/zuken/bom/image/{candidate}"
+            return _bom_image_url(candidate, full_path)
 
     # Sprawdź też dokładną nazwę w katalogu (case-insensitive)
     try:
         for fname in os.listdir(BOM_IMAGES_DIR):
             name_without_ext, ext = os.path.splitext(fname)
             if name_without_ext.lower() == sanitized.lower() and ext.lower() in [".jpg", ".jpeg", ".png", ".webp", ".svg", ".gif"]:
-                return f"/api/zuken/bom/image/{fname}"
+                return _bom_image_url(fname, os.path.join(BOM_IMAGES_DIR, fname))
     except Exception:
         pass
 
@@ -1537,7 +1547,7 @@ def save_component_image(article_number, image_bytes, ext="jpg", lang="pl"):
     with open(target_path, "wb") as f:
         f.write(opt_bytes)
 
-    local_url = f"/api/zuken/bom/image/{filename}"
+    local_url = _bom_image_url(filename, target_path)
 
     conn = get_db()
     cur = conn.cursor()
@@ -1802,7 +1812,7 @@ def download_and_optimize_component_image(article_number, image_source, lang="pl
     with open(target_path, "wb") as f:
         f.write(opt_bytes)
 
-    local_url = f"/api/zuken/bom/image/{filename}"
+    local_url = _bom_image_url(filename, target_path)
 
     # Aktualizacja bazy SQLite
     conn = get_db()
@@ -8488,8 +8498,8 @@ def get_ps_connectors(ps_code, search="", system_filter="", limit=100, offset=0,
     for r in rows:
         d = dict(r)
         d["pins"] = json.loads(d.get("pins_json") or "[]")
-        if not d.get("image_url") and d.get("article_number"):
-            d["image_url"] = find_local_component_image(d.get("article_number")) or ""
+        if d.get("article_number"):
+            d["image_url"] = find_local_component_image(d["article_number"]) or d.get("image_url") or ""
         rw = rework_map.get((d.get("device_clean") or d.get("device_code") or "").upper()) or []
         d["reworks"] = [{"id": x["id"], "title": x["title"], "status": x["status"],
                          "pin_changes": x["pin_changes"]} for x in rw]
@@ -9728,8 +9738,8 @@ def get_ps_relays(ps_code, search="", limit=100, offset=0, lang="pl"):
     for r in rows:
         d = dict(r)
         d["contacts"] = json.loads(d.get("contacts_json") or "[]")
-        if not d.get("image_url") and d.get("article_number"):
-            d["image_url"] = find_local_component_image(d.get("article_number")) or ""
+        if d.get("article_number"):
+            d["image_url"] = find_local_component_image(d["article_number"]) or d.get("image_url") or ""
         d["system_desc"] = _gdesc(d.get("system"))
         d["location_desc"] = _gdesc(d.get("location"))
         d["system_desc_en"] = _gdesc(d.get("system"), "desc_en")
