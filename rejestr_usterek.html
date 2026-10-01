@@ -10660,13 +10660,14 @@ function connFaceSvg(L, pin, opt) {
   const cw = mini ? 13 : 30, ch = mini ? 10 : 24, pad = mini ? 3 : 7;
   const lever = !!L.lever;
   // kostka zaciskowa: bez zatrzasku; w pełnym widoku nad otworami rząd śrub zacisków
-  // obudowa dźwigniowa (VAG MQS): wyższa ramka dźwigni + miejsce na prowadnice boczne
-  const latchH = L.fam === 'TBP' ? (mini ? 0 : 16) : lever ? (mini ? 9 : 21) : (mini ? 6 : 13);
-  const gx = lever ? (mini ? 4 : 8) : 0;
-  const W = pad * 2 + L.cols * cw + gx * 2, H = latchH + pad * 2 + L.rows * ch;
+  // obudowa dźwigniowa (VAG MQS 40p, np. 4H0 906 231): dźwignia po prawej stronie
+  // korpusu + wypusty prowadnic na środku krawędzi górnej i dolnej (zdjęcie wtyku)
+  const latchH = L.fam === 'TBP' ? (mini ? 0 : 16) : lever ? (mini ? 4 : 7) : (mini ? 6 : 13);
+  const lvW = lever ? (mini ? 11 : 26) : 0;
+  const W = pad * 2 + L.cols * cw + lvW, H = latchH + pad * 2 + L.rows * ch;
   const latchTop = L.gender !== 'M'; // męska rysowana obrócona o 180°
   const boxY = latchTop ? Math.max(latchH, 1) : 1, latchY = latchTop ? 1 : H - latchH + 2;
-  const pivY = boxY + (H - latchH - 1) * 0.62; // sworznie dźwigni
+  const bodyR = W - 1 - lvW, bodyH = H - latchH - 1; // prawa krawędź i wysokość korpusu
   const nest = opt.nested ? `x="${opt.x || 0}" y="${opt.y || 0}" width="${opt.width || W}" height="${opt.height || H}"` : '';
   const lw = mini ? 20 : 48;
   let s = `<svg ${nest} viewBox="0 0 ${W} ${H}" style="${mini ? '' : 'width:100%; '}display:block;" xmlns="http://www.w3.org/2000/svg">`;
@@ -10781,33 +10782,33 @@ function connFaceSvg(L, pin, opt) {
       s += `<circle cx="${sx}" cy="${sy}" r="${sr}" fill="var(--bg-card-subtle,#e2e8f0)" stroke="${hot ? '#0284c7' : 'var(--border,#94a3b8)'}" stroke-width="${hot ? 2 : 1}"/>`;
       s += `<line x1="${sx - sr + 2}" y1="${sy}" x2="${sx + sr - 2}" y2="${sy}" stroke="${hot ? '#0284c7' : 'var(--text-muted,#64748b)'}" stroke-width="1.4"/>`;
     }
-  } else if (latchH) {
-    if (lever) {
-      // dźwignia blokująca: rama Π — poprzeczka nad korpusem + ramiona
-      // opadające po bokach do sworzni (jak na wtyku VAG 4H0 906 231 —
-      // zdjęcie od czoła; od strony przewodów symetryczna w poziomie)
-      const fh = latchH - 3;
-      s += `<rect x="0.5" y="${latchY}" width="${W - 1}" height="${fh}" rx="${mini ? 2 : 4}" fill="var(--bg-card-subtle,#e2e8f0)" stroke="var(--border,#94a3b8)" stroke-width="1.2"/>`;
-      const iw = W - gx * 2 - (mini ? 8 : 30), ih = fh - (mini ? 3 : 7);
-      s += `<rect x="${W / 2 - iw / 2}" y="${latchY + (fh - ih) / 2}" width="${iw}" height="${ih}" rx="2" fill="var(--bg-card,#fff)" stroke="var(--border,#94a3b8)" stroke-width="0.8"/>`;
-      [0.5, W - gx - 0.5].forEach(rx => {
-        s += `<rect x="${rx}" y="${latchY + fh - 2}" width="${gx + 1}" height="${pivY - latchY - fh + 2}" rx="2" fill="var(--bg-card,#fff)" stroke="var(--border,#94a3b8)" stroke-width="1"/>`;
-      });
-    } else {
-      s += `<rect x="${W / 2 - lw / 2}" y="${latchY}" width="${lw}" height="${latchH - 3}" rx="3" fill="var(--bg-card-subtle,#e2e8f0)" stroke="var(--border,#94a3b8)"/>`;
-    }
+  } else if (latchH && !lever) {
+    s += `<rect x="${W / 2 - lw / 2}" y="${latchY}" width="${lw}" height="${latchH - 3}" rx="3" fill="var(--bg-card-subtle,#e2e8f0)" stroke="var(--border,#94a3b8)"/>`;
   }
   if (lever) {
-    // sworznie dźwigni — na końcach ramion, po bokach korpusu
-    [1 + gx / 2, W - gx - 1 + gx / 2].forEach(px =>
-      s += `<circle cx="${px}" cy="${pivY}" r="${mini ? 2 : 4.5}" fill="var(--bg-card-subtle,#e2e8f0)" stroke="var(--border,#94a3b8)" stroke-width="1"/>`);
+    // wypusty prowadnic na środku krawędzi górnej i dolnej korpusu (ząbkowane listwy)
+    const rcW = mini ? 16 : 40, rcH = mini ? 2.5 : 5.5, rcx = 1 + (bodyR - 1) / 2 - rcW / 2;
+    [boxY - rcH + 1.5, boxY + bodyH - 1.5].forEach(ry => {
+      s += `<rect x="${rcx}" y="${ry}" width="${rcW}" height="${rcH}" rx="1.5" fill="var(--bg-card-subtle,#e2e8f0)" stroke="var(--border,#94a3b8)" stroke-width="1"/>`;
+      for (let k = 1; k < 4; k++)
+        s += `<line x1="${rcx + rcW * k / 4}" y1="${ry + 0.8}" x2="${rcx + rcW * k / 4}" y2="${ry + rcH - 0.8}" stroke="var(--border,#94a3b8)" stroke-width="0.7"/>`;
+    });
   }
-  s += `<rect x="${1 + gx}" y="${boxY}" width="${W - 2 - gx * 2}" height="${H - latchH - 1}" rx="4" fill="var(--bg-card,#fff)" stroke="var(--border,#94a3b8)" stroke-width="1.2"/>`;
+  s += `<rect x="1" y="${boxY}" width="${W - 2 - lvW}" height="${bodyH}" rx="4" fill="var(--bg-card,#fff)" stroke="var(--border,#94a3b8)" stroke-width="1.2"/>`;
+  if (lever) {
+    // dźwignia: otwarta rama wysunięta w prawo od korpusu + sworznie
+    const fy = boxY + bodyH * 0.1, fh = bodyH * 0.8, fw = lvW - 5;
+    s += `<rect x="${bodyR}" y="${fy}" width="${fw}" height="${fh}" rx="${mini ? 2 : 4}" fill="var(--bg-card,#fff)" stroke="var(--border,#94a3b8)" stroke-width="1.2"/>`;
+    const iw = fw - (mini ? 4 : 9), ih = fh - (mini ? 8 : 16);
+    s += `<rect x="${bodyR + (fw - iw) / 2}" y="${fy + (fh - ih) / 2}" width="${iw}" height="${ih}" rx="2" fill="none" stroke="var(--border,#94a3b8)" stroke-width="0.8"/>`;
+    [fy + fh * 0.12, fy + fh * 0.88].forEach(py =>
+      s += `<circle cx="${bodyR}" cy="${py}" r="${mini ? 1.8 : 4}" fill="var(--bg-card-subtle,#e2e8f0)" stroke="var(--border,#94a3b8)" stroke-width="1"/>`);
+  }
   for (let r = 0; r < L.rows; r++)
     for (let c = 0; c < L.cols; c++) {
       const p = connFacePinAt(L, r, c);
       const hot = pinSet.has(String(p));
-      const x = gx + pad + c * cw, y = boxY + pad + r * ch;
+      const x = pad + c * cw, y = boxY + pad + r * ch;
       if (L.fam === 'CIRC7') {
         if (p === '') continue; // puste narożniki siatki — nie istnieją fizycznie
         const cx = x + cw / 2, cy = y + ch / 2, rad = Math.min(cw, ch) * 0.34;
