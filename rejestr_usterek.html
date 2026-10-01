@@ -10657,17 +10657,23 @@ function connFaceSvg(L, pin, opt) {
   opt = opt || {};
   const mini = !!opt.mini;
   const pinSet = new Set([].concat(pin == null ? [] : pin).map(String));
-  const cw = mini ? 13 : 30, ch = mini ? 10 : 24, pad = mini ? 3 : 7;
   const lever = !!L.lever;
-  // kostka zaciskowa: bez zatrzasku; w pełnym widoku nad otworami rząd śrub zacisków
-  // obudowa dźwigniowa (VAG MQS 40p, np. 4H0 906 231): dźwignia po prawej stronie
-  // korpusu + wypusty prowadnic na środku krawędzi górnej i dolnej (zdjęcie wtyku)
-  const latchH = L.fam === 'TBP' ? (mini ? 0 : 16) : lever ? (mini ? 4 : 7) : (mini ? 6 : 13);
+  // obudowa dźwigniowa (VAG MQS 40p, np. 4H0 906 231 — wg zdjęcia wtyku):
+  // kwadratowy rastr gniazd, dwa banki pinów rozdzielone pasem z długimi
+  // szczelinami prowadnic, numery rzędów na marginesach bocznych, wypusty
+  // narożne, dźwignia po prawej stronie korpusu
+  const midBand = lever && L.rows === 4 && L.cols === 10;
+  const cw = mini ? 13 : (midBand ? 26 : 30), ch = mini ? 10 : (midBand ? 26 : 24), pad = mini ? 3 : 7;
+  const padX = midBand ? (mini ? 9 : 20) : pad, padY = midBand ? (mini ? 4 : 14) : pad;
+  const bandH = midBand ? (mini ? 7 : Math.round(ch * 1.2)) : 0;
+  const botEx = midBand ? (mini ? 3.5 : 8) : 0; // miejsce na wypusty pod korpusem
+  const latchH = L.fam === 'TBP' ? (mini ? 0 : 16) : lever ? (mini ? 4 : 8) : (mini ? 6 : 13);
   const lvW = lever ? (mini ? 11 : 26) : 0;
-  const W = pad * 2 + L.cols * cw + lvW, H = latchH + pad * 2 + L.rows * ch;
+  const W = padX * 2 + L.cols * cw + lvW, H = latchH + padY * 2 + L.rows * ch + bandH + botEx;
   const latchTop = L.gender !== 'M'; // męska rysowana obrócona o 180°
-  const boxY = latchTop ? Math.max(latchH, 1) : 1, latchY = latchTop ? 1 : H - latchH + 2;
-  const bodyR = W - 1 - lvW, bodyH = H - latchH - 1; // prawa krawędź i wysokość korpusu
+  const boxY = (lever || latchTop) ? Math.max(latchH, 1) : 1, latchY = latchTop ? 1 : H - latchH + 2;
+  const bodyR = W - 1 - lvW, bodyH = H - latchH - botEx - 1; // prawa krawędź i wysokość korpusu
+  const cellY = r => boxY + padY + r * ch + (midBand && r >= 2 ? bandH : 0);
   const nest = opt.nested ? `x="${opt.x || 0}" y="${opt.y || 0}" width="${opt.width || W}" height="${opt.height || H}"` : '';
   const lw = mini ? 20 : 48;
   let s = `<svg ${nest} viewBox="0 0 ${W} ${H}" style="${mini ? '' : 'width:100%; '}display:block;" xmlns="http://www.w3.org/2000/svg">`;
@@ -10793,6 +10799,14 @@ function connFaceSvg(L, pin, opt) {
       for (let k = 1; k < 4; k++)
         s += `<line x1="${rcx + rcW * k / 4}" y1="${ry + 0.8}" x2="${rcx + rcW * k / 4}" y2="${ry + rcH - 0.8}" stroke="var(--border,#94a3b8)" stroke-width="0.7"/>`;
     });
+    if (midBand) {
+      // kołki/wypusty przy narożnikach obudowy (para przy każdym rogu)
+      const prW = mini ? 2.5 : 5, prH = mini ? 3 : 7;
+      [4, padX + cw * 0.8 - prW / 2, bodyR - padX - cw * 0.8 - prW / 2, bodyR - 4 - prW].forEach(px => {
+        s += `<rect x="${px}" y="${boxY - prH + 1}" width="${prW}" height="${prH}" rx="1" fill="var(--bg-card,#fff)" stroke="var(--border,#94a3b8)" stroke-width="1"/>`;
+        s += `<rect x="${px}" y="${boxY + bodyH - 1}" width="${prW}" height="${prH}" rx="1" fill="var(--bg-card,#fff)" stroke="var(--border,#94a3b8)" stroke-width="1"/>`;
+      });
+    }
   }
   s += `<rect x="1" y="${boxY}" width="${W - 2 - lvW}" height="${bodyH}" rx="4" fill="var(--bg-card,#fff)" stroke="var(--border,#94a3b8)" stroke-width="1.2"/>`;
   if (lever) {
@@ -10804,11 +10818,32 @@ function connFaceSvg(L, pin, opt) {
     [fy + fh * 0.12, fy + fh * 0.88].forEach(py =>
       s += `<circle cx="${bodyR}" cy="${py}" r="${mini ? 1.8 : 4}" fill="var(--bg-card-subtle,#e2e8f0)" stroke="var(--border,#94a3b8)" stroke-width="1"/>`);
   }
+  if (midBand) {
+    // dwie długie szczeliny prowadnic w pasie między bankami pinów (jak na zdjęciu)
+    const sh = Math.max(3, bandH * 0.45), sw = cw * 3.2;
+    const sy = boxY + padY + 2 * ch + (bandH - sh) / 2;
+    [padX + cw * 0.9, padX + cw * 5.9].forEach(sx =>
+      s += `<rect x="${sx}" y="${sy}" width="${sw}" height="${sh}" rx="${sh / 2}" fill="var(--bg-card-subtle,#e2e8f0)" stroke="var(--border,#94a3b8)" stroke-width="1"/>`);
+    // wytłoczone numery skrajnych komór każdego rzędu (jak na obudowie)
+    const fs = mini ? 5 : 8;
+    for (let r = 0; r < L.rows; r++) {
+      const yc = cellY(r) + ch / 2 + fs * 0.36;
+      s += `<text x="${padX - 9}" y="${yc}" text-anchor="middle" font-size="${fs}" font-weight="600" fill="var(--text-muted,#64748b)" font-family="monospace">${connFacePinAt(L, r, 0)}</text>`;
+      s += `<text x="${padX + L.cols * cw + 9}" y="${yc}" text-anchor="middle" font-size="${fs}" font-weight="600" fill="var(--text-muted,#64748b)" font-family="monospace">${connFacePinAt(L, r, L.cols - 1)}</text>`;
+    }
+  }
   for (let r = 0; r < L.rows; r++)
     for (let c = 0; c < L.cols; c++) {
       const p = connFacePinAt(L, r, c);
       const hot = pinSet.has(String(p));
-      const x = pad + c * cw, y = boxY + pad + r * ch;
+      const x = padX + c * cw, y = cellY(r);
+      if (midBand) {
+        // kwadratowe otwory gniazd zajmujące ~3/4 rastra (jak na zdjęciu)
+        const cs = Math.round(cw * 0.74);
+        s += `<rect x="${x + (cw - cs) / 2}" y="${y + (ch - cs) / 2}" width="${cs}" height="${cs}" rx="2.5" fill="${hot ? '#0284c7' : 'var(--bg-card-subtle,#f1f5f9)'}" stroke="${hot ? '#0284c7' : 'var(--border,#cbd5e1)'}" stroke-width="${hot ? 2 : 1}"/>`;
+        s += `<text x="${x + cw / 2}" y="${y + ch / 2 + (mini ? 2.5 : 3)}" text-anchor="middle" font-size="${mini ? 6 : 8}" font-weight="${hot ? 800 : 600}" fill="${hot ? '#fff' : 'var(--text-muted,#475569)'}" font-family="monospace">${p}</text>`;
+        continue;
+      }
       if (L.fam === 'CIRC7') {
         if (p === '') continue; // puste narożniki siatki — nie istnieją fizycznie
         const cx = x + cw / 2, cy = y + ch / 2, rad = Math.min(cw, ch) * 0.34;

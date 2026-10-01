@@ -75,7 +75,9 @@ Wersja wielojęzykowa: `SUPPORTED_LANGS = ("pl", "en", "de")`, tłumaczenia w
   od Adama); niepewny kierunek → `unverified: true` (ostrzeżenie w oknie złącza).
   Typ bez rysunku: węzeł i tak klikalny — okno pokazuje przewody i pinout.
   Wariant obrysu: `CONN_LEVER_ARTS` = artykuły z blokadą dźwigniową
-  (rama Π + ramiona ze sworzniami; VAG 4H0 906 231 / osłona 1-968321-2, X168).
+  (VAG 4H0 906 231 / osłona 1-968321-2, X168): dźwignia po prawej stronie
+  korpusu, wypusty prowadnic i narożne, a dla siatki 4×10 — kwadratowy rastr
+  z pasem szczelin między bankami pinów i numerami rzędów na marginesach.
   Podgląd SVG bez UI: wyciągnąć funkcje z HTML-a w node i zrzut przez headless Edge.
 
 - Klikalność w asystencie: `entLink(q, label)` (jawny link) i `entText(raw)` (escape +
