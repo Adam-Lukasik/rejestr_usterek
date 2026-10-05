@@ -6,6 +6,9 @@ import json
 import base64
 import hashlib
 import secrets
+import re
+import shutil
+import zipfile
 import smtplib
 import io
 import urllib.request
@@ -141,13 +144,21 @@ app = Flask(__name__)
 # Limit uploadu dla paczek synchronizacyjnych / backupów (baza + Baza wiedzy)
 app.config["MAX_CONTENT_LENGTH"] = 2 * 1024 * 1024 * 1024
 
+VERSION = "2.1.0"
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-CONFIG_PATH = os.path.join(BASE_DIR, "config.json")
+# STATIC_DIR — zasoby kodu (UI, migracje, narzędzia); DATA_DIR — dane użytkownika
+# (baza, config, backupy, Baza wiedzy). W buildzie Nuitka launcher ustawia zmienne
+# środowiskowe; w trybie deweloperskim oba wskazują katalog repozytorium.
+STATIC_DIR = os.environ.get("RU_STATIC_DIR") or BASE_DIR
+DATA_DIR = os.environ.get("RU_DATA_DIR") or BASE_DIR
+CONFIG_PATH = os.path.join(DATA_DIR, "config.json")
+SECRETS_PATH = os.path.join(DATA_DIR, "secrets.json")
 
 def load_config():
     cfg = {
         "DB_PATH": "rejestr_usterek.db",
-        "HOST": "0.0.0.0",
+        "HOST": "127.0.0.1",
         "PORT": 5000,
         "BACKUP_DIR": "backups",
         "AUTO_BACKUP_ENABLED": True,
@@ -169,6 +180,19 @@ def load_config():
                 cfg.update(json.load(f))
         except Exception as e:
             print(f"[CFG] Błąd wczytywania config.json: {e}")
+    # Sekrety (hasło SMTP itp.) — plik lokalny, poza repo i poza paczką instalacyjną.
+    # Wartości z secrets.json nadpisują odpowiadające im klucze z config.json.
+    if os.path.exists(SECRETS_PATH):
+        try:
+            with open(SECRETS_PATH, "r", encoding="utf-8") as f:
+                sec = json.load(f)
+            for k, v in sec.items():
+                if isinstance(v, dict) and isinstance(cfg.get(k), dict):
+                    cfg[k].update(v)
+                else:
+                    cfg[k] = v
+        except Exception as e:
+            print(f"[CFG] Błąd wczytywania secrets.json: {e}")
     return cfg
 
 CFG = load_config()
@@ -176,10 +200,11 @@ CFG = load_config()
 # Ścieżka do pliku bazy SQLite
 DB_PATH = CFG.get("DB_PATH", "rejestr_usterek.db")
 if not os.path.isabs(DB_PATH):
-    DB_PATH = os.path.join(BASE_DIR, DB_PATH)
+    DB_PATH = os.path.join(DATA_DIR, DB_PATH)
 
-# Konfiguracja modułu kopii zapasowych (ścieżki z config.json)
-backup_service.configure(DB_PATH, CFG, BASE_DIR)
+# Konfiguracja modułu kopii zapasowych i serwisu Zuken (ścieżki z config.json)
+backup_service.configure(DB_PATH, CFG, DATA_DIR)
+zuken_service.configure(DB_PATH, DATA_DIR)
 
 def get_db_connection():
     conn = sqlite3.connect(DB_PATH)
@@ -206,6 +231,44 @@ def checkpoint_wal(conn=None):
                 conn.close()
             except Exception:
                 pass
+
+
+def _run_migrations():
+    """Aplikuje migracje danych z STATIC_DIR/migrations/*.sql (nazwa = wersja, sortowane).
+
+    Paczki aktualizacji dostarczają migracje razem z kodem — dzięki temu zmiany
+    „systemowe" (np. standardowe pinouty złączy, aliasy firmowe) trafiają do
+    każdej bazy użytkowników po update, niezależnie od ich danych.
+    UWAGA: skrypty powinny być idempotentne (INSERT OR REPLACE itd.) — przy
+    błędzie w połowie plik nie zostanie oznaczony i ponowi się przy następnym starcie.
+    """
+    mig_dir = os.path.join(STATIC_DIR, "migrations")
+    if not os.path.isdir(mig_dir):
+        return
+    files = sorted(f for f in os.listdir(mig_dir) if f.lower().endswith(".sql"))
+    if not files:
+        return
+    conn = get_db_connection()
+    try:
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS schema_migrations ("
+            " version TEXT PRIMARY KEY, applied_at TEXT NOT NULL)")
+        applied = {r[0] for r in conn.execute("SELECT version FROM schema_migrations")}
+        for fname in files:
+            if fname in applied:
+                continue
+            try:
+                with open(os.path.join(mig_dir, fname), "r", encoding="utf-8") as f:
+                    conn.executescript(f.read())
+                conn.execute(
+                    "INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)",
+                    (fname, _dt.now().isoformat(timespec="seconds")))
+                conn.commit()
+                print(f"[MIGRACJA] Zastosowano {fname}")
+            except Exception as e:
+                print(f"[MIGRACJA] Błąd w {fname}: {e}")
+    finally:
+        conn.close()
 
 
 def _mark_deleted(cursor, table_name, row_id):
@@ -826,11 +889,17 @@ def init_db():
     except Exception as e:
         print(f"[ZUKEN] Błąd inicjalizacji tabel Zuken: {e}")
 
+    # Migracje danych dostarczane z kodem (migrations/*.sql w paczce aktualizacji)
+    try:
+        _run_migrations()
+    except Exception as e:
+        print(f"[MIGRACJA] Błąd uruchamiania migracji: {e}")
+
     # Automatyczna kopia zapasowa bazy przy starcie (w tle, z rotacją)
     if CFG.get("AUTO_BACKUP_ENABLED", True):
         try:
             import backup_service
-            backup_service.configure(DB_PATH, CFG, BASE_DIR)
+            backup_service.configure(DB_PATH, CFG, DATA_DIR)
             threading.Thread(
                 target=backup_service.auto_backup_if_due,
                 daemon=True, name="AutoBackupOnStart"
@@ -844,11 +913,358 @@ def init_db():
 
 @app.route("/")
 def index():
-    return send_from_directory(BASE_DIR, "rejestr_usterek.html")
+    return send_from_directory(STATIC_DIR, "rejestr_usterek.html")
 
 @app.route("/translations.js")
 def translations_js():
-    return send_from_directory(BASE_DIR, "translations.js")
+    return send_from_directory(STATIC_DIR, "translations.js")
+
+@app.route("/api/version")
+def api_version():
+    return jsonify({"version": VERSION})
+
+
+# ═══════════════════════════════════════════════════════════════════
+# AKTUALIZACJE — paczki z udziału SMB / HTTP, podmiana app/ przez Updater.exe
+# ═══════════════════════════════════════════════════════════════════
+
+def _update_share():
+    return (CFG.get("UPDATE_SHARE") or os.environ.get("RU_UPDATE_SHARE") or "").strip()
+
+
+def _update_pkg_root():
+    """Katalog pakietu (nadrzędny app/) — ustawiany przez launcher w buildzie Nuitka."""
+    return os.environ.get("RU_PKG_DIR") or ""
+
+
+def _update_dir():
+    d = os.path.join(DATA_DIR, "updates")
+    os.makedirs(d, exist_ok=True)
+    return d
+
+
+def _ver_tuple(v):
+    parts = [int(x) for x in re.findall(r"\d+", str(v or ""))[:4]]
+    return tuple(parts + [0] * (4 - len(parts)))
+
+
+def _update_manifest():
+    """Wczytuje latest.json z udziału SMB albo URL http(s). None gdy nieosiągalny."""
+    share = _update_share()
+    if not share:
+        return None
+    try:
+        if share.lower().startswith(("http://", "https://")):
+            with urllib.request.urlopen(
+                    share.rstrip("/") + "/latest.json", timeout=5) as r:
+                return json.loads(r.read().decode("utf-8"))
+        path = os.path.join(share, "latest.json")
+        if os.path.exists(path):
+            with open(path, "r", encoding="utf-8") as f:
+                return json.load(f)
+    except Exception:
+        return None
+    return None
+
+
+@app.route("/api/update/check")
+def api_update_check():
+    share = _update_share()
+    man = _update_manifest()
+    res = {
+        "enabled": bool(share),
+        "compiled": bool(_update_pkg_root()),
+        "reachable": man is not None,
+        "current": VERSION,
+        "available": False,
+    }
+    if man and man.get("version"):
+        res["available"] = _ver_tuple(man["version"]) > _ver_tuple(VERSION)
+        res["version"] = man["version"]
+        res["notes"] = man.get("notes", "")
+        res["size"] = man.get("size")
+        res["released"] = man.get("released", "")
+    return jsonify(res)
+
+
+@app.route("/api/update/apply", methods=["POST"])
+def api_update_apply():
+    """Pobiera paczkę, weryfikuje, podmienia Updater.exe i uruchamia go —
+    proces kończy się zaraz po odpowiedzi, a Updater.exe dokonuje podmiany app/."""
+    pkg_root = _update_pkg_root()
+    if not pkg_root or not os.path.isdir(pkg_root):
+        return jsonify({"status": "error",
+                        "message": "Aktualizacje dostępne tylko w wersji zainstalowanej"}), 400
+    share = _update_share()
+    man = _update_manifest()
+    if not share or not man or not man.get("file"):
+        return jsonify({"status": "error", "message": "Brak manifestu aktualizacji"}), 400
+    if _ver_tuple(man["version"]) <= _ver_tuple(VERSION):
+        return jsonify({"status": "error", "message": "Brak nowszej wersji"}), 400
+
+    upd = _update_dir()
+    zip_path = os.path.join(upd, os.path.basename(man["file"]))
+    try:
+        if share.lower().startswith(("http://", "https://")):
+            urllib.request.urlretrieve(share.rstrip("/") + "/" + man["file"], zip_path)
+        else:
+            shutil.copy2(os.path.join(share, man["file"]), zip_path)
+    except Exception as e:
+        return jsonify({"status": "error", "message": f"Pobieranie nie powiodło się: {e}"}), 500
+
+    if man.get("sha256"):
+        h = hashlib.sha256()
+        with open(zip_path, "rb") as f:
+            for chunk in iter(lambda: f.read(1 << 20), b""):
+                h.update(chunk)
+        if h.hexdigest() != man["sha256"]:
+            try:
+                os.remove(zip_path)
+            except Exception:
+                pass
+            return jsonify({"status": "error",
+                            "message": "Niezgodna suma kontrolna paczki"}), 500
+
+    pkg_dir = os.path.join(upd, "pkg")
+    if os.path.isdir(pkg_dir):
+        shutil.rmtree(pkg_dir, ignore_errors=True)
+    try:
+        with zipfile.ZipFile(zip_path) as z:
+            z.extractall(pkg_dir)
+    except Exception as e:
+        return jsonify({"status": "error", "message": f"Rozpakowanie nie powiodło się: {e}"}), 500
+
+    # Podmień Updater.exe z paczki — w tej chwili nie działa, więc można nadpisać.
+    src_upd = os.path.join(pkg_dir, "RejestrUsterek", "Updater.exe")
+    if os.path.exists(src_upd):
+        try:
+            shutil.copy2(src_upd, os.path.join(pkg_root, "Updater.exe"))
+        except Exception:
+            pass
+
+    updater_exe = os.path.join(pkg_root, "Updater.exe")
+    app_dir = os.path.join(pkg_root, "app")
+    exe_path = os.path.join(app_dir, "RejestrUsterek.exe")
+    if not os.path.exists(updater_exe):
+        return jsonify({"status": "error", "message": "Brak Updater.exe w pakiecie"}), 500
+
+    _flags = (getattr(subprocess, "DETACHED_PROCESS", 0)
+              | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
+    subprocess.Popen(
+        [updater_exe, pkg_dir, app_dir, exe_path, str(os.getpid())],
+        creationflags=_flags, close_fds=True)
+    threading.Timer(0.8, os._exit, args=(0,)).start()
+    return jsonify({"status": "ok", "restarting": True, "version": man["version"]})
+
+
+def _is_server_mode():
+    return os.environ.get("RU_SERVER") == "1"
+
+
+def _server_zip_prefix(names):
+    """Zwraca prefiks katalogu głównego w ZIP-ie (''/'folder/') albo None gdy brak app.py."""
+    names = [n for n in names if not n.endswith("/")]
+    for n in names:
+        parts = n.split("/")
+        if parts[-1] == "app.py" and len(parts) <= 2:
+            return "/".join(parts[:-1]) + ("/" if len(parts) == 2 else "")
+    return None
+
+
+@app.route("/api/server-update/info")
+def api_server_update_info():
+    return jsonify({"serverMode": _is_server_mode(), "current": VERSION})
+
+
+@app.route("/api/server-update", methods=["POST"])
+def api_server_update():
+    """Admin wgrywa ZIP z nowym kodem serwera: walidacja, kopia starego kodu do
+    data/code_backup/, rozpakowanie nad STATIC_DIR (bez data/), restart procesu
+    (Docker restart: unless-stopped podnosi go z nowym kodem)."""
+    user = get_current_user()
+    if not user or user.get("role") != "admin":
+        return jsonify({"error": smsg("adminRequired")}), 403
+    if not _is_server_mode():
+        return jsonify({"status": "error",
+                        "message": "Dostępne tylko w trybie serwera"}), 400
+    f = request.files.get("file")
+    if not f:
+        return jsonify({"status": "error", "message": "Brak pliku"}), 400
+
+    upd = _update_dir()
+    zip_path = os.path.join(upd, "server_upload.zip")
+    f.save(zip_path)
+    try:
+        with zipfile.ZipFile(zip_path) as z:
+            prefix = _server_zip_prefix(z.namelist())
+            if prefix is None:
+                return jsonify({"status": "error", "message": "ZIP nie zawiera app.py"}), 400
+            code = z.read(prefix + "app.py").decode("utf-8")
+            try:
+                compile(code, "app.py", "exec")
+            except SyntaxError as e:
+                return jsonify({"status": "error", "message": f"Błąd składni w app.py: {e}"}), 400
+            m = re.search(r'VERSION\s*=\s*"([^"]+)"', code)
+            new_ver = m.group(1) if m else "?"
+            members = []
+            for info in z.infolist():
+                if info.is_dir() or not info.filename.startswith(prefix):
+                    continue
+                rel = info.filename[len(prefix):]
+                top = rel.split("/")[0]
+                if (not rel or rel.startswith(("/", "\\")) or ".." in rel.split("/")
+                        or ":" in rel or top in ("data", ".git")):
+                    continue
+                members.append((info, rel))
+
+            static = os.path.realpath(STATIC_DIR)
+            bak = os.path.join(DATA_DIR, "code_backup", VERSION)
+            if os.path.isdir(bak):
+                shutil.rmtree(bak, ignore_errors=True)
+            for _, rel in members:
+                src = os.path.join(static, rel)
+                if os.path.isfile(src):
+                    dst = os.path.join(bak, rel)
+                    os.makedirs(os.path.dirname(dst), exist_ok=True)
+                    shutil.copy2(src, dst)
+            for info, rel in members:
+                dst = os.path.realpath(os.path.join(static, rel))
+                if not dst.startswith(static):
+                    continue
+                os.makedirs(os.path.dirname(dst), exist_ok=True)
+                with z.open(info) as sf, open(dst, "wb") as df:
+                    shutil.copyfileobj(sf, df)
+    except zipfile.BadZipFile:
+        return jsonify({"status": "error", "message": "Uszkodzony plik ZIP"}), 400
+    finally:
+        try:
+            os.remove(zip_path)
+        except Exception:
+            pass
+    threading.Timer(1.0, os._exit, args=(0,)).start()
+    return jsonify({"status": "ok", "restarting": True,
+                    "version": new_ver, "files": len(members)})
+
+
+@app.route("/api/update/status")
+def api_update_status():
+    """Status ostatniej aktualizacji — czytany raz po restarcie (plik kasowany)."""
+    p = os.path.join(_update_dir(), "update_status.json")
+    if not os.path.exists(p):
+        return jsonify({})
+    try:
+        with open(p, "r", encoding="utf-8") as f:
+            st = json.load(f)
+        os.remove(p)
+        return jsonify(st)
+    except Exception:
+        return jsonify({})
+
+
+def _sha256_file(path):
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+@app.route("/api/kb-sync", methods=["POST"])
+def api_kb_sync():
+    """Delta-synchronizacja Bazy wiedzy z udziału aktualizacji.
+
+    <UPDATE_SHARE>/../kb_manifest.json opisuje pliki w <UPDATE_SHARE>/../kb/.
+    Lokalny stan hashy w DATA_DIR/.kb_sync_state.json pozwala pominąć liczenie
+    sha256 dla plików już zsynchronizowanych (Baza wiedzy ma setki MB).
+    Usunięte pliki przenoszone do DATA_DIR/.kb_removed/ zamiast kasowania.
+    """
+    share = _update_share()
+    if not share:
+        return jsonify({"status": "error", "message": "Brak UPDATE_SHARE"}), 400
+    if share.lower().startswith(("http://", "https://")):
+        return jsonify({"status": "error",
+                        "message": "Synchronizacja Bazy wiedzy działa tylko przez udział SMB"}), 400
+
+    share_root = os.path.dirname(share.rstrip("/\\"))
+    manifest_path = os.path.join(share_root, "kb_manifest.json")
+    if not os.path.exists(manifest_path):
+        return jsonify({"status": "error",
+                        "message": "Brak kb_manifest.json na udziale"}), 400
+    try:
+        with open(manifest_path, "r", encoding="utf-8") as f:
+            manifest = json.load(f)
+    except Exception as e:
+        return jsonify({"status": "error", "message": f"Manifest uszkodzony: {e}"}), 500
+
+    kb_src_root = os.path.join(share_root, "kb")
+    kb_dir = zuken_service.BAZA_WIEDZY_DIR
+    state_path = os.path.join(DATA_DIR, ".kb_sync_state.json")
+    try:
+        with open(state_path, "r", encoding="utf-8") as f:
+            state = json.load(f)
+    except Exception:
+        state = {}
+
+    copied, skipped, removed_n, nbytes = 0, 0, 0, 0
+    errors = []
+    new_state = {}
+
+    for rel, meta in (manifest.get("files") or {}).items():
+        digest = meta.get("sha256")
+        if not digest:
+            continue
+        local = os.path.join(kb_dir, rel.replace("/", os.sep))
+        if state.get(rel) == digest and os.path.exists(local):
+            new_state[rel] = digest
+            skipped += 1
+            continue
+        # Plik lokalny istnieje i ma ten sam rozmiar — sprawdź hash zamiast kopiować
+        if os.path.exists(local) and os.path.getsize(local) == meta.get("size"):
+            try:
+                if _sha256_file(local) == digest:
+                    new_state[rel] = digest
+                    skipped += 1
+                    continue
+            except Exception:
+                pass
+        src = os.path.join(kb_src_root, rel.replace("/", os.sep))
+        try:
+            os.makedirs(os.path.dirname(local), exist_ok=True)
+            shutil.copy2(src, local)
+            if _sha256_file(local) != digest:
+                raise IOError("niezgodna suma kontrolna po kopiowaniu")
+            new_state[rel] = digest
+            copied += 1
+            nbytes += meta.get("size") or 0
+        except Exception as e:
+            errors.append(f"{rel}: {e}")
+
+    trash_dir = os.path.join(DATA_DIR, ".kb_removed")
+    for rel in (manifest.get("removed") or []):
+        local = os.path.join(kb_dir, rel.replace("/", os.sep))
+        if os.path.exists(local):
+            try:
+                dst = os.path.join(trash_dir, rel.replace("/", os.sep))
+                os.makedirs(os.path.dirname(dst), exist_ok=True)
+                shutil.move(local, dst)
+                removed_n += 1
+            except Exception as e:
+                errors.append(f"{rel}: {e}")
+        state.pop(rel, None)
+
+    try:
+        with open(state_path, "w", encoding="utf-8") as f:
+            json.dump(new_state, f)
+    except Exception:
+        pass
+
+    return jsonify({
+        "status": "ok" if not errors else "partial",
+        "copied": copied, "skipped": skipped, "removed": removed_n,
+        "bytes": nbytes,
+        "errors": errors[:20],
+        "generated": manifest.get("generated", ""),
+    })
 
 @app.route("/api/translate", methods=["POST"])
 def api_translate():
@@ -859,7 +1275,7 @@ def api_translate():
 
 @app.route("/api/user-settings", methods=["GET", "POST"])
 def api_user_settings():
-    desktop_cfg_path = os.path.join(BASE_DIR, "desktop_config.json")
+    desktop_cfg_path = os.path.join(DATA_DIR, "desktop_config.json")
     if request.method == "POST":
         data = request.get_json() or {}
         cfg = {}

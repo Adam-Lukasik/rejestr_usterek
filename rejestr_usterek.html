@@ -148,7 +148,8 @@
   .sidebar.collapsed .nav-item span,
   .sidebar.collapsed .nav-badge,
   .sidebar.collapsed .sidebar-footer-btn span,
-  .sidebar.collapsed .sidebar-author-card {
+  .sidebar.collapsed .sidebar-author-card,
+  .sidebar.collapsed .global-ps-wrap {
     display: none !important;
   }
   .sidebar.collapsed .sidebar-header {
@@ -376,6 +377,42 @@
   .btn-switch-tech:hover {
     background: rgba(255, 255, 255, 0.1);
     color: #FFFFFF;
+  }
+
+  /* Globalny selektor aktualnego projektu PS */
+  .global-ps-wrap {
+    margin: 0 14px 8px 14px;
+    padding: 8px 12px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: var(--radius-md);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .global-ps-wrap label {
+    font-size: 10.5px;
+    font-weight: 700;
+    color: var(--text-sidebar);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    flex-shrink: 0;
+  }
+  .global-ps-wrap select {
+    flex: 1;
+    min-width: 0;
+    padding: 5px 8px;
+    border-radius: var(--radius-sm);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    background: #1E293B;
+    color: #FFFFFF;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .global-ps-wrap select:focus {
+    outline: none;
+    border-color: #3B82F6;
   }
 
   /* Nawigacja w sidebaru */
@@ -1405,6 +1442,12 @@
       </button>
     </div>
 
+    <!-- Globalny wybór aktualnego projektu PS (wspólny dla wszystkich widoków) -->
+    <div class="global-ps-wrap" id="global-ps-wrap" title="Aktualny projekt PS — wspólny dla wszystkich widoków" data-i18n-title="js.nav.currentProjectTitle">
+      <label for="global-ps-select" data-i18n="nav.currentProject">Projekt:</label>
+      <select id="global-ps-select" onchange="setCurrentPS(this.value)"></select>
+    </div>
+
     <!-- Nawigacja -->
     <nav class="sidebar-nav">
       <div class="nav-section-title" data-i18n="nav.sectionMain">Główne Menu</div>
@@ -1872,6 +1915,41 @@
         <h2 style="font-size:18px; font-weight:700; margin-bottom:16px;" data-i18n="ui.backup.pageTitle">Kopie Zapasowe i Narzędzia Bazy</h2>
 
         <div style="display:flex; flex-direction:column; gap:16px;">
+
+          <!-- AKTUALIZACJE PROGRAMU -->
+          <div class="detail-section-card" style="border-left:4px solid #7C3AED; background:rgba(124,58,237,0.04);">
+            <h3 style="font-size:14px; font-weight:800; color:#6D28D9; margin-bottom:4px;" data-i18n="ui.backup.updTitle">⬆ Aktualizacje programu</h3>
+            <p style="font-size:12.5px; color:var(--text-main); margin-bottom:6px; line-height:1.4;" data-i18n="ui.backup.updDesc">
+              Sprawdza na serwerze firmowym, czy jest nowsza wersja programu. Aktualizacja pobiera paczkę i uruchamia program ponownie — Twoje dane i Baza wiedzy zostają bez zmian.
+            </p>
+            <div style="display:flex; gap:14px; align-items:center; flex-wrap:wrap; margin-bottom:8px;">
+              <span style="font-size:12.5px; color:var(--text-muted);">
+                <span data-i18n="ui.backup.updCurrent">Zainstalowana wersja:</span>
+                <strong id="upd-current-version" style="color:var(--text-main);">—</strong>
+              </span>
+              <button type="button" class="btn-secondary-action" id="btn-update-check" data-i18n="ui.backup.updCheckBtn">🔍 Sprawdź aktualizacje</button>
+              <button type="button" class="btn-primary-action" id="btn-update-apply" style="display:none; padding:9px 18px; font-weight:700; background:linear-gradient(135deg,#7C3AED,#6D28D9); border:none;">
+                <span>⬆</span> <span data-i18n="ui.backup.updApplyBtn">Zainstaluj i uruchom ponownie</span>
+              </button>
+            </div>
+            <div id="update-status-text" style="font-size:12px; color:var(--text-muted);" data-i18n="ui.backup.updIdle">Kliknij „Sprawdź aktualizacje".</div>
+            <div id="update-notes" style="font-size:12px; color:var(--text-main); margin-top:6px; display:none; white-space:pre-wrap;"></div>
+            <div style="display:flex; gap:14px; align-items:center; flex-wrap:wrap; margin-top:10px; padding-top:10px; border-top:1px dashed var(--border);">
+              <button type="button" class="btn-secondary-action" id="btn-kb-sync" data-i18n="ui.backup.kbSyncBtn">📚 Synchronizuj Bazę wiedzy</button>
+              <span id="kb-sync-status" style="font-size:12px; color:var(--text-muted);" data-i18n="ui.backup.kbSyncIdle">Dociąga nowe/zmienione dokumenty z serwera firmowego.</span>
+            </div>
+          </div>
+
+          <!-- AKTUALIZACJA SERWERA (tylko tryb serwera) -->
+          <div class="detail-section-card" id="srv-update-card" style="display:none; border-left:4px solid #DC2626; background:rgba(220,38,38,0.04);">
+            <h3 style="font-size:14px; font-weight:800; color:#B91C1C; margin-bottom:4px;" data-i18n="ui.backup.srvUpdTitle">🖥 Aktualizacja serwera</h3>
+            <p style="font-size:12.5px; color:var(--text-main); margin-bottom:8px; line-height:1.4;" data-i18n="ui.backup.srvUpdDesc">Wgraj ZIP z nową wersją kodu serwera.</p>
+            <div style="display:flex; gap:14px; align-items:center; flex-wrap:wrap;">
+              <button type="button" class="btn-secondary-action" id="btn-srv-update" data-i18n="ui.backup.srvUpdBtn">📦 Wgraj aktualizację serwera (ZIP)</button>
+              <input type="file" id="input-srv-update" accept=".zip" style="display:none;">
+              <span id="srv-update-status" style="font-size:12px; color:var(--text-muted);"></span>
+            </div>
+          </div>
 
           <!-- AUTOMATYCZNE KOPIE -->
           <div class="detail-section-card" style="border-left:4px solid #059669; background:rgba(5,150,105,0.04);">
@@ -3176,10 +3254,13 @@ document.addEventListener('DOMContentLoaded', async () => {
       const meResp = await apiCall('/api/auth/me');
       if (meResp && meResp.user) {
         STATE.activeUser = meResp.user;
+        loadUserPS();
         closeModal('modal-login');
         checkMustChangePassword();
         await loadAllData();
         startPolling();
+        checkUpdateStatus();
+        checkForUpdates(true);
         return;
       }
     } catch(e) {
@@ -3344,6 +3425,7 @@ async function loadAllData() {
     updateConnectionStatus(true);
     updateUserBadge();
     renderFormDropdowns();
+    refreshGlobalPsOptions();
     renderKPIs();
     renderDefectsTable();
     if (STATE.currentView === 'projects') renderProjectsTable();
@@ -3434,7 +3516,7 @@ function switchView(viewName) {
   if (viewName === 'zuken-summaries') loadZukenSummariesView();
   if (viewName === 'project-docs') loadProjectDocsView();
   if (viewName === 'reworks') loadReworksView();
-  if (viewName === 'backup') loadBackupStatus();
+  if (viewName === 'backup') { loadBackupStatus(); refreshUpdateVersion(); }
 }
 
 
@@ -4238,10 +4320,120 @@ function ensureOptionAndSet(selectEl, value) {
   selectEl.value = value;
 }
 
-function setCurrentPS(ps) {
-  STATE.lastSelectedPS = ps || '';
-  if (ps) localStorage.setItem('ru_last_ps', ps);
-  else localStorage.removeItem('ru_last_ps');
+/* ── GLOBALNY „AKTUALNY PROJEKT PS" ──
+   Jedno źródło prawdy: STATE.lastSelectedPS. Każdy selektor PS w programie
+   zapisuje przez setCurrentPS() i jest synchronizowany zwrotnie.
+   Pamięć per użytkownik: klucz ru_last_ps_<username>; stary wspólny klucz
+   ru_last_ps służy jako domyślny projekt stanowiska (fallback). */
+function psStorageKey() {
+  const u = (STATE.activeUser && STATE.activeUser.username) ? String(STATE.activeUser.username).toLowerCase() : '';
+  return u ? `ru_last_ps_${u}` : 'ru_last_ps';
+}
+
+// Po ustaleniu użytkownika (login / sesja / szybkie przełączenie technika):
+// wczytaj jego ostatni projekt i odśwież wszystko, co od niego zależy.
+function loadUserPS() {
+  STATE.lastSelectedPS = localStorage.getItem(psStorageKey()) || localStorage.getItem('ru_last_ps') || '';
+  STATE._defaultPsChecked = false;
+  syncPsSelectors();
+  refreshActivePsView();
+}
+
+function setCurrentPS(ps, opts = {}) {
+  ps = ps || '';
+  const changed = ps !== STATE.lastSelectedPS;
+  STATE.lastSelectedPS = ps;
+  if (ps) localStorage.setItem(psStorageKey(), ps);
+  else localStorage.removeItem(psStorageKey());
+  if (STATE._psSyncing) return;
+  STATE._psSyncing = true;
+  try {
+    syncPsSelectors();
+    if (changed || opts.forceRefresh) refreshActivePsView();
+  } finally { STATE._psSyncing = false; }
+}
+
+// Ustaw aktualną wartość we wszystkich selektorach projektu obecnych w DOM.
+function syncPsSelectors() {
+  const ps = STATE.lastSelectedPS || '';
+  const g = document.getElementById('global-ps-select');
+  if (g) {
+    if (ps) ensureOptionAndSet(g, ps);
+    else g.value = '';
+    refreshGlobalPsOptions();
+  }
+  ['docs-ps-select', 'reworks-ps-select', 'zuken-summ-ps-select'].forEach(id => {
+    const s = document.getElementById(id);
+    if (s && s.options.length) ensureOptionAndSet(s, ps);
+  });
+  if (ps) ZUKEN_SUMM_STATE.currentPs = ps;
+  // Asystent: przy otwartym modalu selektor i kontekst podążają za globalem.
+  const zmodal = document.getElementById('modal-zuken-diagnose');
+  const zsel = document.getElementById('zuken-context-project-select');
+  if (zmodal && zmodal.style.display !== 'none' && zsel && ps) {
+    ensureOptionAndSet(zsel, ps);
+    ZUKEN_STATE.currentContext.projekt = ps;
+  }
+  // Formularz usterki: nigdy nie nadpisuj projektu edytowanego rekordu.
+  const fp = document.getElementById('f-projekt');
+  if (fp && !STATE.editingRecordId && ps) {
+    ensureOptionAndSet(fp, ps);
+    fillClientAndModelFromPS(ps);
+  }
+}
+
+// Przeładuj dane aktywnego widoku pod nowy projekt (gdy widok jest per-PS).
+function refreshActivePsView() {
+  const ps = STATE.lastSelectedPS || '';
+  if (STATE.currentView === 'project-docs') {
+    DOCS_STATE.ps = ps;
+    loadProjectDocs(ps);
+  } else if (STATE.currentView === 'reworks') {
+    REWORKS_STATE.ps = ps;
+    loadReworks(ps);
+    updateReworkNavBadge();
+  } else if (STATE.currentView === 'zuken-summaries') {
+    updateZukenSummariesHeaderInfo();
+    refreshZukenActiveSummaryTab();
+  }
+  const zmodal = document.getElementById('modal-zuken-diagnose');
+  if (zmodal && zmodal.style.display !== 'none') {
+    const inp = document.getElementById('zuken-search-input');
+    if (inp && inp.value.trim()) runAiDiagnosisSearch();
+  }
+}
+
+// Zunifikowana lista kodów PS: słownik projektów + Baza wiedzy/Zuken (cache).
+async function getAllPsCodes(refresh = false) {
+  const codes = new Set(Object.keys(STATE.lists.projekty || {}));
+  (STATE._psCodes || []).forEach(c => codes.add(c));
+  if (refresh || !STATE._psCodesFetched) {
+    try {
+      const res = await apiCall('/api/zuken/ps-projects');
+      (res.projects || []).forEach(p => { const c = p.ps_code || p; if (c) codes.add(c); });
+      STATE._psCodesFetched = true;
+    } catch (e) { /* fallback: sam słownik projektów */ }
+  }
+  STATE._psCodes = [...codes].sort();
+  return STATE._psCodes;
+}
+
+// Opcje globalnego selektora w sidebarze — przebudowa tylko przy zmianie listy.
+async function refreshGlobalPsOptions() {
+  const sel = document.getElementById('global-ps-select');
+  if (!sel) return;
+  const codes = await getAllPsCodes();
+  const sig = codes.join('|');
+  if (sig !== sel.dataset.sig) {
+    sel.dataset.sig = sig;
+    const cur = sel.value;
+    sel.innerHTML = `<option value="">${escapeHtml(t('js.form.choosePs'))}</option>` +
+      codes.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
+    if (cur) ensureOptionAndSet(sel, cur);
+  }
+  const want = STATE.lastSelectedPS || '';
+  if (want) ensureOptionAndSet(sel, want);
+  else sel.value = '';
 }
 
 // Raz po pierwszym wczytaniu danych: gdy nie ma zapamiętanego projektu PS,
@@ -4250,12 +4442,7 @@ async function maybeSuggestDefaultPS() {
   if (STATE._defaultPsChecked) return;
   STATE._defaultPsChecked = true;
   if (STATE.lastSelectedPS) return;
-  const codes = new Set(Object.keys(STATE.lists.projekty || {}));
-  try {
-    const res = await apiCall('/api/zuken/ps-projects');
-    (res.projects || []).forEach(p => { const c = p.ps_code || p; if (c) codes.add(c); });
-  } catch (e) { /* podpowiedź to dodatek — błąd pomijamy */ }
-  const list = [...codes];
+  const list = await getAllPsCodes(true);
   if (list.length === 1) {
     setCurrentPS(list[0]);
   } else if (list.length > 1) {
@@ -5596,9 +5783,7 @@ const DOCS_STATE = { ps: '', docs: [] };
 const REWORKS_STATE = { ps: '', items: [], docs: [] };
 
 async function _psProjectsOptions() {
-  const res = await apiCall('/api/zuken/ps-projects');
-  const list = (res.projects || []).map(p => p.ps_code || p).filter(Boolean);
-  return [...new Set(list)];
+  return getAllPsCodes(true);
 }
 
 async function _fillPsSelect(selId, preferredPs) {
@@ -5606,7 +5791,7 @@ async function _fillPsSelect(selId, preferredPs) {
   if (!sel) return '';
   const codes = await _psProjectsOptions();
   sel.innerHTML = codes.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
-  const want = preferredPs || sel.value || STATE.lastSelectedPS || codes[0] || '';
+  const want = preferredPs || STATE.lastSelectedPS || codes[0] || '';
   if (want && codes.includes(want)) sel.value = want;
   else if (codes.length) sel.value = codes[0];
   return sel.value || '';
@@ -6485,6 +6670,7 @@ document.getElementById('btn-quick-switch').addEventListener('click', () => {
 function switchActiveTechnician(username, fullname, role) {
   STATE.activeUser = { username, full_name: fullname, role };
   localStorage.setItem('ru_active_user', fullname || username);
+  loadUserPS();
   updateUserBadge();
   closeModal('modal-quick-switch');
   showToast(t('js.auth.activeTech', { v: fullname || username }), 'success');
@@ -6767,6 +6953,135 @@ document.getElementById('input-sync-import')?.addEventListener('change', async (
     showToast(t('js.backup.errImport', { v: err.message }), 'error');
   }
 });
+
+// ─── AKTUALIZACJE PROGRAMU ───
+let _updInfo = null;
+
+async function refreshUpdateVersion() {
+  const el = document.getElementById('upd-current-version');
+  if (!el) return;
+  try {
+    const v = await apiCall('/api/version');
+    el.textContent = v.version || '—';
+  } catch(e) { el.textContent = '—'; }
+  try {
+    const s = await apiCall('/api/server-update/info');
+    const card = document.getElementById('srv-update-card');
+    if (card) card.style.display = (s.serverMode && STATE.activeUser && STATE.activeUser.role === 'admin') ? '' : 'none';
+  } catch(e) {}
+}
+
+document.getElementById('btn-srv-update')?.addEventListener('click', () => {
+  document.getElementById('input-srv-update')?.click();
+});
+document.getElementById('input-srv-update')?.addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+  if (!confirm(t('ui.backup.srvUpdConfirm', { v: file.name }))) return;
+  const el = document.getElementById('srv-update-status');
+  try {
+    if (el) el.textContent = t('ui.backup.srvUpdWorking');
+    const r = await uploadBackupFile('/api/server-update', file);
+    const msg = t('ui.backup.srvUpdDone', { v: r.version, n: r.files });
+    if (el) el.textContent = msg;
+    showToast(msg, 'success');
+    setTimeout(() => location.reload(), 15000);
+  } catch(err) {
+    if (el) el.textContent = t('js.backup.errUpdate', { v: err.message });
+  }
+});
+
+async function checkForUpdates(silent = false) {
+  const statusEl = document.getElementById('update-status-text');
+  const applyBtn = document.getElementById('btn-update-apply');
+  const notesEl = document.getElementById('update-notes');
+  try {
+    if (statusEl && !silent) statusEl.textContent = t('ui.backup.updChecking');
+    const r = await apiCall('/api/update/check');
+    _updInfo = r;
+    if (!r.enabled) {
+      if (statusEl) statusEl.textContent = t('ui.backup.updDisabled');
+      return;
+    }
+    if (!r.reachable) {
+      if (statusEl) statusEl.textContent = t('ui.backup.updUnreachable');
+      return;
+    }
+    if (r.available) {
+      if (statusEl) statusEl.innerHTML = '✨ ' + t('ui.backup.updAvailable',
+        { v: escapeHtml(r.version), s: r.size ? fmtBytes(r.size) : '' });
+      if (applyBtn) applyBtn.style.display = '';
+      if (notesEl) {
+        notesEl.textContent = r.notes || '';
+        notesEl.style.display = r.notes ? '' : 'none';
+      }
+      if (silent) showToast(t('ui.backup.updAvailable', { v: r.version, s: '' }), 'info');
+    } else {
+      if (statusEl) statusEl.textContent = t('ui.backup.updUpToDate');
+      if (applyBtn) applyBtn.style.display = 'none';
+      if (notesEl) notesEl.style.display = 'none';
+    }
+  } catch(e) {
+    if (statusEl && !silent) statusEl.textContent = t('js.backup.errUpdate', { v: e.message });
+  }
+}
+
+document.getElementById('btn-update-check')?.addEventListener('click', () => checkForUpdates(false));
+
+document.getElementById('btn-update-apply')?.addEventListener('click', async () => {
+  if (!_updInfo || !_updInfo.available) return;
+  if (!confirm(t('ui.backup.updConfirm', { v: _updInfo.version }))) return;
+  const statusEl = document.getElementById('update-status-text');
+  const applyBtn = document.getElementById('btn-update-apply');
+  try {
+    if (applyBtn) applyBtn.disabled = true;
+    if (statusEl) statusEl.textContent = t('ui.backup.updApplying');
+    await apiCall('/api/update/apply', 'POST', {});
+    if (statusEl) statusEl.textContent = t('ui.backup.updRestarting');
+    showToast(t('ui.backup.updRestarting'), 'success');
+  } catch(e) {
+    if (applyBtn) applyBtn.disabled = false;
+    if (statusEl) statusEl.textContent = t('js.backup.errUpdate', { v: e.message });
+  }
+});
+
+async function checkUpdateStatus() {
+  // Toast „Zaktualizowano" / „Aktualizacja nie powiodła się" po restarcie
+  try {
+    const st = await apiCall('/api/update/status');
+    if (st && st.ok === true) {
+      showToast(t('ui.backup.updDone'), 'success');
+      refreshUpdateVersion();
+      syncKb(true);
+    } else if (st && st.ok === false) {
+      showToast(t('ui.backup.updFailed', { v: st.error || '?' }), 'error');
+    }
+  } catch(e) {}
+}
+
+async function syncKb(silent = false) {
+  const el = document.getElementById('kb-sync-status');
+  const btn = document.getElementById('btn-kb-sync');
+  try {
+    if (btn) btn.disabled = true;
+    if (el && !silent) el.textContent = t('ui.backup.kbSyncWorking');
+    const r = await apiCall('/api/kb-sync', 'POST', {});
+    const msg = t('ui.backup.kbSyncDone', { c: r.copied, s: fmtBytes(r.bytes || 0), r: r.removed || 0 });
+    if (el) el.textContent = msg;
+    if (!silent || r.copied) showToast(msg, r.errors && r.errors.length ? 'info' : 'success');
+    if (r.errors && r.errors.length && el) {
+      el.textContent += '  ⚠ ' + r.errors[0];
+    }
+  } catch(e) {
+    if (el) el.textContent = t('js.backup.errUpdate', { v: e.message });
+    if (!silent) showToast(t('js.backup.errUpdate', { v: e.message }), 'error');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+document.getElementById('btn-kb-sync')?.addEventListener('click', () => syncKb(false));
 
 document.getElementById('btn-backup-restore')?.addEventListener('click', () => {
   document.getElementById('input-backup-restore')?.click();
@@ -7117,12 +7432,15 @@ function setupEventListeners() {
       STATE.authToken = res.token;
       sessionStorage.setItem('ru_auth_token', res.token);
       STATE.activeUser = res.user;
+      loadUserPS();
       closeModal('modal-login');
       updateUserBadge();
       checkMustChangePassword();
       showToast(t('js.auth.welcomeUser', { v: res.user.full_name || res.user.username }), 'success');
       await loadAllData();
       startPolling();
+      checkUpdateStatus();
+      checkForUpdates(true);
     } catch(err) {
       errBox.textContent = err.message || t('js.auth.badLogin');
       errBox.style.display = 'block';
@@ -7700,19 +8018,10 @@ function openAiDiagnosisModal(ctx = {}) {
 }
 
 async function fillZukenProjectSelect(projSelect, activeVal) {
-  const psList = new Set();
-  (STATE.projects || []).forEach(p => {
-    if (p.numer) psList.add(p.numer);
-    if (p.kod) psList.add(p.kod);
-  });
-  try {
-    const res = await apiCall('/api/zuken/ps-projects');
-    (res.projects || []).forEach(p => { if (p.ps_code) psList.add(p.ps_code); });
-  } catch (e) { /* fallback: tylko projekty z rejestru */ }
-  psList.add('PS011871');
+  const psList = await getAllPsCodes(true);
 
   let options = `<option value="">${t('js.zuken.allSchematics')}</option>`;
-  Array.from(psList).filter(Boolean).sort().forEach(ps => {
+  psList.filter(Boolean).forEach(ps => {
     const isSel = (ps.toUpperCase() === (activeVal || '').toUpperCase()) ? 'selected' : '';
     options += `<option value="${escapeHtml(ps)}" ${isSel}>${escapeHtml(ps)}</option>`;
   });
@@ -8375,29 +8684,43 @@ function renderDiagnosisResults(data) {
   }
 
   // 4. Historia napraw i sprawdzone warianty rozwiązań
+  //    Pogrupowane: ten sam projekt → ten sam klient → pozostałe (scope z backendu).
   const history = data.history_solutions || [];
   if (history.length > 0) {
+    const hCtx = data.history_context || {};
+    const groups = [
+      { scope: 0, label: t('js.zuken.histGroupProject', { ps: hCtx.ps || '' }), accent: '#10b981' },
+      { scope: 1, label: t('js.zuken.histGroupClient', { client: hCtx.client || '' }), accent: '#2563eb' },
+      { scope: 2, label: t('js.zuken.histGroupOther'), accent: '#94a3b8' }
+    ].map(g => Object.assign(g, { items: history.filter(h => (h.scope ?? 2) === g.scope) }))
+     .filter(g => g.items.length > 0);
+    const showHeaders = groups.length > 1;
+
+    const histCard = h => `
+      <div class="detail-section-card" style="margin:0; border-left:3px solid #10b981; padding:12px 14px;">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px;">
+          <div>
+            <div style="font-size:13px; font-weight:700; color:var(--text-main);">${escapeHtml(h.tytul || t('js.zuken.variantRepair'))}</div>
+            <div style="font-size:11.5px; color:var(--text-muted); margin-top:2px;">${t('js.zuken.defectLabel')} <strong>${escapeHtml(h.element || '')}</strong> (${escapeHtml(h.projekt || '')}${h.klient ? ` • ${escapeHtml(getClientShortName(h.klient))}` : ''}) — ${t('js.zuken.addedVariantBy', { v: escapeHtml(h.created_by || 'Adam Łukasik') })}</div>
+          </div>
+          <button type="button" class="btn-secondary-action" style="padding:3px 8px; font-size:11px;" onclick="insertTextToSolutionForm('${escapeHtml(h.opis || h.tytul)}')">
+            ${t('js.zuken.insertDesc')}
+          </button>
+        </div>
+        ${h.opis ? `<div style="font-size:12.5px; color:var(--text-main); margin-top:8px; line-height:1.4; background:var(--bg-card-subtle); padding:8px 10px; border-radius:4px;">${escapeHtml(h.opis)}</div>` : ''}
+      </div>`;
+
     html += `
       <div style="margin-top:10px;">
         <div style="font-size:13px; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; color:var(--text-muted); margin-bottom:8px;">
           ${t('js.zuken.historyTitle', { n: history.length })}
         </div>
-        <div style="display:flex; flex-direction:column; gap:10px;">
-          ${history.map(h => `
-            <div class="detail-section-card" style="margin:0; border-left:3px solid #10b981; padding:12px 14px;">
-              <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px;">
-                <div>
-                  <div style="font-size:13px; font-weight:700; color:var(--text-main);">${escapeHtml(h.tytul || t('js.zuken.variantRepair'))}</div>
-                  <div style="font-size:11.5px; color:var(--text-muted); margin-top:2px;">${t('js.zuken.defectLabel')} <strong>${escapeHtml(h.element || '')}</strong> (${escapeHtml(h.projekt || '')}) — ${t('js.zuken.addedVariantBy', { v: escapeHtml(h.created_by || 'Adam Łukasik') })}</div>
-                </div>
-                <button type="button" class="btn-secondary-action" style="padding:3px 8px; font-size:11px;" onclick="insertTextToSolutionForm('${escapeHtml(h.opis || h.tytul)}')">
-                  ${t('js.zuken.insertDesc')}
-                </button>
-              </div>
-              ${h.opis ? `<div style="font-size:12.5px; color:var(--text-main); margin-top:8px; line-height:1.4; background:var(--bg-card-subtle); padding:8px 10px; border-radius:4px;">${escapeHtml(h.opis)}</div>` : ''}
-            </div>
-          `).join('')}
-        </div>
+        ${groups.map(g => `
+          ${showHeaders ? `<div style="font-size:11px; font-weight:800; color:${g.accent}; text-transform:uppercase; letter-spacing:0.5px; margin:10px 0 6px 2px; display:flex; align-items:center; gap:6px;"><span style="width:8px; height:8px; border-radius:2px; background:${g.accent}; display:inline-block;"></span>${escapeHtml(g.label)} <span style="color:var(--text-muted); font-weight:600;">(${g.items.length})</span></div>` : ''}
+          <div style="display:flex; flex-direction:column; gap:10px;">
+            ${g.items.map(histCard).join('')}
+          </div>
+        `).join('')}
       </div>
     `;
   }
@@ -9452,7 +9775,7 @@ async function loadZukenSummariesView(preferredPs) {
       ZUKEN_SUMM_STATE.psProjects = res.projects;
       const select = document.getElementById('zuken-summ-ps-select');
       if (select) {
-        const wantPs = preferredPs || ZUKEN_SUMM_STATE.currentPs || STATE.lastSelectedPS || 'PS011871';
+        const wantPs = preferredPs || STATE.lastSelectedPS || ZUKEN_SUMM_STATE.currentPs || ((res.projects[0] || {}).ps_code || '');
         let html = '';
         res.projects.forEach(p => {
           const isSel = p.ps_code.toUpperCase() === wantPs.toUpperCase();

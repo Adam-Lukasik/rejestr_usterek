@@ -1,0 +1,12 @@
+services:
+  rejestr-usterek:
+    build: .
+    image: rejestr-usterek:latest
+    container_name: rejestr-usterek
+    restart: unless-stopped
+    ports:
+      - "5050:5050"
+    environment:
+      RU_SERVER: "1"
+    volumes:
+      - ./:/app

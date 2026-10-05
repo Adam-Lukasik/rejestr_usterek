@@ -40,10 +40,25 @@ import threading
 import time
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-BAZA_WIEDZY_DIR = os.path.join(BASE_DIR, "Baza wiedzy")
+# STATIC_DIR — zasoby kodu (narzędzia typu SumatraPDF.exe); DATA_DIR — dane
+# użytkownika (baza, Baza wiedzy). Zmienne ustawia launcher w buildzie Nuitka;
+# w dev oba wskazują katalog repozytorium.
+STATIC_DIR = os.environ.get("RU_STATIC_DIR") or BASE_DIR
+DATA_DIR = os.environ.get("RU_DATA_DIR") or BASE_DIR
+BAZA_WIEDZY_DIR = os.path.join(DATA_DIR, "Baza wiedzy")
 BOM_IMAGES_DIR = os.path.join(BAZA_WIEDZY_DIR, "zdjecia_komponentow")
 os.makedirs(BOM_IMAGES_DIR, exist_ok=True)
-DB_PATH = os.path.join(BASE_DIR, "rejestr_usterek.db")
+DB_PATH = os.path.join(DATA_DIR, "rejestr_usterek.db")
+
+
+def configure(db_path=None, base_dir=None):
+    """Ustawia ścieżki modułu na podstawie konfiguracji aplikacji (jak backup_service.configure)."""
+    global DB_PATH, BAZA_WIEDZY_DIR, BOM_IMAGES_DIR
+    if base_dir:
+        BAZA_WIEDZY_DIR = os.path.join(base_dir, "Baza wiedzy")
+        BOM_IMAGES_DIR = os.path.join(BAZA_WIEDZY_DIR, "zdjecia_komponentow")
+    if db_path:
+        DB_PATH = db_path
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -2485,7 +2500,7 @@ def resolve_kb_filepath(filepath, heal_db=False):
 def find_sumatra_executable():
     """Wyszukuje ścieżkę do programu SumatraPDF.exe (najpierw w katalogu aplikacji, potem w systemie)."""
     # 1. Główny priorytet: SumatraPDF wgrana do katalogu programu rejestru usterek
-    local_sumatra = os.path.join(BASE_DIR, "SumatraPDF.exe")
+    local_sumatra = os.path.join(STATIC_DIR, "SumatraPDF.exe")
     if os.path.exists(local_sumatra):
         return local_sumatra
 
@@ -4806,6 +4821,73 @@ def get_controller_diagnostic_info(ps_code=None, query_text="", lang="pl"):
 # ═══════════════════════════════════════════════════════════════════
 # SILNIK DIAGNOSTYCZNY (LOCAL SMART DIAGNOSTICS ENGINE)
 # ═══════════════════════════════════════════════════════════════════
+def _client_key(name):
+    """Skrócony klucz klienta do porównań — odpowiednik getClientShortName() z UI."""
+    s = str(name or "").strip().upper()
+    if not s:
+        return ""
+    for sep in (" - ", " – ", " — ", ": "):
+        if sep in s:
+            return s.split(sep)[0].strip()
+    m = re.search(r"\(([^)]+)\)", s)
+    if m and len(m.group(1).strip()) <= 6:
+        return m.group(1).strip()
+    return s
+
+
+def _clients_match(a, b):
+    """Porównanie nazw klientów po skróconych kluczach ('LAS' ~ 'LAS - London...')."""
+    ka, kb = _client_key(a), _client_key(b)
+    if not ka or not kb:
+        return False
+    if ka == kb:
+        return True
+    return len(ka) >= 3 and len(kb) >= 3 and (ka in kb or kb in ka)
+
+
+def _projekty_dict(cur):
+    """Słownik projektów z tabeli lists (PS -> {klient, model, ...}), klucze w upper."""
+    try:
+        row = cur.execute("SELECT value FROM lists WHERE key = 'lists'").fetchone()
+        if not row:
+            return {}
+        data = json.loads(row["value"])
+        proj = data.get("projekty") or {}
+        return {str(k).strip().upper(): v for k, v in proj.items() if isinstance(v, dict)}
+    except Exception:
+        return {}
+
+
+def _resolve_client_for_ps(cur, ps_code, client_param):
+    """Klient przypisany do PS: param > słownik projektów > zuken_ps_summaries > zuken_projects."""
+    if client_param:
+        return str(client_param).strip()
+    ps = str(ps_code or "").strip().upper()
+    if not ps:
+        return None
+    meta = _projekty_dict(cur).get(ps)
+    if meta and meta.get("klient"):
+        return str(meta["klient"]).strip()
+    try:
+        row = cur.execute(
+            "SELECT client FROM zuken_ps_summaries WHERE UPPER(ps_code) = ? AND client IS NOT NULL AND client != '' LIMIT 1",
+            (ps,)).fetchone()
+        if row and row["client"]:
+            return str(row["client"]).strip()
+    except Exception:
+        pass
+    try:
+        for r in cur.execute(
+                "SELECT client, ps_codes, project_name FROM zuken_projects WHERE client IS NOT NULL AND client != ''"):
+            codes = (r["ps_codes"] or "").upper()
+            pname = (r["project_name"] or "").upper()
+            if ps in codes or ps in pname:
+                return str(r["client"]).strip()
+    except Exception:
+        pass
+    return None
+
+
 def find_matching_projects(ps_code=None, client=None):
     """Zwraca listę projektów Zukena pasujących do podanego PS lub klienta."""
     conn = get_db()
@@ -5066,48 +5148,66 @@ def diagnose_defect(element="", typ="", opisProblem="", ps_code=None, client=Non
 
     if is_carnation_query:
         hist_sql = """
-            SELECT r.id as record_id, r.projekt, r.element, r.opisProblem, s.id as solution_id, s.tytul, s.opis, s.created_by
+            SELECT r.id as record_id, r.projekt, r.klient, r.element, r.opisProblem, s.id as solution_id, s.tytul, s.opis, s.created_by
             FROM records r
             JOIN solutions s ON s.record_id = r.id
             WHERE (r.element LIKE '%carnation%' OR r.opisProblem LIKE '%carnation%' OR s.tytul LIKE '%carnation%' OR s.opis LIKE '%carnation%' OR s.tytul LIKE '%X258%')
             ORDER BY r.created DESC
-            LIMIT 6;
+            LIMIT 60;
         """
         cur.execute(hist_sql)
     elif is_intercom_query:
         hist_sql = """
-            SELECT r.id as record_id, r.projekt, r.element, r.opisProblem, s.id as solution_id, s.tytul, s.opis, s.created_by
+            SELECT r.id as record_id, r.projekt, r.klient, r.element, r.opisProblem, s.id as solution_id, s.tytul, s.opis, s.created_by
             FROM records r
             JOIN solutions s ON s.record_id = r.id
             WHERE (r.element LIKE '%interkom%' OR r.opisProblem LIKE '%interkom%' OR r.element LIKE '%intercom%' OR s.tytul LIKE '%interkom%')
             ORDER BY r.created DESC
-            LIMIT 6;
+            LIMIT 60;
         """
         cur.execute(hist_sql)
     elif is_radio_query:
         hist_sql = """
-            SELECT r.id as record_id, r.projekt, r.element, r.opisProblem, s.id as solution_id, s.tytul, s.opis, s.created_by
+            SELECT r.id as record_id, r.projekt, r.klient, r.element, r.opisProblem, s.id as solution_id, s.tytul, s.opis, s.created_by
             FROM records r
             JOIN solutions s ON s.record_id = r.id
             WHERE (r.element LIKE '%radi%' OR r.opisProblem LIKE '%radi%' OR s.tytul LIKE '%radi%' OR s.tytul LIKE '%głośnik%')
             ORDER BY r.created DESC
-            LIMIT 6;
+            LIMIT 60;
         """
         cur.execute(hist_sql)
     else:
         hist_sql = """
-            SELECT r.id as record_id, r.projekt, r.element, r.opisProblem, s.id as solution_id, s.tytul, s.opis, s.created_by
+            SELECT r.id as record_id, r.projekt, r.klient, r.element, r.opisProblem, s.id as solution_id, s.tytul, s.opis, s.created_by
             FROM records r
             JOIN solutions s ON s.record_id = r.id
             WHERE r.element LIKE ? OR r.opisProblem LIKE ? OR r.typ LIKE ?
             ORDER BY r.created DESC
-            LIMIT 6;
+            LIMIT 60;
         """
         sample_q = f"%{element}%" if element else (f"%{tokens[0]}%" if tokens else "%")
         cur.execute(hist_sql, (sample_q, sample_q, sample_q))
 
     for r in cur.fetchall():
         history_solutions.append(dict(r))
+
+    # Priorytetyzacja powiązanych usterek:
+    # scope 0 = ten sam projekt PS, 1 = ten sam klient, 2 = pozostałe projekty.
+    # SQL zwraca po dacie DESC, sort() jest stabilny — kolejność w grupach zostaje.
+    target_ps = (ps_code or "").strip().upper()
+    ps_to_client = {k: str(v.get("klient") or "") for k, v in _projekty_dict(cur).items()}
+    target_client = _resolve_client_for_ps(cur, ps_code, client)
+    for h in history_solutions:
+        h_ps = (h.get("projekt") or "").strip().upper()
+        h_client = h.get("klient") or ps_to_client.get(h_ps, "")
+        if target_ps and h_ps == target_ps:
+            h["scope"] = 0
+        elif target_client and h_client and _clients_match(h_client, target_client):
+            h["scope"] = 1
+        else:
+            h["scope"] = 2
+    history_solutions.sort(key=lambda h: h["scope"])
+    history_solutions = history_solutions[:12]
 
     # Pobierz również powiązane dokumenty/schematy PDF z tabeli solution_documents
     schema_pdf_references = []
@@ -5504,6 +5604,7 @@ def diagnose_defect(element="", typ="", opisProblem="", ps_code=None, client=Non
         "pdf_sheet_matches": pdf_sheet_matches,
         "device_glossary": device_glossary_list[:15],
         "history_solutions": history_solutions,
+        "history_context": {"ps": target_ps, "client": target_client or ""},
         "current_solutions": current_record_solutions,
         "focused_solution": focused_solution,
         "schema_pdf_references": schema_pdf_references,

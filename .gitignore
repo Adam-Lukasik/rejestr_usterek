@@ -45,3 +45,11 @@ baza wiedzy/
 # Kopie zapasowe i paczki synchronizacyjne
 backups/
 
+# Build release (Nuitka, paczki, cache manifestów)
+build/
+node_modules/
+tools/.kb_cache.json
+
+# Sekrety lokalne (hasło SMTP) — poza repo
+secrets.json
+

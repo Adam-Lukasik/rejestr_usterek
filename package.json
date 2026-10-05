@@ -1,0 +1,14 @@
+{
+  "name": "rejestr-usterek",
+  "private": true,
+  "version": "2.1.0",
+  "description": "Narzędzia builda release (minifikacja frontendu)",
+  "scripts": {
+    "minify": "node tools/minify.js",
+    "check-i18n": "node check_i18n.js"
+  },
+  "devDependencies": {
+    "html-minifier-terser": "^7.2.0",
+    "terser": "^5.31.0"
+  }
+}

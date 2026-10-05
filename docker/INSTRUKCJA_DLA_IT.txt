@@ -1,0 +1,92 @@
+============================================================
+REJESTR USTEREK - serwer centralny (Docker)
+Instrukcja dla administratora / informatyka
+============================================================
+
+Ten folder jest GOTOWY - baza, Baza wiedzy i konfiguracja sa
+juz w podkatalogu data/. Nie trzeba nic przenosic ani zmieniac.
+
+Cala robota sprowadza sie do:
+   1. skopiowania tego folderu na serwer z Dockerem,
+   2. uruchomienia:  docker compose up -d --build
+   3. odblokowania portu TCP 5050 w firewallu (tylko LAN).
+
+Sprawdzenie:
+   http://<serwer>:5050/api/version   -> {"version": "X.Y.Z"}
+   http://<serwer>:5050               -> ekran logowania
+
+============================================================
+WARIANT A - serwer z Dockerem (Linux / Windows / VM)
+============================================================
+
+   docker compose up -d --build
+   (starsze instalacje:  docker-compose up -d --build)
+
+============================================================
+WARIANT B - QNAP (Container Station)
+============================================================
+
+Jesli masz konto admina na QNAP:
+
+1. App Center -> zainstaluj "Container Station" (jesli brak).
+
+2. Skopiuj ten folder przez SMB do udzialu, np.
+      \\QNAP\RejestrUsterek\
+   (fizycznie na NAS-ie laduje np. w /share/RejestrUsterek/)
+
+3. Opcja B1 - bez SSH, przez GUI Container Station:
+      Container Station -> Utworz -> "Utworz aplikacje"
+      -> wklej zawartosc docker-compose.yml (wpis  ./:/app
+         zamien na  /share/RejestrUsterek:/app  oraz
+         "build: ." na  "build: /share/RejestrUsterek")
+      -> Utworz.
+
+   Opcja B2 - przez SSH (wlacz w Panelu: Usługi sieci i plikow
+   -> Telnet/SSH):
+      ssh admin@<IP-QNAP>
+      cd /share/RejestrUsterek
+      docker compose up -d --build
+      # na starszym QTS moze byc:  docker-compose up -d --build
+
+   Uwaga: bardzo stare NAS-y (ARM, <2 GB RAM, QTS 4.x z
+   Container Station 1.x) moga nie uciagnac - wtedy lepiej
+   stawiac na zwyklym serwerze/VM z Dockerem.
+
+4. Firewall QNAP jest zwykle otwarty w LAN - jesli nie,
+   port 5050 w Control Panel -> Bezpieczenstwo.
+
+============================================================
+KLIENCI (technicy)
+============================================================
+
+Po starcie serwera wystarczy przegladarka:
+   http://<serwer>:5050
+
+Opcjonalnie istniejacy portable klient (RejestrUsterek.exe):
+w pliku  data\desktop_config.json  dopisac:
+   "server_url": "http://<serwer>:5050"
+
+============================================================
+AKTUALIZACJE / BACKUP / LOGI
+============================================================
+
+Aktualizacje kodu robi autor SAM, z poziomu aplikacji:
+konto admin -> Kopie & Eksport -> "Wgraj aktualizacje serwera"
+(plik ZIP). Serwer sprawdza paczke, zachowuje kopie starego
+kodu w data/code_backup/, podmienia pliki i sam sie restartuje
+(kontener ma restart: unless-stopped). Migracje bazy wykonuja
+sie automatycznie. Nie jest potrzebny dostep do hosta ani IT.
+
+Do IT trzeba wrocic TYLKO gdy zmienia sie biblioteki Pythona
+(requirements-server.txt) - wtedy po podmianie pliku:
+   docker compose up -d --build
+(autor zgłosi to z gory).
+
+Reczna podmiana kodu (awaryjnie): nadpisz pliki w folderze
+(data/ zostaw!) i wykonaj  docker compose restart
+
+Backup: kopiowac katalog data/ (przy zatrzymanym kontenerze);
+w srodku jest tez wbudowany auto-backup (data/backups/).
+
+Logi:   docker logs -f rejestr-usterek
+Status: docker compose ps

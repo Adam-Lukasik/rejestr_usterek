@@ -8,7 +8,7 @@
   "AUTO_BACKUP_INCLUDE_KB": false,
   "UPDATE_SHARE": "",
   "SMTP": {
-    "ENABLED": true,
+    "ENABLED": false,
     "SERVER": "smtp.gmail.com",
     "PORT": 587,
     "USE_TLS": true,

@@ -24,7 +24,8 @@ const TRANSLATIONS = {
       projectDocs: "Dokumenty projektu",
       projectDocsTitle: "Schematy i dokumenty projektu PS (Baza wiedzy)",
       reworks: "Reworki",
-      reworksTitle: "Lista reworków wiązki dla projektu PS"
+      reworksTitle: "Lista reworków wiązki dla projektu PS",
+      currentProject: "Projekt:"
     },
     status: {
       open: "Oczekuje na wariant",
@@ -463,6 +464,32 @@ const TRANSLATIONS = {
       },
       backup: {
         pageTitle: "Kopie Zapasowe i Narzędzia Bazy",
+        updTitle: "⬆ Aktualizacje programu",
+        updDesc: "Sprawdza na serwerze firmowym, czy jest nowsza wersja programu. Aktualizacja pobiera paczkę i uruchamia program ponownie — Twoje dane i Baza wiedzy zostają bez zmian.",
+        updCurrent: "Zainstalowana wersja:",
+        updCheckBtn: "🔍 Sprawdź aktualizacje",
+        updApplyBtn: "Zainstaluj i uruchom ponownie",
+        updIdle: "Kliknij przycisk „Sprawdź aktualizacje“.",
+        updChecking: "Sprawdzanie dostępności aktualizacji…",
+        updDisabled: "Aktualizacje nie są skonfigurowane (brak UPDATE_SHARE w konfiguracji).",
+        updUnreachable: "Serwer aktualizacji nieosiągalny (sprawdź połączenie z siecią firmową).",
+        updAvailable: "Dostępna nowa wersja: {v} {s}",
+        updUpToDate: "Masz najnowszą wersję programu.",
+        updConfirm: "Zainstalować wersję {v}? Program pobierze paczkę i uruchomi się ponownie.",
+        updApplying: "Pobieranie i instalowanie aktualizacji…",
+        updRestarting: "Aktualizacja zainstalowana — program uruchamia się ponownie…",
+        updDone: "Program został zaktualizowany.",
+        updFailed: "Aktualizacja nie powiodła się: {v}",
+        kbSyncBtn: "📚 Synchronizuj Bazę wiedzy",
+        kbSyncIdle: "Dociąga nowe/zmienione dokumenty z serwera firmowego.",
+        kbSyncWorking: "Synchronizacja Bazy wiedzy w toku…",
+        kbSyncDone: "Baza wiedzy: pobrano {c} plików ({s}), usunięto {r}.",
+        srvUpdTitle: "🖥 Aktualizacja serwera",
+        srvUpdDesc: "Wgraj plik ZIP z nową wersją kodu serwera. Serwer sprawdzi paczkę, zachowa kopię starego kodu, podmieni pliki i uruchomi się ponownie (ok. 10–20 s). Dane i Baza wiedzy zostają bez zmian. Tylko administrator.",
+        srvUpdBtn: "📦 Wgraj aktualizację serwera (ZIP)",
+        srvUpdConfirm: "Wgrać plik {v} i zrestartować serwer? Wszyscy użytkownicy zostaną na chwilę rozłączeni.",
+        srvUpdWorking: "Wgrywanie i instalacja…",
+        srvUpdDone: "Zaktualizowano do wersji {v} ({n} plików). Serwer się restartuje — za chwilę odśwież stronę.",
         walTitle: "💾 Przygotuj bazę do ręcznego kopiowania (scal plik rejestr_usterek.db)",
         walDesc: "Wymusza natychmiastowe zrzucenie wszystkich bieżących transakcji i wpisów (bufora WAL) bezpośrednio do głównego pliku <code>rejestr_usterek.db</code>.",
         walNote: "Dzięki temu plik <code>rejestr_usterek.db</code> jest w 100% kompletny i możesz go bezpiecznie skopiować na pendrive. Alternatywnie użyj paczki synchronizacyjnej powyżej — jest bezpieczniejsza.",
@@ -759,7 +786,8 @@ const TRANSLATIONS = {
         emailAuthor: "Kliknij, aby wysłać wiadomość e-mail do autora",
         zukenItemTitle: "Asystent madA — wyszukiwarka schematów, złączy i obwodów",
         zukenSummariesTitle: "Zestawienia Zuken: Spis złączy z pinoutem, zestaw bezpieczników i przekaźników (PS)",
-        btnNewTypeTitle: "Dodaj nowy typ usterki do słownika"
+        btnNewTypeTitle: "Dodaj nowy typ usterki do słownika",
+        currentProjectTitle: "Aktualny projekt PS — wspólny dla wszystkich widoków"
       },
       common: {
         connecting: "Łączenie...",
@@ -919,7 +947,8 @@ const TRANSLATIONS = {
         restoreConfirm: "UWAGA: Bieżąca baza zostanie nadpisana zawartością pliku „{v}”. Przed przywróceniem powstanie kopia bezpieczeństwa. Kontynuować?",
         restoring: "Przywracanie bazy z kopii...",
         restoreDone: "Baza przywrócona! Kopia poprzedniego stanu: {v}\nAplikacja zostanie przeładowana.",
-        errBackup: "Błąd kopii zapasowej: {v}"
+        errBackup: "Błąd kopii zapasowej: {v}",
+        errUpdate: "Błąd aktualizacji: {v}"
       },
       auth: {
         badLogin: "Nieprawidłowy login lub hasło.",
@@ -1222,6 +1251,9 @@ const TRANSLATIONS = {
         noCircuitFound: "Nie znaleziono bezpośredniego obwodu w plikach połączeń dla zapytania. Spróbuj wyszukać np. symbol złącza (np. <code>X292</code>, <code>FH14</code>) lub nazwę funkcji w języku angielskim (np. <code>BLUES</code>, <code>SOCKET</code>).",
         bomIdentified: "Zidentyfikowane komponenty i złączki z BOM",
         historyTitle: "💡 Sprawdzone rozwiązania z bazy napraw ({n})",
+        histGroupProject: "Ten projekt — {ps}",
+        histGroupClient: "Ten sam klient — {client}",
+        histGroupOther: "Pozostałe projekty",
         insertDesc: "Wstaw opis",
         pdfDocsTitle: "Schematy i dokumenty powiązane z tą usterką",
         masterPage: "🔗 Odpowiada stronie <strong>{v}</strong> w kompletnym schemacie pojazdu ({f}).",
@@ -1259,7 +1291,8 @@ const TRANSLATIONS = {
       projectDocs: "Project documents",
       projectDocsTitle: "Schematics and documents of the PS project (Knowledge Base)",
       reworks: "Reworks",
-      reworksTitle: "Harness rework list for the PS project"
+      reworksTitle: "Harness rework list for the PS project",
+      currentProject: "Project:"
     },
     status: {
       open: "Pending solution",
@@ -1698,6 +1731,32 @@ const TRANSLATIONS = {
       },
       backup: {
         pageTitle: "Backups & Database Tools",
+        updTitle: "⬆ Program updates",
+        updDesc: "Checks the company server for a newer version. The update downloads a package and restarts the app — your data and knowledge base stay unchanged.",
+        updCurrent: "Installed version:",
+        updCheckBtn: "🔍 Check for updates",
+        updApplyBtn: "Install and restart",
+        updIdle: "Click \"Check for updates\".",
+        updChecking: "Checking for updates…",
+        updDisabled: "Updates are not configured (no UPDATE_SHARE in config).",
+        updUnreachable: "Update server unreachable (check company network connection).",
+        updAvailable: "New version available: {v} {s}",
+        updUpToDate: "You have the latest version.",
+        updConfirm: "Install version {v}? The app will download the package and restart.",
+        updApplying: "Downloading and installing the update…",
+        updRestarting: "Update installed — the app is restarting…",
+        updDone: "The app has been updated.",
+        updFailed: "Update failed: {v}",
+        kbSyncBtn: "📚 Sync knowledge base",
+        kbSyncIdle: "Fetches new/changed documents from the company server.",
+        kbSyncWorking: "Knowledge base sync in progress…",
+        kbSyncDone: "Knowledge base: downloaded {c} files ({s}), removed {r}.",
+        srvUpdTitle: "🖥 Server update",
+        srvUpdDesc: "Upload a ZIP with the new server code. The server validates the package, keeps a backup of the old code, replaces the files and restarts (about 10–20 s). Data and the knowledge base are untouched. Administrator only.",
+        srvUpdBtn: "📦 Upload server update (ZIP)",
+        srvUpdConfirm: "Upload {v} and restart the server? All users will be briefly disconnected.",
+        srvUpdWorking: "Uploading and installing…",
+        srvUpdDone: "Updated to version {v} ({n} files). The server is restarting — refresh the page in a moment.",
         walTitle: "💾 Prepare the database for manual copy (merge rejestr_usterek.db file)",
         walDesc: "Forces an immediate flush of all pending transactions and entries (WAL buffer) directly into the main <code>rejestr_usterek.db</code> file.",
         walNote: "This makes the <code>rejestr_usterek.db</code> file 100% complete and safe to copy to a USB drive. Alternatively use the sync package above — it is safer.",
@@ -1994,7 +2053,8 @@ const TRANSLATIONS = {
         emailAuthor: "Click to send an e-mail to the author",
         zukenItemTitle: "madA Assistant — schematic, connector and circuit search",
         zukenSummariesTitle: "Zuken summaries: connector list with pinout, fuse and relay set (PS)",
-        btnNewTypeTitle: "Add a new defect type to the dictionary"
+        btnNewTypeTitle: "Add a new defect type to the dictionary",
+        currentProjectTitle: "Current PS project — shared across all views"
       },
       common: {
         connecting: "Connecting...",
@@ -2154,7 +2214,8 @@ const TRANSLATIONS = {
         restoreConfirm: "WARNING: The current database will be overwritten with the contents of \"{v}\". A safety backup will be created first. Continue?",
         restoring: "Restoring database from backup...",
         restoreDone: "Database restored! Previous state copy: {v}\nThe app will now reload.",
-        errBackup: "Backup error: {v}"
+        errBackup: "Backup error: {v}",
+        errUpdate: "Update error: {v}"
       },
       auth: {
         badLogin: "Invalid username or password.",
@@ -2457,6 +2518,9 @@ const TRANSLATIONS = {
         noCircuitFound: "No direct circuit found in the connection files for this query. Try searching e.g. a connector symbol (e.g. <code>X292</code>, <code>FH14</code>) or an English function name (e.g. <code>BLUES</code>, <code>SOCKET</code>).",
         bomIdentified: "Identified components and connectors from BOM",
         historyTitle: "💡 Proven solutions from the repair database ({n})",
+        histGroupProject: "This project — {ps}",
+        histGroupClient: "Same client — {client}",
+        histGroupOther: "Other projects",
         insertDesc: "Insert description",
         pdfDocsTitle: "Schematics and documents related to this defect",
         masterPage: "🔗 Corresponds to page <strong>{v}</strong> in the complete vehicle schematic ({f}).",
@@ -2493,7 +2557,8 @@ const TRANSLATIONS = {
       projectDocs: "Projektdokumente",
       projectDocsTitle: "Schaltpläne und Dokumente des PS-Projekts (Wissensdatenbank)",
       reworks: "Reworks",
-      reworksTitle: "Rework-Liste des Kabelbaums für das PS-Projekt"
+      reworksTitle: "Rework-Liste des Kabelbaums für das PS-Projekt",
+      currentProject: "Projekt:"
     },
     status: {
       open: "Wartet auf Lösung",
@@ -2932,6 +2997,32 @@ const TRANSLATIONS = {
       },
       backup: {
         pageTitle: "Backups & Datenbankwerkzeuge",
+        updTitle: "⬆ Programm-Updates",
+        updDesc: "Prüft auf dem Firmenserver, ob eine neuere Version verfügbar ist. Das Update lädt ein Paket herunter und startet das Programm neu — Ihre Daten und die Wissensdatenbank bleiben unverändert.",
+        updCurrent: "Installierte Version:",
+        updCheckBtn: "🔍 Nach Updates suchen",
+        updApplyBtn: "Installieren und neu starten",
+        updIdle: "Auf »Nach Updates suchen« klicken.",
+        updChecking: "Updates werden gesucht…",
+        updDisabled: "Updates sind nicht konfiguriert (kein UPDATE_SHARE in der Konfiguration).",
+        updUnreachable: "Update-Server nicht erreichbar (Firmennetzwerk prüfen).",
+        updAvailable: "Neue Version verfügbar: {v} {s}",
+        updUpToDate: "Sie haben die neueste Version.",
+        updConfirm: "Version {v} installieren? Das Programm lädt das Paket herunter und startet neu.",
+        updApplying: "Update wird heruntergeladen und installiert…",
+        updRestarting: "Update installiert — das Programm startet neu…",
+        updDone: "Das Programm wurde aktualisiert.",
+        updFailed: "Update fehlgeschlagen: {v}",
+        kbSyncBtn: "📚 Wissensdatenbank synchronisieren",
+        kbSyncIdle: "Lädt neue/geänderte Dokumente vom Firmenserver.",
+        kbSyncWorking: "Wissensdatenbank wird synchronisiert…",
+        kbSyncDone: "Wissensdatenbank: {c} Dateien geladen ({s}), {r} entfernt.",
+        srvUpdTitle: "🖥 Server-Update",
+        srvUpdDesc: "ZIP mit dem neuen Servercode hochladen. Der Server prüft das Paket, sichert den alten Code, ersetzt die Dateien und startet neu (ca. 10–20 s). Daten und Wissensdatenbank bleiben unverändert. Nur für Administratoren.",
+        srvUpdBtn: "📦 Server-Update hochladen (ZIP)",
+        srvUpdConfirm: "{v} hochladen und Server neu starten? Alle Benutzer werden kurz getrennt.",
+        srvUpdWorking: "Wird hochgeladen und installiert…",
+        srvUpdDone: "Auf Version {v} aktualisiert ({n} Dateien). Der Server startet neu — Seite gleich aktualisieren.",
         walTitle: "💾 Datenbank für manuelle Kopie vorbereiten (Datei rejestr_usterek.db zusammenführen)",
         walDesc: "Schreibt sofort alle ausstehenden Transaktionen und Einträge (WAL-Puffer) direkt in die Hauptdatei <code>rejestr_usterek.db</code>.",
         walNote: "Dadurch ist die Datei <code>rejestr_usterek.db</code> zu 100 % vollständig und kann sicher auf einen USB-Stick kopiert werden. Alternativ das Sync-Paket oben verwenden — es ist sicherer.",
@@ -3228,7 +3319,8 @@ const TRANSLATIONS = {
         emailAuthor: "Klicken, um eine E-Mail an den Autor zu senden",
         zukenItemTitle: "madA-Assistent — Schaltplan-, Stecker- und Stromkreissuche",
         zukenSummariesTitle: "Zuken-Übersichten: Steckverbinderliste mit Pinbelegung, Sicherungs- und Relaissatz (PS)",
-        btnNewTypeTitle: "Neuen Mangeltyp zum Wörterbuch hinzufügen"
+        btnNewTypeTitle: "Neuen Mangeltyp zum Wörterbuch hinzufügen",
+        currentProjectTitle: "Aktuelles PS-Projekt — für alle Ansichten gemeinsam"
       },
       common: {
         connecting: "Verbinden...",
@@ -3388,7 +3480,8 @@ const TRANSLATIONS = {
         restoreConfirm: "ACHTUNG: Die aktuelle Datenbank wird mit dem Inhalt von \"{v}\" überschrieben. Vorher wird eine Sicherungskopie erstellt. Fortfahren?",
         restoring: "Datenbank wird aus Backup wiederhergestellt...",
         restoreDone: "Datenbank wiederhergestellt! Kopie des vorherigen Stands: {v}\nDie App wird neu geladen.",
-        errBackup: "Backup-Fehler: {v}"
+        errBackup: "Backup-Fehler: {v}",
+        errUpdate: "Update-Fehler: {v}"
       },
       auth: {
         badLogin: "Ungültiger Benutzername oder Passwort.",
@@ -3691,6 +3784,9 @@ const TRANSLATIONS = {
         noCircuitFound: "Kein direkter Stromkreis in den Verbindungsdateien für diese Anfrage gefunden. Versuchen Sie z. B. ein Steckersymbol (z. B. <code>X292</code>, <code>FH14</code>) oder einen englischen Funktionsnamen (z. B. <code>BLUES</code>, <code>SOCKET</code>).",
         bomIdentified: "Identifizierte Komponenten und Stecker aus BOM",
         historyTitle: "💡 Bewährte Lösungen aus der Reparaturdatenbank ({n})",
+        histGroupProject: "Dieses Projekt — {ps}",
+        histGroupClient: "Gleicher Kunde — {client}",
+        histGroupOther: "Andere Projekte",
         insertDesc: "Beschreibung einfügen",
         pdfDocsTitle: "Mit diesem Mangel verbundene Schaltpläne und Dokumente",
         masterPage: "🔗 Entspricht Seite <strong>{v}</strong> im kompletten Fahrzeugschaltplan ({f}).",

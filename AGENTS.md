@@ -22,6 +22,41 @@ Wersja wielojęzykowa: `SUPPORTED_LANGS = ("pl", "en", "de")`, tłumaczenia w
 - Auto-backupy: `backup_service.py` → `backups/`, konfiguracja w `config.json`
   (`AUTO_BACKUP_*`).
 
+## Dystrybucja dla techników (build skompilowany + updater)
+
+- **Build:** `uruchom_release.bat` → `tools/build_release.py` (venv z Nuitką w `venv/`):
+  check_i18n → eksport danych systemowych → minifikacja frontendu → kompilacja
+  Nuitka `--standalone` (gcc/MinGW pobierany 1×) → `build/release/RejestrUsterek/`
+  → ZIP + `latest.json` w `build/dist/`; `--deploy <udział>` kopiuje na NAS,
+  `--skip-nuitka`/`--skip-tests`/`--no-minify`/`--console` do testów.
+- **Układ pakietu:** `RejestrUsterek\{app\, data\, Updater.exe}` — `app/` jest
+  podmieniane w całości przy update, `data/` (baza, config, Baza wiedzy) nietknięte.
+- **Ścieżki:** `STATIC_DIR` (zasoby kodu) i `DATA_DIR` (dane) przez env
+  `RU_STATIC_DIR`/`RU_DATA_DIR`/`RU_PKG_DIR` ustawiane w `desktop_web.py`
+  (wykrycie builda: `__compiled__`/`sys.frozen`); w dev oba = katalog repo.
+- **Updater:** `tools/updater.py` → `Updater.exe` (onefile); podmienia `app/` po
+  zakończeniu procesu, status w `data/updates/update_status.json` (czytany raz
+  przez UI po restarcie). Endpointy: `/api/version`, `/api/update/check|apply|status`.
+  Źródło paczek: `UPDATE_SHARE` w config.json (udział SMB `...\updates` z
+  `latest.json`; alternatywnie URL http(s)).
+- **Migracje danych:** `migrations/NNNN_*.sql` w paczce, aplikowane przez
+  `_run_migrations()` w `init_db` → tabela `schema_migrations`. Skrypty idempotentne;
+  `tools/export_migrations.py` eksportuje tabele systemowe (`zuken_conn_pinouts`,
+  `zuken_query_aliases` — lista `SYSTEM_TABLES`) z dev-bazy jako
+  `CREATE IF NOT EXISTS` + `DELETE`+`INSERT` — zmiany w UI u Adama lecą do
+  wszystkich baz z aktualizacją.
+- **Delta Bazy wiedzy:** `tools/kb_push.py --dest \\NAS\RejestrUsterek` wysyła
+  zmiany do `<udział>/kb/` + `kb_manifest.json`; klient `POST /api/kb-sync`
+  dociąga deltę (stan w `data/.kb_sync_state.json`, usunięte → `data/.kb_removed/`).
+- **Wersja:** stała `VERSION` w `app.py` — bump przed każdym buildem.
+- **DevTools wyłączone** domyślnie (pywebview `debug=False` → AreDevToolsEnabled,
+  skróty i menu kontekstowe off); frontend i tak serwowany po localhost —
+  realna ochrona = minifikacja. Backend .py nie wchodzi do paczki (binarka Nuitka).
+- **Sekrety:** `secrets.json` (gitignored, per-instalacja) nadpisuje klucze
+  z `config.json` — trzyma `SMTP.PASSWORD`/`USER`. Stare hasło Gmail jest w
+  historii git → **do zrotowania**. Szablon configu w paczce: `HOST=127.0.0.1`,
+  SMTP wyłączone, bez haseł.
+
 ## Struktura danych / katalogi poza gitem
 
 - `rejestr_usterek.db` — baza SQLite (gitignored)
@@ -30,11 +65,14 @@ Wersja wielojęzykowa: `SUPPORTED_LANGS = ("pl", "en", "de")`, tłumaczenia w
 - `python-embed/` — przenośny WinPython (~303 MB, gitignored, per maszyna)
 - `sumatrapdfcache/`, `SumatraPDF*` — podgląd PDF (gitignored)
 - `webview_profile/` — trwały profil WebView2 (`private_mode=False` w `desktop_web.py`);
-  trzyma localStorage UI: `ru_last_ps` (domyślny projekt PS), `ru_theme`,
+  trzyma localStorage UI: `ru_last_ps` (domyślny projekt PS stanowiska — fallback),
+  `ru_last_ps_<username>` (ostatni projekt per użytkownik), `ru_theme`,
   `ru_active_user`, stan paneli (gitignored)
-- `config.json` — **jest w repo** i zawiera hasło SMTP (app password Gmail).
-  Repozytorium prywatne, ale rozważyć rotację hasła lub wyniesienie sekretów
-  do pliku nieśledzonego (np. `config.local.json` / env).
+- `config.json` — jest w repo, ale **bez sekretów** (hasło SMTP przeniesione do
+  `secrets.json`, gitignored). Stare hasło zostaje w historii git → rotacja w Gmailu.
+- `secrets.json` — sekrety lokalne (SMTP), nadpisuje klucze config.json (gitignored)
+- `build/` — artefakty builda release (gitignored); `migrations/` — SQL-e systemowe **w repo**
+- `venv/` — venv z Nuitką do buildów (gitignored); `node_modules/` — narzędzia minifikacji
 
 ## Workflow (Adam, 2 komputery, bez OneDrive)
 
@@ -57,6 +95,18 @@ Wersja wielojęzykowa: `SUPPORTED_LANGS = ("pl", "en", "de")`, tłumaczenia w
   `smsg()` (i18n). DB przez `sqlite3` + `Row`.
 - Frontend: vanilla JS w jednym HTML-u, `t()` dla i18n, `escapeHtml()`,
   helpery typu `wireLabelAttrs()` współdzielone między widokami.
+- Aktualny projekt PS: `STATE.lastSelectedPS` = jedyne źródło prawdy; zapis tylko
+  przez `setCurrentPS()` (synchronizuje wszystkie selektory: `global-ps-select` w
+  sidebarze, `f-projekt`, `docs-ps-select`, `reworks-ps-select`,
+  `zuken-summ-ps-select`, `zuken-context-project-select` + przeładowuje aktywny
+  widok). Klucz localStorage z `psStorageKey()` (per user). Po ustaleniu
+  użytkownika wołać `loadUserPS()` (login/sesja/quick-switch). Wyjątki: „Wszystkie
+  schematy" w asystencie i otwarcie z rekordu usterki NIE ruszają globalu;
+  `f-projekt` chroniony gdy `STATE.editingRecordId`.
+- Powiązane usterki w asystencie: backend (`diagnose_defect`) oznacza `scope`
+  (0=ten projekt, 1=ten sam klient, 2=reszta), sortuje, zwraca `history_context`;
+  klient z `_resolve_client_for_ps` (param > lists.projekty > zuken_ps_summaries
+  > zuken_projects), porównanie `_clients_match`/`_client_key`.
 - Nowe typy bazy wiedzy: tablica `KB_TYPES` w HTML + obsługa w backendzie.
 - Ścieżki plików KB: zawsze przez `zuken_service.resolve_kb_filepath(..., heal_db=True)`
   — naprawia ścieżki po przeniesieniu katalogu projektu.
@@ -95,6 +145,16 @@ Wersja wielojęzykowa: `SUPPORTED_LANGS = ("pl", "en", "de")`, tłumaczenia w
   `_query_token_groups()` używane w `trace_circuit` i `assistant_list`.
 - Test UI bez klikania: headless Edge + CDP (node 22 ma globalny WebSocket),
   `openAiDiagnosisModal({projekt, default_query})`, zrzut `Page.captureScreenshot`.
+
+## Serwer centralny (Docker)
+
+- `server_main.py` — headless entrypoint (bez webview/tkinter), env `RU_HOST`/`RU_PORT`/`RU_DATA_DIR`.
+- `docker/` — Dockerfile (python:3.12-slim), docker-compose.yml (port 5050, wolumen `./data`),
+  requirements-server.txt (bez pywebview), config.docker.json (HOST 0.0.0.0), INSTRUKCJA_DLA_IT.txt.
+- `python tools/build_server_pack.py` → `build/server/rejestr_usterek_serwer_v<VERSION>.zip`
+  (plaski układ dla Dockerfile, ~360 KB; VERSION brany regexem z app.py).
+- Klienci: przeglądarka `http://serwer:5050` lub portable exe z `"server_url"` w
+  `desktop_config.json` — wtedy klient jest thin-clientem (bez lokalnej bazy).
 
 ## Weryfikacja
 

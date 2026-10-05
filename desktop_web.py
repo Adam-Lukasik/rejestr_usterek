@@ -52,7 +52,22 @@ if sys.stderr is None:
 
 
 BASE_DIR = Path(__file__).resolve().parent
-LOG_FILE = BASE_DIR / "desktop_web.log"
+# W buildzie Nuitka: exe leży w <pakiet>\app\, a dane użytkownika w <pakiet>\data\
+# (kod jest wymieniany w całości przy aktualizacji — dane muszą być poza nim).
+COMPILED = globals().get("__compiled__") is not None or getattr(sys, "frozen", False)
+if COMPILED:
+    APP_DIR = Path(sys.executable).resolve().parent
+    DATA_DIR = APP_DIR.parent / "data"
+else:
+    APP_DIR = BASE_DIR
+    DATA_DIR = BASE_DIR
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+# Zmienne środowiskowe dla app/zuken_service/backup_service — przed ich importem
+os.environ.setdefault("RU_STATIC_DIR", str(APP_DIR))
+os.environ.setdefault("RU_DATA_DIR", str(DATA_DIR))
+if COMPILED:
+    os.environ.setdefault("RU_PKG_DIR", str(APP_DIR.parent))
+LOG_FILE = DATA_DIR / "desktop_web.log"
 
 logging.basicConfig(
     filename=str(LOG_FILE),
@@ -61,8 +76,8 @@ logging.basicConfig(
     encoding="utf-8"
 )
 
-CFG_FILE = BASE_DIR / "config.json"
-DESKTOP_CFG = BASE_DIR / "desktop_config.json"
+CFG_FILE = DATA_DIR / "config.json"
+DESKTOP_CFG = DATA_DIR / "desktop_config.json"
 APP_TITLE = "Rejestr Usterek v2.0 - Panel Diagnostyki i Serwisu"
 
 class SplashScreen:
@@ -165,8 +180,8 @@ def _is_port_open(host: str, port: int) -> bool:
 
 def _start_backend(splash=None):
     """Uruchamia serwer Flask/Waitress w osobnym wątku."""
-    os.chdir(BASE_DIR)
-    sys.path.insert(0, str(BASE_DIR))
+    os.chdir(DATA_DIR)
+    sys.path.insert(0, str(APP_DIR))
     from app import app as flask_app, init_db, CFG
     
     if splash:
@@ -380,7 +395,7 @@ def main():
         # motyw, aktywny użytkownik) przetrwa restart — w trybie prywatnym
         # (domyślnym w pywebview) był czyszczony przy każdym zamknięciu okna
         webview.start(on_started, debug=("--debug" in sys.argv), gui="edgechromium",
-                      private_mode=False, storage_path=str(BASE_DIR / "webview_profile"))
+                      private_mode=False, storage_path=str(DATA_DIR / "webview_profile"))
         logging.info("Zamknięto okno webview")
 
     except Exception as ex:

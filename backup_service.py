@@ -25,9 +25,10 @@ from datetime import datetime as _dt
 from pathlib import Path
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_PATH = os.path.join(BASE_DIR, "rejestr_usterek.db")
-BAZA_WIEDZY_DIR = os.path.join(BASE_DIR, "Baza wiedzy")
-BACKUP_DIR = os.path.join(BASE_DIR, "backups")
+DATA_DIR = os.environ.get("RU_DATA_DIR") or BASE_DIR
+DB_PATH = os.path.join(DATA_DIR, "rejestr_usterek.db")
+BAZA_WIEDZY_DIR = os.path.join(DATA_DIR, "Baza wiedzy")
+BACKUP_DIR = os.path.join(DATA_DIR, "backups")
 AUTO_BACKUP_ENABLED = True
 AUTO_BACKUP_KEEP = 15
 
@@ -53,7 +54,7 @@ def configure(db_path=None, cfg=None, base_dir=None):
     if cfg:
         bd = (cfg.get("BACKUP_DIR") or "").strip()
         if bd:
-            BACKUP_DIR = bd if os.path.isabs(bd) else os.path.join(BASE_DIR, bd)
+            BACKUP_DIR = bd if os.path.isabs(bd) else os.path.join(base_dir or DATA_DIR, bd)
         AUTO_BACKUP_ENABLED = bool(cfg.get("AUTO_BACKUP_ENABLED", True))
         try:
             AUTO_BACKUP_KEEP = max(1, int(cfg.get("AUTO_BACKUP_KEEP", 15)))
