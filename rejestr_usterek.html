@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Rejestr Usterek v2.0 - Panel Diagnostyki i Serwisu</title>
+<link rel="icon" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAE0klEQVR4nO1WW29UVRT+1tp7br2dDpFoKJQW2xKm+KJBWhVLDMQHNNFEIdE/oNGAJkiiwRQefDDRBzTBquHBW2JCjPqAEgioL8ZEG/BCQYEADW1pK9A5nTkz57L38mHaaad2pFHAF77kJDvnfOtb37qckwPcwi38z6D/wJebbuC6Z5/HwD8ZEjz5Ygp3JpK4GAb08Zt5qc5fsD+ac64euGdP4vkP9/94j1dc+lsykf+gpeXePz//ZGShiapBzzqL4zSngSwAZ+amWGoklrG+TxtES3NdEDisOO1dGF7iOM1FayNm1rbELsVms4NXF2qAent7eWBggEZGJt6rr294HIAREVXJAggivpV6n1nHiUzSyuTcdhGRZSbOZt3vXVe2rFzZWMxkMrJr1y6Zev63DhMAOE5zuqvr7tF3+t6KOU4DoigC0cx0RABiBqeSIAC2UIS1FrMoJQ4RrLXYtvUlHD16uH18/OKZ2clEhOaaKI9AKTXpOA1px3EkDEMqGygpw3oeCv3HSIxBTecqKMeR6WezOiClJJBEoib91KZNaa8Y45rba+zgYBZEdHWuibIBEXAURRSGIaIoKhsgAKomieL5cZx64mnYyRw6Dn4B58H7KPJ8zNlbYsXwPI82b9l8ePuOF2wuVwArMvU1KTVw4uQrRNQnIoqITIWBqQoqLhDB5vMIhoYRXBiEqqsFMyEcHkHh9Fmo+gaoRqfUpfJMCWIFiWTK+cVN4tK4BwBY3EhYc1fnG/v27jsE4JyIMBFZnrsU5Y4YC07G4f16AqfWbcD5Z7YCUQSKxzG0czdOdq+H+813UMk4xJiKWCIgDEOZmMzLhJsXr1CUgfOj0Ziprd3w8Pr3p0ZAAFDVwIwRA5PLwXrezL1CAcbNQaKoahwRkRGiyIICKxTTSh88di5K3tH60E8//PAcERkRUbqqABPED1GTWYWOr79EMDSMoZ27YQtFLHn1ZaQ6VyK+bDmsH4K4sg4BwExoX5xCmuuhtQIREESGR6/mZWlL6+vbe3s/Y+ZLFQZEpHyBCGIMVKMDZ103vLPnEF65AuvmkFydgfNAF8JCADvd/qk9EJTiNRPWLKtD8TYFpdQ0h0BME25Ym47XLRKRGQNEBK01YrHYzBICEGuBMELccdDW9zYkilDbshwII2gmEMemai7xWXFFvAFjetICQUzFwEySSCQjYNZbYIyJXNeNAEgQBAoA81RrrbUgpWzssUctCPByechEtuJjNTM6hjEGvu+z67qc94pQSsFaARGs1lpcdxJB4Jf4AJDJZBYBscuO45QTilj4vg8RIJFIgJlBVkrVKjVv8mnkcnkwMxKJOHy/WKHBzBARuO5k58DA8QENAFpr3/fN3vHx8TpjxDKjnZnvb2vrEK01Tp/+ncIg+NkKHSMSFiFbLTmRsNbaiki75+UrNcLguLV0nEjYGHWlagVtbR07urt7zP79XwUHDnwbbNz4SNTa2vZu1YB5sGLFwjTKO9DT06OHhoZUU1OTGRu7/Ec2m+UjRw5xKpWyY2OjrHXyRImTUk1NBTNXaBoL1Thz5mAAQOYbJAOwHR2rX4uicJuIxLTWHzU0pJ7t7+83KK38tf54rocG0NXV1bR27dqWaxJvkAZXOd9UjZmvyL/H9dC4hRuHvwBnKnd+3dBKkQAAAABJRU5ErkJggg==">
 <style>
   @keyframes fadeInOverlay {
     from { opacity: 0; }
@@ -5769,6 +5770,10 @@ async function kbOpenDoc(idx) {
   const d = (KB_STATE.docs || [])[idx];
   const ps = KB_STATE.ps;
   if (!d || !ps) return;
+  if (isRemoteServer()) {
+    await openKbFileRemote(`${location.origin}/api/zuken/kb/${encodeURIComponent(ps)}/file?path=${encodeURIComponent(d.rel)}`);
+    return;
+  }
   try {
     await apiCall(`/api/zuken/kb/${encodeURIComponent(ps)}/open-file`, 'POST', { path: d.rel });
   } catch (err) {
@@ -5853,6 +5858,10 @@ async function loadProjectDocs(ps) {
 async function docsOpenFile(idx) {
   const d = (DOCS_STATE.docs || [])[idx];
   if (!d || !DOCS_STATE.ps) return;
+  if (isRemoteServer()) {
+    await openKbFileRemote(`${location.origin}/api/zuken/kb/${encodeURIComponent(DOCS_STATE.ps)}/file?path=${encodeURIComponent(d.rel)}`);
+    return;
+  }
   try {
     await apiCall(`/api/zuken/kb/${encodeURIComponent(DOCS_STATE.ps)}/open-file`, 'POST', { path: d.rel });
   } catch (err) {
@@ -5975,6 +5984,10 @@ async function loadReworkCardPhotos(rwId) {
 async function reworkOpenAttachment(id) {
   const rw = (REWORKS_STATE.items || []).find(x => x.id === id);
   if (!rw || !rw.attachment || !REWORKS_STATE.ps) return;
+  if (isRemoteServer()) {
+    await openKbFileRemote(`${location.origin}/api/zuken/kb/${encodeURIComponent(REWORKS_STATE.ps)}/file?path=${encodeURIComponent(rw.attachment)}`);
+    return;
+  }
   try {
     await apiCall(`/api/zuken/kb/${encodeURIComponent(REWORKS_STATE.ps)}/open-file`, 'POST', { path: rw.attachment });
   } catch (err) {
@@ -9672,6 +9685,32 @@ async function openSystemDocument(openEndpoint) {
   }
 }
 
+function isRemoteServer() {
+  // Backend na zdalnym serwerze (Docker/NAS): pliki KB nie są lokalne dla klienta.
+  return !['127.0.0.1', 'localhost'].includes(location.hostname);
+}
+
+async function openKbFileRemote(url) {
+  // exe (WebView2): cache na notebooku + os.startfile (np. E3.view dla .e3s);
+  // czysta przeglądarka: pobranie pliku / podgląd inline.
+  const api = window.pywebview && window.pywebview.api;
+  if (api && typeof api.open_remote_file === 'function') {
+    try {
+      showToast(t('js.common.downloadingFile'), 'info');
+      const r = await api.open_remote_file(url);
+      if (r && r.ok) {
+        showToast(t('js.common.fileOpenedLocal'), 'success');
+      } else {
+        showToast(t('js.form.errOpen', { v: (r && r.error) || '?' }), 'error');
+      }
+    } catch(e) {
+      showToast(e.message, 'error');
+    }
+    return;
+  }
+  window.open(url, '_blank');
+}
+
 async function openPdfSheet(schematicId, page, fallbackUrl, target) {
   if (typeof schematicId === 'string' && !page && !fallbackUrl) {
     fallbackUrl = schematicId;
@@ -9679,6 +9718,14 @@ async function openPdfSheet(schematicId, page, fallbackUrl, target) {
   }
 
   if (schematicId) {
+    if (isRemoteServer()) {
+      if (target === 'zuken') {
+        await openKbFileRemote(`${location.origin}/api/zuken/e3s/${schematicId}`);
+      } else {
+        window.open(`${location.origin}/api/zuken/pdf/view/${schematicId}#page=${page || 1}`, '_blank');
+      }
+      return;
+    }
     try {
       const targetHint = target === 'pdf' ? t('js.zuken.inSumatra') : (target === 'zuken' ? t('js.zuken.inZuken') : '');
       showToast(t('js.zuken.openingSheet', { n: page || 1, v: targetHint }), 'info');

@@ -16,6 +16,15 @@ from pathlib import Path
 APP_DIR = Path(__file__).resolve().parent
 DATA_DIR = Path(os.environ.get("RU_DATA_DIR") or APP_DIR / "data").resolve()
 DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+# Gdy brak data/config.json — kopiuj szablon serwerowy (HOST=0.0.0.0, PORT=5050).
+# Bez tego app.py wziąłby domyślne 127.0.0.1:5000 i serwer byłby niedostępny z LAN.
+_cfg = DATA_DIR / "config.json"
+_tpl = APP_DIR / "config.docker.json"
+if not _cfg.exists() and _tpl.exists():
+    import shutil as _shutil
+    _shutil.copy2(_tpl, _cfg)
+
 os.environ["RU_SERVER"] = "1"
 os.environ["RU_STATIC_DIR"] = str(APP_DIR)
 os.environ["RU_DATA_DIR"] = str(DATA_DIR)

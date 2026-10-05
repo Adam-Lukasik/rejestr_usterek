@@ -8,5 +8,6 @@ services:
       - "5050:5050"
     environment:
       RU_SERVER: "1"
+      TZ: "Europe/Warsaw"
     volumes:
       - ./:/app

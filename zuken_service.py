@@ -2463,7 +2463,10 @@ def resolve_kb_filepath(filepath, heal_db=False):
     marker = "baza wiedzy\\"
     i = norm.lower().rfind(marker)
     if i >= 0:
-        cand = os.path.normpath(os.path.join(BAZA_WIEDZY_DIR, norm[i + len(marker):]))
+        # Ścieżki w DB mogą pochodzić z Windows (backslashe) — na Linuxie
+        # trzeba je przekonwertować na os.sep, inaczej exists() pada.
+        rel = norm[i + len(marker):].replace("\\", os.sep)
+        cand = os.path.normpath(os.path.join(BAZA_WIEDZY_DIR, rel))
         if os.path.exists(cand):
             if heal_db:
                 try:
@@ -2477,7 +2480,8 @@ def resolve_kb_filepath(filepath, heal_db=False):
             return cand
 
     # Ostateczność: szukaj po samej nazwie pliku w całej Bazie wiedzy
-    fname = os.path.basename(filepath)
+    # (basename() na POSIX nie rozumie backslashy — najpierw konwersja na '/').
+    fname = os.path.basename(filepath.replace("\\", "/"))
     if fname and os.path.isdir(BAZA_WIEDZY_DIR):
         try:
             for hit in Path(BAZA_WIEDZY_DIR).glob(f"**/{fname}"):

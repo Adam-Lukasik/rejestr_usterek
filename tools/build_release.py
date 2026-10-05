@@ -145,6 +145,7 @@ def main():
             "--output-filename=RejestrUsterek.exe",
             f"--product-name=Rejestr Usterek",
             f"--file-version={version}",
+            f"--windows-icon-from-ico={os.path.join(BASE_DIR, 'ikona.ico')}",
             "--include-package=clr_loader",
             "--include-package=pythonnet",
             "--include-package-data=webview",

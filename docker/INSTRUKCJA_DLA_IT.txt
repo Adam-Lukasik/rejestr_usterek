@@ -15,6 +15,12 @@ Sprawdzenie:
    http://<serwer>:5050/api/version   -> {"version": "X.Y.Z"}
    http://<serwer>:5050               -> ekran logowania
 
+PORT 5050:
+   Sprawdz czy wolny:  netstat -tlnp | grep 5050   (lub:  ss -tlnp)
+   Jesli zajety - w docker-compose.yml zmien TYLKO lewa strone
+   mapowania, np.  "5060:5050"  (w kontenerze zostaje 5050).
+   Wtedy klienci wchodza na  http://<serwer>:5060
+
 ============================================================
 WARIANT A - serwer z Dockerem (Linux / Windows / VM)
 ============================================================

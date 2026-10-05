@@ -28,10 +28,18 @@ DOCKER_FILES = [
 
 
 def main():
-    if PACK.exists():
-        shutil.rmtree(PACK)
-    (PACK / "migrations").mkdir(parents=True)
-    (PACK / "data").mkdir()
+    PACK.mkdir(parents=True, exist_ok=True)
+    # Czyść zawartość paczki, ale NIGDY nie ruszaj data/ — po uzupełnieniu
+    # danymi produkcyjnymi (baza, Baza wiedzy) rmtree usunąłby je bezpowrotnie.
+    for child in PACK.iterdir():
+        if child.name == "data":
+            continue
+        if child.is_dir():
+            shutil.rmtree(child)
+        else:
+            child.unlink()
+    (PACK / "migrations").mkdir(parents=True, exist_ok=True)
+    (PACK / "data").mkdir(exist_ok=True)
 
     for name in CODE_FILES:
         shutil.copy2(ROOT / name, PACK / name)

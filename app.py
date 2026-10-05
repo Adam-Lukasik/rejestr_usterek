@@ -144,7 +144,7 @@ app = Flask(__name__)
 # Limit uploadu dla paczek synchronizacyjnych / backupów (baza + Baza wiedzy)
 app.config["MAX_CONTENT_LENGTH"] = 2 * 1024 * 1024 * 1024
 
-VERSION = "2.1.0"
+VERSION = "2.1.2"
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # STATIC_DIR — zasoby kodu (UI, migracje, narzędzia); DATA_DIR — dane użytkownika
@@ -409,6 +409,7 @@ SRV_MSG = {
     "psParamRequired": {"pl": "Parametr ps jest wymagany.", "en": "Parameter ps is required.", "de": "Parameter ps ist erforderlich."},
     "batchStopSignal": {"pl": "Wysłano sygnał zatrzymania zadania.", "en": "Stop signal sent to the task.", "de": "Stoppsignal an die Aufgabe gesendet."},
     "noBatchRunning": {"pl": "Żadne zadanie masowe nie jest obecnie uruchomione.", "en": "No batch task is currently running.", "de": "Derzeit läuft keine Stapelaufgabe."},
+    "srvLocalOnly": {"pl": "Ta funkcja jest dostępna tylko w wersji desktopowej — na serwerze użyj podglądu w przeglądarce.", "en": "This action is only available in the desktop app — on the server use the browser preview.", "de": "Diese Aktion ist nur in der Desktop-App verfügbar — auf dem Server die Browser-Vorschau nutzen."},
 }
 
 # ── Masowe tłumaczenie brakujących wariantów językowych (admin) ──────────────
@@ -2317,6 +2318,8 @@ def get_solution_document_raw(doc_id):
 @app.route("/api/solution-documents/<doc_id>/open", methods=["POST"])
 def open_solution_document(doc_id):
     """Zapisuje dokument do pliku tymczasowego i otwiera go w domyślnej aplikacji Windows."""
+    if _is_server_mode():
+        return jsonify({"error": smsg("srvLocalOnly")}), 400
     conn = get_db_connection()
     row = conn.execute(
         "SELECT filename, data FROM solution_documents WHERE id=?", (doc_id,)).fetchone()
@@ -2536,6 +2539,8 @@ def get_document_raw(doc_id):
 @app.route("/api/documents/<doc_id>/open", methods=["POST"])
 def open_document(doc_id):
     """Zapisuje dokument do pliku tymczasowego i otwiera go w domyślnej aplikacji Windows."""
+    if _is_server_mode():
+        return jsonify({"error": smsg("srvLocalOnly")}), 400
     conn = get_db_connection()
     row = conn.execute(
         "SELECT filename, data FROM documents WHERE id=?", (doc_id,)).fetchone()
@@ -2823,6 +2828,8 @@ def api_zuken_rework_photo_delete(photo_id):
 @app.route("/api/zuken/kb/<ps_code>/open-folder", methods=["POST"])
 def api_zuken_kb_open_folder(ps_code):
     """Tworzy (jeśli trzeba) i otwiera folder Bazy wiedzy danego PS w Eksploratorze Windows."""
+    if _is_server_mode():
+        return jsonify({"error": smsg("srvLocalOnly")}), 400
     lang = _app_lang()
     ps = (ps_code or "").strip().upper()
     if not _valid_ps_code(ps):
@@ -2842,6 +2849,8 @@ def api_zuken_kb_open_folder(ps_code):
 @app.route("/api/zuken/kb/<ps_code>/open-file", methods=["POST"])
 def api_zuken_kb_open_file(ps_code):
     """Otwiera wskazany plik z drzewa Bazy wiedzy projektu w domyślnej aplikacji."""
+    if _is_server_mode():
+        return jsonify({"error": smsg("srvLocalOnly")}), 400
     lang = _app_lang()
     ps = (ps_code or "").strip().upper()
     if not _valid_ps_code(ps):
@@ -2860,6 +2869,66 @@ def api_zuken_kb_open_file(ps_code):
         return jsonify({"status": "success", "file": rel})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+def _serve_kb_file(full_path):
+    """Serwuje plik z Bazy wiedzy: inline dla typów renderowanych w przeglądarce,
+    jako załącznik dla reszty (.e3s, .xlsx, .msg…)."""
+    fname = os.path.basename(full_path)
+    ext = os.path.splitext(fname)[1].lower()
+    mime_map = {
+        ".pdf": "application/pdf",
+        ".txt": "text/plain; charset=utf-8",
+        ".png": "image/png",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".html": "text/html; charset=utf-8",
+        ".htm": "text/html; charset=utf-8",
+    }
+    mimetype = mime_map.get(ext, "application/octet-stream")
+    as_attachment = ext not in mime_map
+    response = send_from_directory(os.path.dirname(full_path), fname,
+                                   mimetype=mimetype, as_attachment=as_attachment)
+    if not as_attachment:
+        response.headers["Content-Disposition"] = f'inline; filename="{fname}"'
+    return response
+
+
+@app.route("/api/zuken/kb/<ps_code>/file")
+def api_zuken_kb_get_file(ps_code):
+    """Serwuje dowolny plik z drzewa Bazy wiedzy projektu (podgląd inline / pobranie).
+    Klienci serwerowi używają tego zamiast otwierania w systemie."""
+    lang = _app_lang()
+    ps = (ps_code or "").strip().upper()
+    if not _valid_ps_code(ps):
+        return jsonify({"error": zuken_service.zsmsg("kbBadPs", lang, v=ps_code)}), 400
+    rel = (request.args.get("path") or "").strip().replace("/", os.sep).replace("\\", os.sep)
+    base = os.path.normpath(zuken_service._kb_dir_for_ps(ps))
+    full = os.path.normpath(os.path.join(base, rel))
+    if not rel or rel.startswith("..") or not full.startswith(base + os.sep) or not os.path.isfile(full):
+        return jsonify({"error": smsg("notFound")}), 404
+    return _serve_kb_file(full)
+
+
+@app.route("/api/zuken/e3s/<int:schematic_id>")
+def api_zuken_e3s_file(schematic_id):
+    """Serwuje plik .e3s odpowiadający schematowi. Klient serwerowy (exe) pobiera
+    go do lokalnego cache i otwiera w Zuken E3.view na własnym komputerze."""
+    conn = zuken_service.get_db()
+    try:
+        row = conn.execute(
+            "SELECT filepath FROM zuken_pdf_schematics WHERE id=?",
+            (schematic_id,)).fetchone()
+    finally:
+        conn.close()
+    if not row:
+        return jsonify({"error": smsg("schematicNotFound2")}), 404
+    filepath = zuken_service.resolve_kb_filepath(row["filepath"], heal_db=True)
+    e3s = zuken_service.find_e3s_counterpart(filepath) if filepath else None
+    if not e3s or not os.path.exists(e3s):
+        return jsonify({"error": smsg("noE3sFile")}), 404
+    return send_from_directory(os.path.dirname(e3s), os.path.basename(e3s),
+                              as_attachment=True)
 
 
 @app.route("/api/zuken/kb/<ps_code>/process", methods=["POST"])
@@ -2926,6 +2995,8 @@ def api_zuken_pdf_view(schematic_id):
 @app.route("/api/zuken/pdf/open", methods=["POST"])
 def api_zuken_pdf_open():
     """Otwiera wskazany schemat w Zuken E3.series (jeśli zainstalowany) lub w SumatraPDF / Acrobat na właściwym arkuszu."""
+    if _is_server_mode():
+        return jsonify({"error": smsg("srvLocalOnly")}), 400
     try:
         data = request.get_json() or {}
         schematic_id = data.get("schematic_id")
@@ -3683,6 +3754,8 @@ def api_backup_download(name):
 @app.route("/api/backup/open-folder", methods=["POST"])
 def api_backup_open_folder():
     """Otwiera katalog kopii zapasowych w Eksploratorze Windows."""
+    if _is_server_mode():
+        return jsonify({"error": smsg("srvLocalOnly")}), 400
     try:
         os.makedirs(backup_service.BACKUP_DIR, exist_ok=True)
         if hasattr(os, "startfile"):

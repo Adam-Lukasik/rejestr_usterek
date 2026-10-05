@@ -335,6 +335,50 @@ def main():
                         self._win.set_title(str(title))
                 except Exception:
                     pass
+            def open_remote_file(self, url, filename=""):
+                """Pobiera plik z serwera do lokalnego cache (data/e3s_cache)
+                i otwiera w domyślnej aplikacji systemowej (np. Zuken E3.view
+                dla .e3s). Przy kolejnych otwarciach używa lokalnej kopii,
+                o ile rozmiar i data modyfikacji na serwerze się nie zmieniły."""
+                import shutil as _sh
+                import email.utils as _eu
+                import urllib.parse as _up
+                import urllib.request as _ur
+                try:
+                    cache_dir = DATA_DIR / "e3s_cache"
+                    cache_dir.mkdir(parents=True, exist_ok=True)
+                    fname = (_up.unquote(_up.urlparse(url).path.rsplit("/", 1)[-1])
+                             or filename or "plik")
+                    local = cache_dir / fname
+
+                    remote_size, remote_mtime = -1, 0.0
+                    try:
+                        req = _ur.Request(url, method="HEAD")
+                        with _ur.urlopen(req, timeout=10) as r:
+                            remote_size = int(r.headers.get("Content-Length") or -1)
+                            lm = r.headers.get("Last-Modified")
+                            if lm:
+                                remote_mtime = _eu.parsedate_to_datetime(lm).timestamp()
+                    except Exception:
+                        pass
+
+                    fresh = (local.exists()
+                             and (remote_size < 0 or local.stat().st_size == remote_size)
+                             and (remote_mtime <= 0
+                                  or local.stat().st_mtime >= remote_mtime - 2))
+                    if not fresh:
+                        req = _ur.Request(
+                            url, headers={"User-Agent": "RejestrUsterek-Client"})
+                        with _ur.urlopen(req, timeout=300) as r, open(local, "wb") as f:
+                            _sh.copyfileobj(r, f)
+                        if remote_mtime > 0:
+                            os.utime(local, (remote_mtime, remote_mtime))
+                        logging.info(f"e3s_cache pobrano: {fname} -> {local}")
+                    os.startfile(str(local))
+                    return {"ok": True, "cached": fresh, "path": str(local)}
+                except Exception as e:
+                    logging.error(f"open_remote_file({url}): {e}")
+                    return {"ok": False, "error": str(e)}
 
         api = WebviewApi(None)
 
