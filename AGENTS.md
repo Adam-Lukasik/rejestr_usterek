@@ -47,7 +47,13 @@ Wersja wielojęzykowa: `SUPPORTED_LANGS = ("pl", "en", "de")`, tłumaczenia w
   wszystkich baz z aktualizacją.
 - **Delta Bazy wiedzy:** `tools/kb_push.py --dest \\NAS\RejestrUsterek` wysyła
   zmiany do `<udział>/kb/` + `kb_manifest.json`; klient `POST /api/kb-sync`
-  dociąga deltę (stan w `data/.kb_sync_state.json`, usunięte → `data/.kb_removed/`).
+  (przycisk w ustawieniach backupu) dociąga deltę (stan w `data/.kb_sync_state.json`,
+  usunięte → `data/.kb_removed/`).
+- **Zdjęcia komponentów w paczce:** `Baza wiedzy/zdjecia_komponentow/` jest
+  kopiowane do `app/zdjecia_komponentow/` przy buildzie — lookup w
+  `find_local_component_image` i `/api/zuken/bom/image/` ma fallback na
+  `PACKAGED_IMAGES_DIR` (STATIC_DIR), więc zdjęcia idą z update bez kb-sync.
+  Lokalne zdjęcie w danych ma pierwszeństwo (nadpisania).
 - **Wersja:** stała `VERSION` w `app.py` — bump przed każdym buildem.
 - **DevTools wyłączone** domyślnie (pywebview `debug=False` → AreDevToolsEnabled,
   skróty i menu kontekstowe off); frontend i tak serwowany po localhost —

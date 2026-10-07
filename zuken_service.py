@@ -48,6 +48,9 @@ DATA_DIR = os.environ.get("RU_DATA_DIR") or BASE_DIR
 BAZA_WIEDZY_DIR = os.path.join(DATA_DIR, "Baza wiedzy")
 BOM_IMAGES_DIR = os.path.join(BAZA_WIEDZY_DIR, "zdjecia_komponentow")
 os.makedirs(BOM_IMAGES_DIR, exist_ok=True)
+# Zdjęcia komponentów spakowane z aplikacją (build kopiuje tam zawartość
+# BOM_IMAGES_DIR) — fallback, gdy lokalne zdjęcie nie istnieje w danych.
+PACKAGED_IMAGES_DIR = os.path.join(STATIC_DIR, "zdjecia_komponentow")
 DB_PATH = os.path.join(DATA_DIR, "rejestr_usterek.db")
 
 
@@ -1065,30 +1068,32 @@ def _bom_image_url(fname, full_path):
 
 def find_local_component_image(article_number):
     """
-    Sprawdza, czy w katalogu Baza wiedzy/zdjecia_komponentow/ istnieje zdjęcie dla artykułu.
+    Sprawdza, czy istnieje zdjęcie dla artykułu — najpierw w lokalnym
+    Baza wiedzy/zdjecia_komponentow/ (nadpisania użytkownika), potem w
+    katalogu spakowanym z aplikacją (STATIC_DIR/zdjecia_komponentow).
     Zwraca ścieżkę względną URL (/api/zuken/bom/image/<filename>?v=<mtime>) lub None.
     """
     if not article_number:
         return None
     sanitized = sanitize_article_code(article_number)
-    if not os.path.exists(BOM_IMAGES_DIR):
-        return None
+    img_dirs = [d for d in (BOM_IMAGES_DIR, PACKAGED_IMAGES_DIR) if os.path.isdir(d)]
 
-    # Przeszukaj popularne rozszerzenia
-    for ext in [".jpg", ".jpeg", ".png", ".webp", ".svg", ".gif"]:
-        candidate = f"{sanitized}{ext}"
-        full_path = os.path.join(BOM_IMAGES_DIR, candidate)
-        if os.path.isfile(full_path):
-            return _bom_image_url(candidate, full_path)
+    for img_dir in img_dirs:
+        # Przeszukaj popularne rozszerzenia
+        for ext in [".jpg", ".jpeg", ".png", ".webp", ".svg", ".gif"]:
+            candidate = f"{sanitized}{ext}"
+            full_path = os.path.join(img_dir, candidate)
+            if os.path.isfile(full_path):
+                return _bom_image_url(candidate, full_path)
 
-    # Sprawdź też dokładną nazwę w katalogu (case-insensitive)
-    try:
-        for fname in os.listdir(BOM_IMAGES_DIR):
-            name_without_ext, ext = os.path.splitext(fname)
-            if name_without_ext.lower() == sanitized.lower() and ext.lower() in [".jpg", ".jpeg", ".png", ".webp", ".svg", ".gif"]:
-                return _bom_image_url(fname, os.path.join(BOM_IMAGES_DIR, fname))
-    except Exception:
-        pass
+        # Sprawdź też dokładną nazwę w katalogu (case-insensitive)
+        try:
+            for fname in os.listdir(img_dir):
+                name_without_ext, ext = os.path.splitext(fname)
+                if name_without_ext.lower() == sanitized.lower() and ext.lower() in [".jpg", ".jpeg", ".png", ".webp", ".svg", ".gif"]:
+                    return _bom_image_url(fname, os.path.join(img_dir, fname))
+        except Exception:
+            pass
 
     return None
 

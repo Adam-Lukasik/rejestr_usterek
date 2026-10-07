@@ -154,8 +154,13 @@ def main():
             f"--include-data-files={os.path.join(STAGE_DIR, 'translations.js')}=translations.js",
             f"--include-data-dir={os.path.join(BASE_DIR, 'migrations')}=migrations",
             f"--include-data-files={os.path.join(BASE_DIR, 'SumatraPDF.exe')}=SumatraPDF.exe",
-            os.path.join(BASE_DIR, "desktop_web.py"),
         ]
+        # Zdjęcia komponentów pakowane z aplikacją — serwowane jako fallback,
+        # gdy technik nie ma ich lokalnie w Baza wiedzy/zdjecia_komponentow.
+        img_dir = os.path.join(BASE_DIR, "Baza wiedzy", "zdjecia_komponentow")
+        if os.path.isdir(img_dir):
+            nuitka_args.append(f"--include-data-dir={img_dir}=zdjecia_komponentow")
+        nuitka_args.append(os.path.join(BASE_DIR, "desktop_web.py"))
         sh(nuitka_args)
 
     dist_src = os.path.join(NUITKA_OUT, DIST_NAME)

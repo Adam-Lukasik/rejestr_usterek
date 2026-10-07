@@ -144,7 +144,7 @@ app = Flask(__name__)
 # Limit uploadu dla paczek synchronizacyjnych / backupów (baza + Baza wiedzy)
 app.config["MAX_CONTENT_LENGTH"] = 2 * 1024 * 1024 * 1024
 
-VERSION = "2.1.3"
+VERSION = "2.1.4"
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # STATIC_DIR — zasoby kodu (UI, migracje, narzędzia); DATA_DIR — dane użytkownika
@@ -3192,7 +3192,10 @@ def api_zuken_bom_image(filename):
         clean_name = os.path.basename(filename)
         img_dir = zuken_service.BOM_IMAGES_DIR
         if not os.path.exists(os.path.join(img_dir, clean_name)):
-            return jsonify({"error": smsg("photoNotFound")}), 404
+            # fallback: zdjęcia spakowane z aplikacją (z update'u)
+            img_dir = zuken_service.PACKAGED_IMAGES_DIR
+            if not os.path.exists(os.path.join(img_dir, clean_name)):
+                return jsonify({"error": smsg("photoNotFound")}), 404
 
         response = send_from_directory(img_dir, clean_name)
         response.headers["Cache-Control"] = "no-cache"
