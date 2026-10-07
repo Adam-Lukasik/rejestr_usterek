@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Rejestr Usterek v2.0 - Panel Diagnostyki i Serwisu</title>
-<link rel="icon" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAE0klEQVR4nO1WW29UVRT+1tp7br2dDpFoKJQW2xKm+KJBWhVLDMQHNNFEIdE/oNGAJkiiwRQefDDRBzTBquHBW2JCjPqAEgioL8ZEG/BCQYEADW1pK9A5nTkz57L38mHaaad2pFHAF77kJDvnfOtb37qckwPcwi38z6D/wJebbuC6Z5/HwD8ZEjz5Ygp3JpK4GAb08Zt5qc5fsD+ac64euGdP4vkP9/94j1dc+lsykf+gpeXePz//ZGShiapBzzqL4zSngSwAZ+amWGoklrG+TxtES3NdEDisOO1dGF7iOM1FayNm1rbELsVms4NXF2qAent7eWBggEZGJt6rr294HIAREVXJAggivpV6n1nHiUzSyuTcdhGRZSbOZt3vXVe2rFzZWMxkMrJr1y6Zev63DhMAOE5zuqvr7tF3+t6KOU4DoigC0cx0RABiBqeSIAC2UIS1FrMoJQ4RrLXYtvUlHD16uH18/OKZ2clEhOaaKI9AKTXpOA1px3EkDEMqGygpw3oeCv3HSIxBTecqKMeR6WezOiClJJBEoib91KZNaa8Y45rba+zgYBZEdHWuibIBEXAURRSGIaIoKhsgAKomieL5cZx64mnYyRw6Dn4B58H7KPJ8zNlbYsXwPI82b9l8ePuOF2wuVwArMvU1KTVw4uQrRNQnIoqITIWBqQoqLhDB5vMIhoYRXBiEqqsFMyEcHkHh9Fmo+gaoRqfUpfJMCWIFiWTK+cVN4tK4BwBY3EhYc1fnG/v27jsE4JyIMBFZnrsU5Y4YC07G4f16AqfWbcD5Z7YCUQSKxzG0czdOdq+H+813UMk4xJiKWCIgDEOZmMzLhJsXr1CUgfOj0Ziprd3w8Pr3p0ZAAFDVwIwRA5PLwXrezL1CAcbNQaKoahwRkRGiyIICKxTTSh88di5K3tH60E8//PAcERkRUbqqABPED1GTWYWOr79EMDSMoZ27YQtFLHn1ZaQ6VyK+bDmsH4K4sg4BwExoX5xCmuuhtQIREESGR6/mZWlL6+vbe3s/Y+ZLFQZEpHyBCGIMVKMDZ103vLPnEF65AuvmkFydgfNAF8JCADvd/qk9EJTiNRPWLKtD8TYFpdQ0h0BME25Ym47XLRKRGQNEBK01YrHYzBICEGuBMELccdDW9zYkilDbshwII2gmEMemai7xWXFFvAFjetICQUzFwEySSCQjYNZbYIyJXNeNAEgQBAoA81RrrbUgpWzssUctCPByechEtuJjNTM6hjEGvu+z67qc94pQSsFaARGs1lpcdxJB4Jf4AJDJZBYBscuO45QTilj4vg8RIJFIgJlBVkrVKjVv8mnkcnkwMxKJOHy/WKHBzBARuO5k58DA8QENAFpr3/fN3vHx8TpjxDKjnZnvb2vrEK01Tp/+ncIg+NkKHSMSFiFbLTmRsNbaiki75+UrNcLguLV0nEjYGHWlagVtbR07urt7zP79XwUHDnwbbNz4SNTa2vZu1YB5sGLFwjTKO9DT06OHhoZUU1OTGRu7/Ec2m+UjRw5xKpWyY2OjrHXyRImTUk1NBTNXaBoL1Thz5mAAQOYbJAOwHR2rX4uicJuIxLTWHzU0pJ7t7+83KK38tf54rocG0NXV1bR27dqWaxJvkAZXOd9UjZmvyL/H9dC4hRuHvwBnKnd+3dBKkQAAAABJRU5ErkJggg==">
+<link rel="icon" href="data:image/png;base64,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">
 <style>
   @keyframes fadeInOverlay {
     from { opacity: 0; }
@@ -3241,6 +3241,11 @@ window.STATE = STATE;
 /* ── START I INICJALIZACJA ── */
 document.addEventListener('DOMContentLoaded', async () => {
   window.STATE = STATE;
+  fetch('/api/version').then(r => r.json()).then(v => {
+    if (!v || !v.version) return;
+    document.querySelectorAll('.version-tag').forEach(el => el.textContent = 'v' + v.version);
+    document.title = 'Rejestr Usterek v' + v.version + ' - Panel Diagnostyki i Serwisu';
+  }).catch(() => {});
   if (typeof applyLanguage === 'function') applyLanguage(getLanguage());
   applyTheme(STATE.theme);
   initLayoutPreferences();
@@ -6167,6 +6172,13 @@ async function showReworkConnFace(connector, reworkId) {
         || (res.items || [])[0];
   } catch (e) { /* brak zestawień */ }
   const L = item ? connFaceLayout({ article: item.article_number || '', desc: item.description || '', pins: item.pin_count || (item.pins || []).length }) : null;
+  const wireColors = {};
+  ((item && item.pins) || []).forEach(p => (p.connections || []).forEach(c => {
+    const pair = wireColorPair(c.wire_color);
+    if (!pair) return;
+    const k = String(p.pin), arr = wireColors[k] = wireColors[k] || [];
+    if (!arr.some(w => w.join('|') === pair.join('|'))) arr.push(pair);
+  }));
   closeConnFace();
   const overlay = document.createElement('div');
   overlay.id = 'conn-face-overlay';
@@ -6176,7 +6188,7 @@ async function showReworkConnFace(connector, reworkId) {
     ? `<div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:8px;">${pins.map(p => `<span style="font-family:var(--font-mono,monospace); font-size:11px; font-weight:700; color:#b45309; background:rgba(217,119,6,0.12); border:1px solid rgba(217,119,6,0.3); padding:1px 8px; border-radius:5px;">⚠️ pin ${escapeHtml(p)}</span>`).join('')}</div>`
     : '';
   const faceHtml = L
-    ? connFaceSvg(L, pins)
+    ? connFaceSvg(L, pins, { wireColors })
     : `<div style="padding:14px; font-size:12px; color:var(--text-muted);">${t('ui.reworks.noConnLayout')}</div>`;
   overlay.innerHTML = `
     <div style="background:var(--bg-card,#fff); border-radius:12px; max-width:560px; width:100%; max-height:80vh; display:flex; flex-direction:column; box-shadow:0 20px 50px rgba(0,0,0,0.3); border:1px solid var(--border);">
@@ -10610,6 +10622,34 @@ function circuitWireStroke(colorText) {
   return '#64748b';
 }
 
+// Kolor przewodu jako [baza, prążek] wg kolejności słów w nazwie —
+// „ŻółtoCzarny" = żółty z czarnym prążkiem. Do wypełniania pól pinów
+// w rysunku złącza (connFaceSvg opt.wireColors).
+function wireColorPair(colorText) {
+  const s = String(colorText || '').toLowerCase();
+  if (!s) return null;
+  const DEFS = [
+    ['czerw', '#ef4444'], ['red', '#ef4444'],
+    ['czarn', '#1e293b'], ['black', '#1e293b'],
+    ['nieb', '#3b82f6'], ['blue', '#3b82f6'],
+    ['brąz', '#92400e'], ['braz', '#92400e'], ['brown', '#92400e'],
+    ['biał', '#ffffff'], ['bial', '#ffffff'], ['white', '#ffffff'],
+    ['żółt', '#eab308'], ['zolt', '#eab308'], ['yellow', '#eab308'],
+    ['ziel', '#10b981'], ['green', '#10b981'], ['grün', '#10b981'],
+    ['fiolet', '#8b5cf6'], ['violet', '#8b5cf6'],
+    ['róż', '#ec4899'], ['roz', '#ec4899'], ['pink', '#ec4899'],
+    ['pomar', '#f97316'], ['orange', '#f97316'],
+    ['szar', '#9ca3af'], ['grau', '#9ca3af'], ['grey', '#9ca3af'], ['gray', '#9ca3af'],
+  ];
+  const hits = [];
+  DEFS.forEach(([k, col]) => { const i = s.indexOf(k); if (i >= 0) hits.push([i, col]); });
+  if (!hits.length) return null;
+  hits.sort((a, b) => a[0] - b[0]);
+  const out = [];
+  hits.forEach(([, col]) => { if (!out.includes(col)) out.push(col); });
+  return out.slice(0, 2);
+}
+
 // Wspólna etykieta przewodu: nr sieci/przewodu · nazwa sygnału (Motor 1) · kolor · przekrój · długość
 function wireLabelAttrs(h) {
   const cs = (h.cross_section || '').replace(/\s*mm²?$/i, '');
@@ -10966,6 +11006,18 @@ function connFaceLayout(info) {
     if (/male\s*term|pin\s*h(ous|sg)|\bpin\b/i.test(blob)) gender = 'M';
     if (/female|socket|receptacle/i.test(blob)) gender = 'F';
     if (!gender) gender = 'M';
+  } else if (/multi[\s-]?interlock/i.test(desc) || /\bMIC\b/.test(desc) || /^(\d+-)?171892-/.test(art)) {
+    // TE AMP MIC „Multi-Interlock" (171892-1 = wtyk 9p na moduł Carnation):
+    // siatka 2×5 jak 10-pinowe — góra 1-5, dół 6,7,(zatrzask),8,9; zatrzask
+    // w środkowej komórce dolnego rzędu (naprzeciw pinu 3) — wg tłoczonych
+    // numerów na obudowie (zdjęcia X347: ścianka z nadrukiem „X347" 1|5;
+    // druga połówka 9|8 zatrzask 7|6).
+    n = n || 9;
+    if (n >= 4) {
+      fam = 'MIC'; rows = 2; cols = Math.ceil(n / 2);
+      gender = /receptacle/i.test(blob) ? 'F' : 'M';
+      return { fam, gender, cols, rows, n, tee: false };
+    }
   } else if (/\bDF11-\d+DS-|\bDF11\b/i.test(blob)) {
     // Hirose DF11-*DS (gniazdo krympowane): strona wkładania styków —
     // dół nieparzyste 1,3,5…, góra parzyste 2,4,6… (datasheet HRS B224).
@@ -11069,6 +11121,17 @@ function connFacePinAt(L, r, c) {
         : ['', '2', '', '7', '1', '3', '6', '5', '4'];
       return ord[r * cols + c] || '';
     }
+    case 'MIC': {
+      // AMP MIC (171892): regularna siatka 2×5 jak złącze 10-pinowe —
+      // góra 1..5, dół 6,7,(zatrzask),8,9: środkowa komórka dolnego rzędu
+      // (naprzeciw pinu 3) to zatrzask, więc dalsze gniazda schodzą o 1
+      // niżej numeracyjnie. Wg tłoczonych numerów na obudowie (zdjęcia X347).
+      if (r === 0) return c + 1;
+      const latch = n % 2 === 1 && c === Math.floor(cols / 2);   // zatrzask (niep. n)
+      if (latch) return '';
+      const p = cols + (c < cols / 2 ? c + 1 : (n % 2 === 1 ? c : c + 1));
+      return p <= n ? p : '';
+    }
     case 'DF11':
       // Hirose DF11-DS: dół nieparzyste 1,3,5…, góra parzyste 2,4,6…
       return L.gender === 'F' ? (r === 0 ? 2 * c + 2 : 2 * c + 1)
@@ -11110,6 +11173,51 @@ function connFaceSvg(L, pin, opt) {
   const cellY = r => boxY + padY + r * ch + (midBand && r >= 2 ? bandH : 0);
   const nest = opt.nested ? `x="${opt.x || 0}" y="${opt.y || 0}" width="${opt.width || W}" height="${opt.height || H}"` : '';
   const lw = mini ? 20 : 48;
+
+  // Kolory przewodów na pinach: {pin: [[baza,prążek?], …]} — pole pinu
+  // wypełniane kolorem przewodu; wybrany pin dostaje grubą obwódkę.
+  const pinWires = opt.wireColors || {};
+  const primOf = p => ((pinWires[String(p)] || [])[0] || [])[0] || null;
+  const _clipBase = 'cfp' + Math.random().toString(36).slice(2, 9);
+  let _clipN = 0;
+  const _lum = hex => {
+    const v = parseInt(String(hex || '').replace('#', ''), 16) || 0;
+    return 0.299 * (v >> 16) + 0.587 * ((v >> 8) & 255) + 0.114 * (v & 255);
+  };
+  // wypełnienie komórki: 1 przewód = baza + prążek po skosie,
+  // 2 przewody = podział po przekątnej, 3+ = pionowe pasy
+  const cellBg = (x, y, w, h, rx, p) => {
+    const ws = (pinWires[String(p)] || []).filter((w, i, a) =>
+      a.findIndex(v => v.join('|') === w.join('|')) === i);
+    if (!ws.length) return '';
+    const cid = `${_clipBase}_${++_clipN}`;
+    let g = `<clipPath id="${cid}"><rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${rx}"/></clipPath><g clip-path="url(#${cid})">`;
+    if (ws.length === 1) {
+      g += `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${ws[0][0]}"/>`;
+      if (ws[0][1]) {
+        const tt = 0.3;
+        g += `<polygon points="${x},${y + h * (1 - tt)} ${x},${y + h} ${x + w * tt},${y + h} ${x + w},${y + h * tt} ${x + w},${y} ${x + w * (1 - tt)},${y}" fill="${ws[0][1]}"/>`;
+      }
+    } else if (ws.length === 2) {
+      g += `<polygon points="${x},${y} ${x + w},${y} ${x},${y + h}" fill="${ws[0][0]}"/>`
+         + `<polygon points="${x + w},${y} ${x + w},${y + h} ${x},${y + h}" fill="${ws[1][0]}"/>`;
+    } else {
+      const bw = w / 3;
+      for (let k = 0; k < 3; k++)
+        g += `<rect x="${x + k * bw}" y="${y}" width="${bw + 0.5}" height="${h}" fill="${ws[k][0]}"/>`;
+    }
+    return g + '</g>';
+  };
+  const emptyCellFill = hot => hot ? 'rgba(2,132,199,0.12)' : 'var(--bg-card-subtle,#f1f5f9)';
+  // kolor numeru pinu: kontrast do wypełnienia; bez przewodu — niebieski gdy wybrany
+  const pinFg = (p, hot) => {
+    const ws = pinWires[String(p)];
+    if (!ws || !ws.length) return { fg: hot ? '#0284c7' : 'var(--text-muted,#475569)', ex: '' };
+    const light = _lum(ws[0][0]) > 150;
+    return { fg: light ? '#0f172a' : '#fff',
+             ex: ` paint-order="stroke" stroke="${light ? 'rgba(255,255,255,0.65)' : 'rgba(15,23,42,0.4)'}" stroke-width="2.5" stroke-linejoin="round"` };
+  };
+
   let s = `<svg ${nest} viewBox="0 0 ${W} ${H}" style="${mini ? '' : 'width:100%; '}display:block;" xmlns="http://www.w3.org/2000/svg">`;
 
   // gniazdo przekaźnika 5/9 od strony przewodów (= przekaźnik od strony nóżek):
@@ -11122,13 +11230,14 @@ function connFaceSvg(L, pin, opt) {
     const W9 = p9 * 2 + cw9 * 3, H9 = p9 * 2 + ch9 * 3;
     const nest9 = opt.nested ? `x="${opt.x || 0}" y="${opt.y || 0}" width="${opt.width || W9}" height="${opt.height || H9}"` : '';
     let s9 = `<svg ${nest9} viewBox="0 0 ${W9} ${H9}" style="${mini ? '' : 'width:100%; max-width:220px; margin:0 auto; '}display:block;" xmlns="http://www.w3.org/2000/svg">`;
-    s9 += `<rect x="1" y="1" width="${W9 - 2}" height="${H9 - 2}" rx="${mini ? 2 : 6}" fill="var(--bg-card,#fff)" stroke="var(--border,#94a3b8)" stroke-width="${mini ? 0.8 : 1.4}"/>`;
+    s9 += `<rect x="1" y="1" width="${W9 - 2}" height="${H9 - 2}" rx="${mini ? 2 : 6}" fill="var(--bg-card-subtle,#e2e8f0)" stroke="var(--border,#94a3b8)" stroke-width="${mini ? 0.8 : 1.4}"/>`;
     grid.forEach((row, r) => row.forEach(([p, k], c) => {
       const hot = pinSet.has(String(p)) || (term[p] && pinSet.has(term[p]));
+      const pc = primOf(p) || primOf(term[p]);
       const cxs = p9 + c * cw9 + cw9 / 2, cys = p9 + r * ch9 + (mini ? ch9 / 2 : ch9 * 0.4);
       const u = mini ? cw9 : 40;
       const [w, h] = k === 'h' ? [u * 0.62, u * 0.16] : k === 'v' ? [u * 0.16, u * 0.62] : [u * 0.13, u * 0.36];
-      s9 += `<rect x="${cxs - w / 2}" y="${cys - h / 2}" width="${w}" height="${h}" rx="${mini ? 0.6 : 1.5}" fill="${hot ? '#0284c7' : 'var(--text-muted,#64748b)'}" stroke="${hot ? '#0284c7' : 'none'}" stroke-width="${hot ? 2 : 0}"/>`;
+      s9 += `<rect x="${cxs - w / 2}" y="${cys - h / 2}" width="${w}" height="${h}" rx="${mini ? 0.6 : 1.5}" fill="${pc || 'var(--text-muted,#64748b)'}" stroke="${hot ? '#0284c7' : 'none'}" stroke-width="${hot ? 3 : 0}"/>`;
       if (!mini) {
         const lbl = term[p] ? `${p} · ${term[p]}` : String(p);
         s9 += `<text x="${cxs}" y="${p9 + r * ch9 + ch9 * 0.9}" text-anchor="middle" font-size="${term[p] ? 9.5 : 8}" font-weight="${hot ? 800 : 600}" fill="${hot ? '#0284c7' : 'var(--text-muted,#475569)'}" font-family="monospace">${lbl}</text>`;
@@ -11140,17 +11249,21 @@ function connFaceSvg(L, pin, opt) {
   // RCA: koncentrycznie — kołnierz (COL) jako pierścień, pin 1 jako styk środkowy
   if (L.fam === 'RCA') {
     const hotC = pinSet.has('COL'), hot1 = pinSet.has('1');
+    const pcC = primOf('COL'), pc1 = primOf('1');
     const S = mini ? 22 : 110, c0 = S / 2, rO = S * 0.44, rI = S * 0.3, r1 = S * 0.12;
     const nestR = opt.nested ? `x="${opt.x || 0}" y="${opt.y || 0}" width="${opt.width || S}" height="${opt.height || S}"` : '';
-    const lbl = (x, y, txt, hot, fs) => `<text x="${x}" y="${y}" text-anchor="middle" font-size="${fs}" font-weight="${hot ? 800 : 600}" fill="${hot ? '#fff' : 'var(--text-muted,#475569)'}" font-family="monospace">${txt}</text>`;
+    const lbl = (x, y, txt, hot, fs, p) => {
+      const f = pinFg(p, hot);
+      return `<text x="${x}" y="${y}" text-anchor="middle" font-size="${fs}" font-weight="${hot ? 800 : 600}" fill="${f.fg}" font-family="monospace"${f.ex}>${txt}</text>`;
+    };
     let sR = `<svg ${nestR} viewBox="0 0 ${S} ${S}" style="${mini ? '' : 'width:100%; max-width:160px; margin:0 auto; '}display:block;" xmlns="http://www.w3.org/2000/svg">`;
-    sR += `<circle cx="${c0}" cy="${c0}" r="${(rO + rI) / 2}" fill="none" stroke="${hotC ? '#0284c7' : 'var(--bg-card-subtle,#e2e8f0)'}" stroke-width="${rO - rI}"/>`;
-    sR += `<circle cx="${c0}" cy="${c0}" r="${rO}" fill="none" stroke="${hotC ? '#0284c7' : 'var(--border,#94a3b8)'}" stroke-width="${mini ? 0.8 : 1.3}"/>`;
-    sR += `<circle cx="${c0}" cy="${c0}" r="${rI}" fill="var(--bg-card,#fff)" stroke="var(--border,#94a3b8)" stroke-width="${mini ? 0.8 : 1.3}"/>`;
-    sR += `<circle cx="${c0}" cy="${c0}" r="${r1}" fill="${hot1 ? '#0284c7' : 'var(--bg-card-subtle,#e2e8f0)'}" stroke="${hot1 ? '#0284c7' : 'var(--border,#94a3b8)'}" stroke-width="${mini ? 0.8 : 1.3}"/>`;
+    sR += `<circle cx="${c0}" cy="${c0}" r="${(rO + rI) / 2}" fill="none" stroke="${pcC || (hotC ? 'rgba(2,132,199,0.35)' : 'var(--bg-card-subtle,#e2e8f0)')}" stroke-width="${rO - rI}"/>`;
+    sR += `<circle cx="${c0}" cy="${c0}" r="${rO}" fill="none" stroke="${hotC ? '#0284c7' : 'var(--border,#94a3b8)'}" stroke-width="${hotC && !mini ? 3 : (mini ? 0.8 : 1.3)}"/>`;
+    sR += `<circle cx="${c0}" cy="${c0}" r="${rI}" fill="var(--bg-card-subtle,#e2e8f0)" stroke="var(--border,#94a3b8)" stroke-width="${mini ? 0.8 : 1.3}"/>`;
+    sR += `<circle cx="${c0}" cy="${c0}" r="${r1}" fill="${pc1 || (hot1 ? 'rgba(2,132,199,0.15)' : 'var(--bg-card-subtle,#e2e8f0)')}" stroke="${hot1 ? '#0284c7' : 'var(--border,#94a3b8)'}" stroke-width="${hot1 && !mini ? 3 : (mini ? 0.8 : 1.3)}"/>`;
     if (!mini) {
-      sR += lbl(c0, c0 + 3.5, '1', hot1, 10);
-      sR += lbl(c0, c0 - (rO + rI) / 2 + 3.5, 'COL', hotC, 9);
+      sR += lbl(c0, c0 + 3.5, '1', hot1, 10, '1');
+      sR += lbl(c0, c0 - (rO + rI) / 2 + 3.5, 'COL', hotC, 9, 'COL');
     }
     return sR + '</svg>';
   }
@@ -11158,12 +11271,13 @@ function connFaceSvg(L, pin, opt) {
   // FASTIN-FASTON: rysunek uwzględniający cechy antyodwrotne (ścięte narożniki,
   // boczne wypustki), tak jak na schemacie Zuken.
   if (L.fam === 'FASTIN') {
-    const stroke = 'var(--border,#94a3b8)', fill = 'var(--bg-card,#fff)', subtle = 'var(--bg-card-subtle,#e2e8f0)';
+    const stroke = 'var(--border,#94a3b8)', subtle = 'var(--bg-card-subtle,#e2e8f0)', fill = subtle;
     // szczelina na styk 6,3 mm (prostokątna; vert = obrócona o 90°)
     const slot = (x, y, w, h, p) => {
-      const hot = pinSet.has(String(p));
-      return `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${mini ? 1 : 2}" fill="${hot ? '#0284c7' : subtle}" stroke="${hot ? '#0284c7' : stroke}" stroke-width="${hot ? 2 : 1}"/>`
-           + `<text x="${x + w / 2}" y="${y + h / 2 + (mini ? 2 : 3.5)}" text-anchor="middle" font-size="${mini ? 5.5 : 10}" font-weight="${hot ? 800 : 600}" fill="${hot ? '#fff' : 'var(--text-muted,#475569)'}" font-family="monospace">${p}</text>`;
+      const hot = pinSet.has(String(p)), fg = pinFg(p, hot);
+      return cellBg(x, y, w, h, mini ? 1 : 2, p)
+           + `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${mini ? 1 : 2}" fill="${primOf(p) ? 'none' : emptyCellFill(hot)}" stroke="${hot ? '#0284c7' : stroke}" stroke-width="${hot ? (mini ? 2 : 3) : 1}"/>`
+           + `<text x="${x + w / 2}" y="${y + h / 2 + (mini ? 2 : 3.5)}" text-anchor="middle" font-size="${mini ? 5.5 : 10}" font-weight="${hot ? 800 : 600}" fill="${fg.fg}" font-family="monospace"${fg.ex}>${p}</text>`;
     };
     if (L.tee) {
       // 2-pozycyjne 180907/180908: styki prostopadłe (T). Poziomy = pin 2 (GND),
@@ -11214,12 +11328,48 @@ function connFaceSvg(L, pin, opt) {
     return sF + '</svg>';
   }
 
+  // TE AMP MIC Multi-Interlock (171892-1): regularna siatka 2×5 jak złącze
+  // 10-pinowe, ale środkową komórkę dolnego rzędu (naprzeciw pinu 3) zajmuje
+  // zatrzask — gniazda po nim ponumerowane 8,9 (zamiast 9,10). Wg zdjęć X347.
+  if (L.fam === 'MIC') {
+    const mcw = mini ? 14 : 30, mch = mini ? 11 : 24, mp = mini ? 3 : 8;
+    const lh = mini ? 4 : 7;   // zapas pod krawędź (wypustka zatrzasku jest na dole)
+    const yTop = lh + 2, yMid = yTop + mp + mch, yBot = yMid + mp + mch;
+    const Wm = 2 + mp + L.cols * mcw + mp, Hm = yBot + (mini ? 6 : 10);
+    const lcol = Math.floor(L.cols / 2);
+    const subtle = 'var(--bg-card-subtle,#e2e8f0)', stroke = 'var(--border,#94a3b8)';
+    const nestM = opt.nested ? `x="${opt.x || 0}" y="${opt.y || 0}" width="${opt.width || Wm}" height="${opt.height || Hm}"` : '';
+    let sM = `<svg ${nestM} viewBox="0 0 ${Wm} ${Hm}" style="${mini ? '' : 'width:100%; max-width:330px; margin:0 auto; '}display:block;" xmlns="http://www.w3.org/2000/svg">`;
+    sM += `<rect x="2" y="${yTop}" width="${Wm - 4}" height="${yBot - yTop}" rx="${mini ? 2 : 4}" fill="${subtle}" stroke="${stroke}" stroke-width="1.3"/>`;
+    const cell = (x, y, p) => {
+      if (p === '') return '';
+      const hot = pinSet.has(String(p)), fg = pinFg(p, hot);
+      return cellBg(x + 1, y + 1, mcw - 2, mch - 2, 3, p)
+        + `<rect x="${x + 1}" y="${y + 1}" width="${mcw - 2}" height="${mch - 2}" rx="3" fill="${primOf(p) ? 'none' : emptyCellFill(hot)}" stroke="${hot ? '#0284c7' : 'var(--border,#cbd5e1)'}" stroke-width="${hot ? (mini ? 2 : 3) : 1}"/>`
+        + `<text x="${x + mcw / 2}" y="${y + mch / 2 + (mini ? 2.5 : 3.5)}" text-anchor="middle" font-size="${mini ? 6 : 10}" font-weight="${hot ? 800 : 600}" fill="${fg.fg}" font-family="monospace"${fg.ex}>${p}</text>`;
+    };
+    for (let c = 0; c < L.cols; c++) sM += cell(2 + mp / 2 + c * mcw, yTop + mp / 2, connFacePinAt(L, 0, c));
+    for (let c = 0; c < L.cols; c++) {
+      const p = connFacePinAt(L, 1, c);
+      if (p === '' && c === lcol && !mini) {
+        // komórka zatrzasku — występ wyłamujący dolną krawędź (naprzeciw 3)
+        const cx = 2 + mp / 2 + c * mcw + mcw / 2;
+        sM += `<rect x="${cx - mcw / 3}" y="${yMid + mp / 2 + 1}" width="${mcw * 2 / 3}" height="${mch - 2}" rx="3" fill="var(--bg-card,#f8fafc)" stroke="${stroke}" stroke-width="1"/>`;
+        sM += `<rect x="${cx - (mini ? 3 : 6)}" y="${yBot - 1}" width="${mini ? 6 : 12}" height="${mini ? 6 : 10}" rx="1.5" fill="${subtle}" stroke="${stroke}" stroke-width="1.2"/>`;
+        continue;
+      }
+      sM += cell(2 + mp / 2 + c * mcw, yMid + mp / 2, p);
+    }
+    return sM + '</svg>';
+  }
+
   if (L.fam === 'TBP' && latchH) {
     // śruby zacisków nad otworami na przewody (ta sama kolumna = ten sam pin)
     for (let c = 0; c < L.cols; c++) {
-      const hot = pinSet.has(String(connFacePinAt(L, 0, c)));
+      const pp = connFacePinAt(L, 0, c);
+      const hot = pinSet.has(String(pp));
       const sx = pad + c * cw + cw / 2, sy = latchH / 2 + 1, sr = 6;
-      s += `<circle cx="${sx}" cy="${sy}" r="${sr}" fill="var(--bg-card-subtle,#e2e8f0)" stroke="${hot ? '#0284c7' : 'var(--border,#94a3b8)'}" stroke-width="${hot ? 2 : 1}"/>`;
+      s += `<circle cx="${sx}" cy="${sy}" r="${sr}" fill="${primOf(pp) || 'var(--bg-card-subtle,#e2e8f0)'}" stroke="${hot ? '#0284c7' : 'var(--border,#94a3b8)'}" stroke-width="${hot ? 2.5 : 1}"/>`;
       s += `<line x1="${sx - sr + 2}" y1="${sy}" x2="${sx + sr - 2}" y2="${sy}" stroke="${hot ? '#0284c7' : 'var(--text-muted,#64748b)'}" stroke-width="1.4"/>`;
     }
   } else if (latchH && !lever) {
@@ -11243,11 +11393,11 @@ function connFaceSvg(L, pin, opt) {
       });
     }
   }
-  s += `<rect x="1" y="${boxY}" width="${W - 2 - lvW}" height="${bodyH}" rx="4" fill="var(--bg-card,#fff)" stroke="var(--border,#94a3b8)" stroke-width="1.2"/>`;
+  s += `<rect x="1" y="${boxY}" width="${W - 2 - lvW}" height="${bodyH}" rx="4" fill="var(--bg-card-subtle,#e2e8f0)" stroke="var(--border,#94a3b8)" stroke-width="1.2"/>`;
   if (lever) {
     // dźwignia: otwarta rama wysunięta w prawo od korpusu + sworznie
     const fy = boxY + bodyH * 0.1, fh = bodyH * 0.8, fw = lvW - 5;
-    s += `<rect x="${bodyR}" y="${fy}" width="${fw}" height="${fh}" rx="${mini ? 2 : 4}" fill="var(--bg-card,#fff)" stroke="var(--border,#94a3b8)" stroke-width="1.2"/>`;
+    s += `<rect x="${bodyR}" y="${fy}" width="${fw}" height="${fh}" rx="${mini ? 2 : 4}" fill="var(--bg-card-subtle,#e2e8f0)" stroke="var(--border,#94a3b8)" stroke-width="1.2"/>`;
     const iw = fw - (mini ? 4 : 9), ih = fh - (mini ? 8 : 16);
     s += `<rect x="${bodyR + (fw - iw) / 2}" y="${fy + (fh - ih) / 2}" width="${iw}" height="${ih}" rx="2" fill="none" stroke="var(--border,#94a3b8)" stroke-width="0.8"/>`;
     [fy + fh * 0.12, fy + fh * 0.88].forEach(py =>
@@ -11268,19 +11418,24 @@ function connFaceSvg(L, pin, opt) {
       if (midBand) {
         // kwadratowe otwory gniazd zajmujące ~3/4 rastra (jak na zdjęciu)
         const cs = Math.round(cw * 0.74);
-        s += `<rect x="${x + (cw - cs) / 2}" y="${y + (ch - cs) / 2}" width="${cs}" height="${cs}" rx="2.5" fill="${hot ? '#0284c7' : 'var(--bg-card-subtle,#f1f5f9)'}" stroke="${hot ? '#0284c7' : 'var(--border,#cbd5e1)'}" stroke-width="${hot ? 2 : 1}"/>`;
-        s += `<text x="${x + cw / 2}" y="${y + ch / 2 + (mini ? 2.5 : 3)}" text-anchor="middle" font-size="${mini ? 6 : 8}" font-weight="${hot ? 800 : 600}" fill="${hot ? '#fff' : 'var(--text-muted,#475569)'}" font-family="monospace">${p}</text>`;
+        const sx = x + (cw - cs) / 2, sy = y + (ch - cs) / 2, fg = pinFg(p, hot);
+        s += cellBg(sx, sy, cs, cs, 2.5, p);
+        s += `<rect x="${sx}" y="${sy}" width="${cs}" height="${cs}" rx="2.5" fill="${primOf(p) ? 'none' : emptyCellFill(hot)}" stroke="${hot ? '#0284c7' : 'var(--border,#cbd5e1)'}" stroke-width="${hot ? (mini ? 2 : 3) : 1}"/>`;
+        s += `<text x="${x + cw / 2}" y="${y + ch / 2 + (mini ? 2.5 : 3)}" text-anchor="middle" font-size="${mini ? 6 : 8}" font-weight="${hot ? 800 : 600}" fill="${fg.fg}" font-family="monospace"${fg.ex}>${p}</text>`;
         continue;
       }
       if (L.fam === 'CIRC7') {
         if (p === '') continue; // puste narożniki siatki — nie istnieją fizycznie
         const cx = x + cw / 2, cy = y + ch / 2, rad = Math.min(cw, ch) * 0.34;
-        s += `<circle cx="${cx}" cy="${cy}" r="${rad}" fill="${hot ? '#0284c7' : 'var(--bg-card-subtle,#f1f5f9)'}" stroke="${hot ? '#0284c7' : 'var(--border,#cbd5e1)'}" stroke-width="${hot ? 2 : 1}"/>`;
-        s += `<text x="${cx}" y="${cy + (mini ? 2.5 : 3.5)}" text-anchor="middle" font-size="${mini ? 6 : 10}" font-weight="${hot ? 800 : 600}" fill="${hot ? '#fff' : 'var(--text-muted,#475569)'}" font-family="monospace">${p}</text>`;
+        const fg = pinFg(p, hot);
+        s += `<circle cx="${cx}" cy="${cy}" r="${rad}" fill="${primOf(p) || emptyCellFill(hot)}" stroke="${hot ? '#0284c7' : 'var(--border,#cbd5e1)'}" stroke-width="${hot ? (mini ? 2 : 3) : 1}"/>`;
+        s += `<text x="${cx}" y="${cy + (mini ? 2.5 : 3.5)}" text-anchor="middle" font-size="${mini ? 6 : 10}" font-weight="${hot ? 800 : 600}" fill="${fg.fg}" font-family="monospace"${fg.ex}>${p}</text>`;
         continue;
       }
-      s += `<rect x="${x + 1}" y="${y + 1}" width="${cw - 2}" height="${ch - 2}" rx="3" fill="${hot ? '#0284c7' : 'var(--bg-card-subtle,#f1f5f9)'}" stroke="${hot ? '#0284c7' : 'var(--border,#cbd5e1)'}" stroke-width="${hot ? 2 : 1}"/>`;
-      s += `<text x="${x + cw / 2}" y="${y + ch / 2 + (mini ? 2.5 : 3.5)}" text-anchor="middle" font-size="${mini ? 6 : (L.cols > 6 ? 8.5 : 10)}" font-weight="${hot ? 800 : 600}" fill="${hot ? '#fff' : 'var(--text-muted,#475569)'}" font-family="monospace">${p}</text>`;
+      const fg = pinFg(p, hot);
+      s += cellBg(x + 1, y + 1, cw - 2, ch - 2, 3, p);
+      s += `<rect x="${x + 1}" y="${y + 1}" width="${cw - 2}" height="${ch - 2}" rx="3" fill="${primOf(p) ? 'none' : emptyCellFill(hot)}" stroke="${hot ? '#0284c7' : 'var(--border,#cbd5e1)'}" stroke-width="${hot ? (mini ? 2 : 3) : 1}"/>`;
+      s += `<text x="${x + cw / 2}" y="${y + ch / 2 + (mini ? 2.5 : 3.5)}" text-anchor="middle" font-size="${mini ? 6 : (L.cols > 6 ? 8.5 : 10)}" font-weight="${hot ? 800 : 600}" fill="${fg.fg}" font-family="monospace"${fg.ex}>${p}</text>`;
     }
   return s + '</svg>';
 }
@@ -11551,6 +11706,24 @@ async function showConnFace(el, ev) {
     </div>`;
   };
 
+  // kolory przewodów na pinach połówki → wypełnienie pól rysunku złącza
+  // (zestawienie pinów + przewody widoczne na ścieżkach obwodu)
+  const colorsFor = sfx => {
+    const m = {};
+    const add = (pin, wc) => {
+      const pair = wireColorPair(wc);
+      if (!pair || pin === null || pin === undefined || pin === '') return;
+      const k = String(pin), arr = m[k] = m[k] || [], j = pair.join('|');
+      if (!arr.some(w => w.join('|') === j)) arr.push(pair);
+    };
+    pinsFor(sfx).forEach(p => (p.connections || []).forEach(c => add(p.pin, c.wire_color)));
+    (cp.loads || []).forEach(ld => (ld.pins || []).forEach(pp => (pp.ends || []).forEach(e => (e.path || []).forEach(h => {
+      if (sfxOf(h.from) === sfx) add(h.from_pin, h.wire_color);
+      if (sfxOf(h.to) === sfx) add(h.to_pin, h.wire_color);
+    }))));
+    return m;
+  };
+
   const panel = (i) => {
     const L = lays[i], info = infos[i];
     const gen = L ? t(L.gender === 'F' ? 'js.zuken.connFemale' : 'js.zuken.connMale') : (info.desc || '');
@@ -11572,7 +11745,7 @@ async function showConnFace(el, ev) {
       <div style="font-size:11px; color:var(--text-muted); margin:2px 0 6px;">${escapeHtml(gen)}${art ? ' · ' + escapeHtml(art) : ''}</div>
       ${note ? `<div style="font-size:11px; color:${L && L.custom ? '#0284c7' : '#b45309'}; margin:0 0 6px;">${L && L.custom ? 'ℹ️' : '⚠️'} ${escapeHtml(note)}</div>` : ''}
       <div style="display:flex; gap:12px; align-items:center; justify-content:center; flex-wrap:wrap;">
-        ${L ? `<div style="flex:1 1 280px; max-width:340px;">${connFaceSvg(L, d.pin)}</div>` : ''}
+        ${L ? `<div style="flex:1 1 280px; max-width:340px;">${connFaceSvg(L, d.pin, { wireColors: colorsFor(info.sfx) })}</div>` : ''}
         ${info.image ? `<img src="${escapeHtml(info.image)}" alt="${escapeHtml(info.article || '')}" style="max-width:220px; max-height:130px; object-fit:contain; border:1px solid var(--border); border-radius:6px; background:#fff;">` : ''}
       </div>
       ${wires ? `<div style="margin-top:6px; border-top:1px dashed var(--border); padding-top:5px;">${wires}</div>` : ''}
@@ -11944,10 +12117,12 @@ function circuitSvgForLoad(ld, connMeta, opts) {
     if (nd._lay) {
       const gw = 6 + nd._lay.cols * 13;
       const gwDisp = Math.min(gw, boxW - 10);
+      const _wc = nd.edge ? wireColorPair(nd.edge.wire_color) : null;
       svg += connFaceSvg(nd._lay, nd.pin, {
         mini: true, nested: true,
         x: x + (boxW - gwDisp) / 2, y: y + boxH + 1,
-        width: gwDisp, height: nd._gh
+        width: gwDisp, height: nd._gh,
+        wireColors: _wc ? { [String(nd.pin)]: [_wc] } : null
       });
     }
     const rwT = rwTitles[(nd.clean || '').toUpperCase()];

@@ -120,10 +120,18 @@ Wersja wielojęzykowa: `SUPPORTED_LANGS = ("pl", "en", "de")`, tłumaczenia w
   MICROFIT, MOLEXSR (Micro-Fit 1-rzędowy), SUPERSEAL, MATENLOK, TE2P (MQS/MCON
   2p), CIRC7 (TE okrągłe 7p, komórki kołowe), DF11 (Hirose 2-rzęd.),
   FASTIN/FF250 (2-kolumnowe pionowe), TBP, RELAY9 (Hella 5/9), RCA,
+  MIC (TE AMP Multi-Interlock 171892-1, 9p: siatka 2×5, góra 1-5, dół
+  6,7,zatrzask,8,9 — środek dolnego rzędu to zatrzask, nie pin; X346/X347/
+  X390-X393 = moduły Carnation),
   ROW (ogólny 1-rząd, `unverified`), USER (ręczny pinout, `/api/zuken/conn-pinouts`).
   Nowe rodziny dodawać tylko ze zweryfikowaną numeracją (rysunek katalogowy/zdjęcie
   od Adama); niepewny kierunek → `unverified: true` (ostrzeżenie w oknie złącza).
   Typ bez rysunku: węzeł i tak klikalny — okno pokazuje przewody i pinout.
+  Kolory przewodów: `connFaceSvg(L, pin, {wireColors})` — mapa pin→[[baza,prążek]]
+  z `wireColorPair(wire_color)`; 1 przewód = baza+prążek po skosie, 2 = podział po
+  przekątnej, 3+ = pasy; wybrany pin = gruba niebieska obwódka. Mapę buduje
+  `colorsFor()` w `showConnFace` (zestawienie + hopy obwodu) i w
+  `showReworkConnFace` (item.pins); mini w diagramie dostaje kolor z `nd.edge`.
   Wariant obrysu: `CONN_LEVER_ARTS` = artykuły z blokadą dźwigniową
   (VAG 4H0 906 231 / osłona 1-968321-2, X168): dźwignia po prawej stronie
   korpusu, wypusty prowadnic i narożne, a dla siatki 4×10 — kwadratowy rastr
