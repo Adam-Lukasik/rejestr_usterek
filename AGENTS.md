@@ -51,9 +51,11 @@ Wersja wielojęzykowa: `SUPPORTED_LANGS = ("pl", "en", "de")`, tłumaczenia w
   usunięte → `data/.kb_removed/`).
 - **Zdjęcia komponentów w paczce:** `Baza wiedzy/zdjecia_komponentow/` jest
   kopiowane do `app/zdjecia_komponentow/` przy buildzie — lookup w
-  `find_local_component_image` i `/api/zuken/bom/image/` ma fallback na
-  `PACKAGED_IMAGES_DIR` (STATIC_DIR), więc zdjęcia idą z update bez kb-sync.
-  Lokalne zdjęcie w danych ma pierwszeństwo (nadpisania).
+  `find_local_component_image` i `/api/zuken/bom/image/` (przez
+  `resolve_bom_image_path`) sprawdza lokalny katalog danych i pakiet —
+  **wygrywa nowszy plik (mtime)**, przy remisie lokalny. Update ze świeżym
+  zdjęciem przykrywa stare pobrane u klienta; późniejszy upload/fetch
+  użytkownika znowu wygrywa.
 - **Wersja:** stała `VERSION` w `app.py` — bump przed każdym buildem.
 - **DevTools wyłączone** domyślnie (pywebview `debug=False` → AreDevToolsEnabled,
   skróty i menu kontekstowe off); frontend i tak serwowany po localhost —

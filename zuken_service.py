@@ -1066,36 +1066,59 @@ def _bom_image_url(fname, full_path):
     return f"/api/zuken/bom/image/{fname}?v={v}"
 
 
+def resolve_bom_image_path(filename):
+    """Pełna ścieżka do zdjęcia komponentu o podanej nazwie pliku.
+    Szuka w lokalnym Baza wiedzy/zdjecia_komponentow i w katalogu
+    spakowanym z aplikacją — wygrywa NOWSZY plik (mtime), przy remisie
+    lokalny (update może dostarczyć świeższe zdjęcie niż stare pobrane)."""
+    candidates = [
+        os.path.join(d, filename)
+        for d in (BOM_IMAGES_DIR, PACKAGED_IMAGES_DIR)
+        if os.path.isdir(d) and os.path.isfile(os.path.join(d, filename))
+    ]
+    if not candidates:
+        return None
+    return max(candidates, key=lambda p: os.path.getmtime(p))
+
+
 def find_local_component_image(article_number):
     """
-    Sprawdza, czy istnieje zdjęcie dla artykułu — najpierw w lokalnym
-    Baza wiedzy/zdjecia_komponentow/ (nadpisania użytkownika), potem w
-    katalogu spakowanym z aplikacją (STATIC_DIR/zdjecia_komponentow).
+    Sprawdza, czy istnieje zdjęcie dla artykułu — w lokalnym
+    Baza wiedzy/zdjecia_komponentow/ i w katalogu spakowanym z aplikacją
+    (STATIC_DIR/zdjecia_komponentow); wygrywa nowszy plik (mtime).
     Zwraca ścieżkę względną URL (/api/zuken/bom/image/<filename>?v=<mtime>) lub None.
     """
     if not article_number:
         return None
     sanitized = sanitize_article_code(article_number)
-    img_dirs = [d for d in (BOM_IMAGES_DIR, PACKAGED_IMAGES_DIR) if os.path.isdir(d)]
+    candidates = []
 
-    for img_dir in img_dirs:
+    for img_dir in (BOM_IMAGES_DIR, PACKAGED_IMAGES_DIR):
+        if not os.path.isdir(img_dir):
+            continue
         # Przeszukaj popularne rozszerzenia
         for ext in [".jpg", ".jpeg", ".png", ".webp", ".svg", ".gif"]:
             candidate = f"{sanitized}{ext}"
             full_path = os.path.join(img_dir, candidate)
             if os.path.isfile(full_path):
-                return _bom_image_url(candidate, full_path)
+                candidates.append((candidate, full_path))
 
         # Sprawdź też dokładną nazwę w katalogu (case-insensitive)
         try:
             for fname in os.listdir(img_dir):
                 name_without_ext, ext = os.path.splitext(fname)
                 if name_without_ext.lower() == sanitized.lower() and ext.lower() in [".jpg", ".jpeg", ".png", ".webp", ".svg", ".gif"]:
-                    return _bom_image_url(fname, os.path.join(img_dir, fname))
+                    full_path = os.path.join(img_dir, fname)
+                    if (fname, full_path) not in candidates:
+                        candidates.append((fname, full_path))
         except Exception:
             pass
 
-    return None
+    if not candidates:
+        return None
+    # lokalny katalog na liście pierwszy → przy jednakowym mtime wygrywa
+    fname, full_path = max(candidates, key=lambda c: os.path.getmtime(c[1]))
+    return _bom_image_url(fname, full_path)
 
 
 def get_supplier_links(article_number, supplier="", lang="pl"):
