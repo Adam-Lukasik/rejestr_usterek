@@ -115,6 +115,76 @@ Wersja wielojęzykowa: `SUPPORTED_LANGS = ("pl", "en", "de")`, tłumaczenia w
   (0=ten projekt, 1=ten sam klient, 2=reszta), sortuje, zwraca `history_context`;
   klient z `_resolve_client_for_ps` (param > lists.projekty > zuken_ps_summaries
   > zuken_projects), porównanie `_clients_match`/`_client_key`.
+- Bezpieczniki w asystencie: `trace_circuit` rozwiązuje element -F przez
+  `holder_code` (dokładny kod → sufiks tylko jednoznaczny lub bez prefiksu —
+  sufiks w obcej lokalizacji brał cudzy obwód: F12 pokazywał =CAB+MIK-FH12),
+  potem parowanie -F→-FH/-U z geometrii etykiet PDF (`_ps_fuse_rails` →
+  `holders`/`slots`; oprawki przewodowe innego numeru niż element:
+  F20→=CAB+TWR-FH1, F19→FH15, F18→FH36, F6@Walia→=CAB+BSI-FH15), na końcu
+  sloty -U z `rt_to_u`. Uwaga: `devs_by_clean` ma wpis per pin — dedupe przed
+  testem jednoznaczności. Walia: elementy `-F<n>_BOX` siedzą w skrzynce
+  `=BOX+ACT-A10` — gniazdo to jej piny `nA`/`nB` (`box_pins`); część
+  elementów jest w raporcie z prądem w nazwie (`-F8_3A`, `rated`); oprawka
+  nieobecna w raporcie jest dla niego przezroczysta — końce jej przewodów
+  to etykiety `-RT` nad/pod kolumną bezpiecznika (`terms`: F1→RT122+RT12,
+  F24→RT150+RT145). Zwora/mostek pinów między sąsiednimi -F (uchwyt
+  2-stanowiskowy -U147 dla F9:1=F11:1, szyna wyjściowa F10:2=F41:2):
+  na stronie bez własnego terminala, w szerszym zasięgu kolumny
+  (|dx|<=80), terminal zajęty przez inny -F na TEJ SAMEJ stronie =
+  terminal wspólnej szyny — `bars` zapisuje parę dla OBU bezpieczników
+  i terminal dokładany jest do `terms`. `bars` bierzemy tylko ze strony
+  `terms` — strony-zestawienia mają rozjeżdżające się etykiety i dawały
+  złudne pary (F13 łapało cudzy RT1 na str. 56). Numery pinów na tych
+  planszach: etykieta terminala POD symbolem -F = pin 1, NAD = pin 2
+  (pin zwory narzucany stroną geometrii — F9/F11 zwora na pinie 1,
+  F10/F41 na pinie 2). Seed-terminali nie rysujemy jako osobnych
+  obciążeń — `trace_circuit` scala je w syntetyczny węzeł -F z pinami
+  1/2 (stub-hop `F9:1→RT167:1` + oryginalna ścieżka); pin 1 = terminal
+  z końcem roli 'terminal' (stud zasilania), samotny terminal bez
+  takiego końca = pin 2. Terminal zwory: tor pin→terminal prowadzony
+  przez syntetyczny węzeł `=<lok>-ZW<a>_<b>` (hop `internal='busbar'`
+  na segmencie zwora→terminal) + odnoga do sąsiedniego bezpiecznika
+  (end role 'fuse', klik → jego obwód). Frontend: węzeł `ZW*`
+  (`/^ZW/`) rysowany poziomym prostokątem jak splice-okrąg
+  (`nd._bar`), krawędź 'busbar' = przerywana linia + etykieta
+  `js.zuken.busbar`. Ponadto pass wektorowy w `_ps_fuse_rails` wykrywa
+  szyny NARYsowane w PDF (wszystkie ogniwa mają własne terminale —
+  mechanizm brakującego terminala ich nie widzi): `_pdf_page_line_segments`
+  (operatory m/l/re) + `_merge_runs_h/_v` (najpierw klaster po y/x —
+  sekwencyjny merge wchłaniał biegi obcych współrzędnych) → kandydat to
+  poziomy bieg ściśle wewnątrz obrysu skrzynki (obrys = DOMINUJĄCA para
+  (top,bot) wśród ścianek ogniw — deduplikowane; medianę zaburzają
+  scalone przewody pinowe), przecinający ≥1 ściankę w środku zasięgu x,
+  z końcówką pinową ≥2 ogniw; krawędź skrzynki odpada testem
+  "końce ścianek > przejścia" (ścianki KOŃCZĄ się na krawędzi, przechodzą
+  przez szynę). Ogniwo bez -F z ciągłym pionem = przelotka (FH0) —
+  jej etykiety -RT nad/pod dokładane do węzła (`taps`). Podzbiory
+  członków z dwóch krawędzi prostokąta scalane w nadzbiór. Wykryte u
+  Walii: MOR F9:1↔F11:1 i F10:2↔F41:2 (uchwyty -U147/-U146 = BOM
+  'AK 602 010 002 2 WAY BUS-BAR'), szyna BSI F1:2..F4:2 + przelotka FH0
+  (zworka MTA 0301226 docinana — brak w BOM jako urządzenie), =BOX
+  F33:2..F36:2 (-U210 = '4 WAY BUS-BAR'). Etykieta -U najbliższa szynie
+  i obecna w mapie BUS-BAR z BOM trafia do `bars[*]['holder']` → hop
+  `bar_holder` → węzeł ZW rysowany jako klikalna oprawka (ent-link na
+  clean urządzenia); bez holdera — etykieta `ZW…`. `pitch` rozstawu
+  ogniw liczony z samych etykiet -F (`-FH`/`startswith('-F')` łapie też
+  -FH!). Bezpiecznik bez toru → karta "rozpoznano, brak
+  okablowania" (`js.zuken.circuitNoWires`) — trwałe missy u Walii to
+  F5 (125A MEGA, brak etykiety na schemacie i urządzenia w raporcie) i
+  A11 (=CAB+MOR-A11 "Comms Fuse Box" — obudowa skrzynki bez reprezentacji;
+  jej bezpieczniki F9–F11/F41 śledzone przez terminale RT). Diagram:
+  `circuitFuseDownPin` musi łapać też DRUGI pin roli 'feed' — oprawki/sloty
+  (FH/FR/F/U i zespół -A10) mają oba piny 'feed' (np. FH1:1 zasilanie,
+  FH1:2 → przewód 405 → X295 → A15); bez tego rysowała się tylko strona
+  wejściowa. Dla pinu-'feed' downEnd = ends[0] (uporządkowane wg
+  istotności), dla 'other' — preferencja role 'load'.
+- Zestawienie bezpieczników (`get_ps_fuses`) ma własne parowanie geometrią
+  (`_pdf_geometry_candidates` + głosowanie między arkuszami + tekstowe
+  `_pdf_holder_candidates`). `_resolve_dev_label` przy remisie kandydatów
+  wybiera urządzenie okablowane w TYM projekcie (`conn_devs`) — `known_devs`
+  łączy BOM-y wszystkich projektów i alfabetycznie wygrywał cudzy kod
+  (=CAB+BSI-FH15 z Walii zamiast =CAB+TWR-FH15 z EoE → holder_real bez
+  przewodów).
 - Nowe typy bazy wiedzy: tablica `KB_TYPES` w HTML + obsługa w backendzie.
 - Ścieżki plików KB: zawsze przez `zuken_service.resolve_kb_filepath(..., heal_db=True)`
   — naprawia ścieżki po przeniesieniu katalogu projektu.

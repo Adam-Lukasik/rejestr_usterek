@@ -11780,10 +11780,14 @@ async function showConnFace(el, ev) {
 // (zasilanie w górę, odbiornik w dół — jak przy parze złączy)
 function circuitFuseDownPin(ld) {
   const pins = ld.pins || [];
-  if (!/^(FH|FR|F|U)\d/i.test(ld.clean || '')) return null;
+  if (!/^(FH|FR|F|U|A)\d/i.test(ld.clean || '')) return null;
   const gndP = pins.find(p => p.role === 'gnd');
   const feedP = pins.find(p => p.role === 'feed') || pins.find(p => p !== gndP);
-  return pins.find(p => p.role === 'other' && p !== feedP && (p.ends || []).length) || null;
+  // oprawka ma dwa piny roli 'feed' (np. FH1:1 zasilanie, FH1:2 -> odbiornik
+  // przez 405 CHASS SENSE) — drugi pin rysujemy pod węzłem topika
+  return pins.find(p => p.role === 'other' && p !== feedP && (p.ends || []).length)
+      || pins.find(p => p !== feedP && p !== gndP && (p.ends || []).length)
+      || null;
 }
 
 function circuitSvgForLoad(ld, connMeta, opts) {
@@ -11827,15 +11831,18 @@ function circuitSvgForLoad(ld, connMeta, opts) {
   // oprawka bezpiecznika jako seed: tor pinu 'other' kontynuujemy pod
   // węzłem oprawki (połączony wewnętrzną krawędzią topika)
   const downPin = opts.thruEnds ? null : circuitFuseDownPin(ld);
+  // pin 'other' -> preferuj końców-odbiornik; drugi pin 'feed' (wyjście
+  // topika) -> pierwszy koniec jest już uporządkowany wg istotności
   const downEnd = downPin
-    ? (downPin.ends.find(e => e.role === 'load') || downPin.ends[0]) : null;
+    ? (downPin.role === 'feed' ? downPin.ends[0]
+       : (downPin.ends.find(e => e.role === 'load') || downPin.ends[0])) : null;
   const g = gndPin ? ((gndPin.ends || []).find(e => e.role === 'gnd') || (gndPin.ends || [])[0]) : null;
   if (!src && !thruEnd && !g) return '';
 
   // funkcja i liczba przewodów w węzłach pośrednich (łączenia/Splice)
   const hopMeta = {};
-  [feedPin, gndPin].forEach(p => ((p && p.ends) || []).forEach(e => (e.path || []).forEach(h => {
-    hopMeta[h.to + ':' + h.to_pin] = { fn: h.to_function || '', deg: h.to_degree || 0 };
+  ((ld && ld.pins) || [feedPin, gndPin]).forEach(p => ((p && p.ends) || []).forEach(e => (e.path || []).forEach(h => {
+    hopMeta[h.to + ':' + h.to_pin] = { fn: h.to_function || '', deg: h.to_degree || 0, barh: h.bar_holder || '' };
   })));
 
   const trunk = [];
@@ -11948,6 +11955,7 @@ function circuitSvgForLoad(ld, connMeta, opts) {
   const edgeLabel = h => (h.internal === 'fuse' || h.internal === 'relay')
     ? `⚡ ${h.internal_label || h.internal}`
     : h.internal === 'mate' ? `⇄ ${h.internal_label || 'wtyk'}`
+    : h.internal === 'busbar' ? `▭ ${t('js.zuken.busbar')}${h.internal_label ? ' ' + h.internal_label : ''}`
     : wireLabelAttrs(h).join(' · ');
   const boxW = 210, boxH = 34, cx = 30, stubW = 250;
   // odnogi za najdłuższą etykietą przewodu — pełny opis (nr, kolor, przekrój, długość) czytelny
@@ -11973,13 +11981,19 @@ function circuitSvgForLoad(ld, connMeta, opts) {
     // łączenie przewodów (Splice) rysujemy jako okrąg na linii toru
     nd._splice = !_L && nd.role === '' && (/splice/i.test(connHalfInfo(connMeta, nd.clean, _sfx).desc)
       || /splice/i.test((hopMeta[nd.dev + ':' + nd.pin] || {}).fn || ''));
+    // zwora/mostek między pinami sąsiednich bezpieczników (wspólna szyna
+    // uchwytu) — syntetyczny węzeł backendu =...-ZW<para> rysujemy
+    // prostokątem (krawędź 'busbar' pada na różny węzeł zależnie od
+    // kierunku ścieżki, więc rozpoznajemy po kodzie urządzenia)
+    nd._bar = !_L && /^ZW/.test((nd.dev || '').split('-').pop() || '');
     const fastinLatch = _L && (_L.fam === 'FASTIN' || _L.fam === 'TBP');
     const gh = !_L ? 0 : _L.tee ? 34                                  // T: 3+7+2+16+3 (+ramka)
       : ((fastinLatch ? 0 : 6) + 6 + _L.rows * 10);  // latch 6 + pad 3+3 + rzędy po 10
     nd._gh = gh;
     nodeH[i] = nd._relay
       ? (nd._relay.coil && (nd._relay.coil.ends || []).length ? 112 : 76)
-      : (nd._splice ? SPLICE_R * 2 : boxH + (gh ? gh + 6 : 0));
+      : (nd._splice ? SPLICE_R * 2
+        : nd._bar ? 18 : boxH + (gh ? gh + 6 : 0));
     yOf[i] = _acc;
     _acc += nodeH[i] + 30;
     if (nd._relay) {
@@ -12026,7 +12040,7 @@ function circuitSvgForLoad(ld, connMeta, opts) {
     if (nd.edge) {
       const h = nd.edge;
       const yPrev = yOf[i - 1] + nodeH[i - 1], yCur = y;
-      const internal = h.internal === 'fuse' || h.internal === 'relay' || h.internal === 'mate';
+      const internal = h.internal === 'fuse' || h.internal === 'relay' || h.internal === 'mate' || h.internal === 'busbar';
       // oś toru wchodząca w symbol przekaźnika / wychodząca z niego —
       // zwykła linia, bez oznaczenia styku (symbol ma własne etykiety)
       const axis = h.internal === 'relay' && (nd._relay || (allNodes[i - 1] || {})._relay);
@@ -12037,8 +12051,9 @@ function circuitSvgForLoad(ld, connMeta, opts) {
       // etykiety rysowane na końcu (nad odnogami), z obwódką w kolorze tła.
       // Etykieta przewodu/aparatu jest klikalna — prowadzi do jego obwodu
       // (numer przewodu / sygnał, przy krawędziach wewnętrznych — aparat)
-      const lblQ = internal ? ((h.internal_label || '').split(' ')[0] || '')
-                            : (h.wire_number || h.signal || '');
+      const lblQ = internal && h.internal !== 'busbar'
+                            ? ((h.internal_label || '').split(' ')[0] || '')
+                            : (internal ? '' : (h.wire_number || h.signal || ''));
       if (lbl) edgeLbls += `<text ${lblQ ? `class="ent-link" data-ent-q="${escapeHtml(lblQ)}" style="cursor:pointer" fill="#0284c7"` : `fill="${internal ? '#d97706' : 'var(--text-main, #0f172a)'}"`} x="${cx + boxW / 2 + 8}" y="${(yPrev + yCur) / 2 + 3}" font-size="9.5" font-family="monospace" paint-order="stroke" stroke="var(--bg-card, #fff)" stroke-width="3" stroke-linejoin="round">${lblQ ? `<title>${escapeHtml(t('js.zuken.entLinkTitle', { v: lblQ }))}</title>` : ''}${escapeHtml(lbl)}</text>`;
     }
     const rs = roleStyle[nd.role] || roleStyle[''];
@@ -12050,6 +12065,26 @@ function circuitSvgForLoad(ld, connMeta, opts) {
     const ownSfx = devSfx;
     // każdy węzeł z pinem otwiera okno (zestawienie lub przewody + pinout)
     const canFace = !!nd.pin;
+    if (nd._bar) {
+      // zwora/mostek pinów bezpieczników — poziomy prostokąt na osi toru,
+      // jak na schemacie; obwód sąsiedniego bezpiecznika odbiega z niego
+      // jako odnoga (kotwica stubLayout). Gdy zwora ma urządzenie w BOM
+      // (oprawka -U z artykułem BUS-BAR), pokazujemy je i jest klikalne
+      const bw = 96, bh = 14, bx = cx + boxW / 2 - bw / 2, by = y + 2;
+      const halo = 'paint-order="stroke" stroke="var(--bg-card, #fff)" stroke-width="3" stroke-linejoin="round"';
+      const bhq = (((hopMeta[nd.dev + ':' + nd.pin] || {}).barh || '').split('-').pop()) || '';
+      const blab = bhq || ownSfx;
+      const rects = `<rect x="${bx}" y="${by}" width="${bw}" height="${bh}" rx="3" fill="var(--bg-card, #fff)" stroke="#64748b" stroke-width="1.8"/>` +
+        `<rect x="${bx + 4}" y="${by + 4}" width="${bw - 8}" height="${bh - 8}" rx="1.5" fill="#94a3b8"/>`;
+      if (bhq) {
+        svg += `<g class="ent-link" data-ent-q="${escapeHtml(bhq)}" style="cursor:pointer"><title>${escapeHtml(t('js.zuken.entLinkTitle', { v: bhq }))}</title>${rects}</g>`;
+        edgeLbls += `<text class="ent-link" data-ent-q="${escapeHtml(bhq)}" x="${bx + bw + 8}" y="${by + bh - 3}" font-size="10" font-weight="700" fill="#0284c7" font-family="monospace" ${halo} style="cursor:pointer"><title>${escapeHtml(t('js.zuken.entLinkTitle', { v: bhq }))}</title>${escapeHtml(blab)}</text>`;
+      } else {
+        svg += rects;
+        edgeLbls += `<text x="${bx + bw + 8}" y="${by + bh - 3}" font-size="10" font-weight="700" fill="#475569" font-family="monospace" ${halo}>${escapeHtml(blab)}</text>`;
+      }
+      return;
+    }
     if (nd._splice) {
       const hm = hopMeta[nd.dev + ':' + nd.pin] || {};
       const ccx = cx + boxW / 2, ccy = y + SPLICE_R;
@@ -12163,8 +12198,10 @@ function circuitSvgForLoad(ld, connMeta, opts) {
     if (segH) wireLbl = wireLabelAttrs(segH).join(' · ');
     const wireStroke = (segH && segH.wire_color) ? circuitWireStroke(segH.wire_color) : '#94a3b8';
     const atNd = allNodes[st.at] || {};
-    const ax = atNd._splice ? cx + boxW / 2 + SPLICE_R : cx + boxW;
-    const ay = atNd._splice ? atY + SPLICE_R : atY + (nodeH[st.at] || boxH) / 2;
+    const ax = atNd._splice ? cx + boxW / 2 + SPLICE_R
+      : atNd._bar ? cx + boxW / 2 + 48 : cx + boxW;
+    const ay = atNd._splice ? atY + SPLICE_R
+      : atNd._bar ? atY + 9 : atY + (nodeH[st.at] || boxH) / 2;
     svg += `<line x1="${ax}" y1="${ay}" x2="${stubX}" y2="${y}" stroke="${wireStroke}" stroke-width="1.6" stroke-dasharray="4 3"/>`;
     const eSfx = (e.device || '').split('-').pop() || e.clean;
     const ml = e.module_label;
@@ -12311,7 +12348,15 @@ async function runCircuitTrace(opts = {}) {
       ensureKnownDevs(ps), ensureConnUserPinouts()]);
     if (runId !== ZUKEN_STATE.runSeq) return;
     ZUKEN_STATE.lastCircuit = cp;
-    const card = circuitCardHtml(cp, query);
+    let card = circuitCardHtml(cp, query);
+    // element rozpoznany (np. bezpiecznik z zestawu), ale bez okablowania
+    // w raportach — karta informacyjna zamiast "nie rozpoznano"
+    if (!card && cp && cp.ok && cp.resolved && cp.resolved.kind) {
+      card = `<div style="padding:12px 16px; background:rgba(217,119,6,0.06); border:1px solid rgba(217,119,6,0.35); border-radius:var(--radius-md);">
+        <div style="font-size:12px; font-weight:800; color:#b45309; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px;">⚡ ${escapeHtml(t('js.zuken.circuitTitle'))}: ${escapeHtml(cp.resolved.label || query)}</div>
+        <div style="font-size:12px; color:var(--text-muted);">⚠️ ${escapeHtml(t('js.zuken.circuitNoWires'))}</div>
+      </div>`;
+    }
     resBody.innerHTML = card || `<div style="padding:20px; color:var(--text-muted); text-align:center; font-size:13px;">⚠️ ${escapeHtml(t('js.zuken.circuitNotFound'))}: „${escapeHtml(query)}"</div>`;
     setTimeout(() => scrollToCircuitSeed(resBody), 80);
   } catch (err) {

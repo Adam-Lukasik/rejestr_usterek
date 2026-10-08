@@ -144,7 +144,7 @@ app = Flask(__name__)
 # Limit uploadu dla paczek synchronizacyjnych / backupów (baza + Baza wiedzy)
 app.config["MAX_CONTENT_LENGTH"] = 2 * 1024 * 1024 * 1024
 
-VERSION = "2.1.5"
+VERSION = "2.1.6"
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # STATIC_DIR — zasoby kodu (UI, migracje, narzędzia); DATA_DIR — dane użytkownika

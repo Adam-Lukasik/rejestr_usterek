@@ -5652,14 +5652,10 @@ def diagnose_defect(element="", typ="", opisProblem="", ps_code=None, client=Non
 # ═══════════════════════════════════════════════════════════════════
 
 def _natural_sort_key(s):
-    """Klucz sortowania naturalnego (np. '1', '2', '10', 'A', 'B')."""
-    p = str(s or "").strip()
-    if p.isdigit():
-        return (0, int(p), "")
-    m = re.match(r"^(\d+)(.*)$", p)
-    if m:
-        return (0, int(m.group(1)), m.group(2))
-    return (1, 0, p.lower())
+    """Klucz sortowania naturalnego (np. 'F9' < 'F11', '2' < '10')."""
+    p = str(s or "").strip().lower()
+    return tuple((0, int(t)) if t.isdigit() else (1, t)
+                 for t in re.split(r"(\d+)", p) if t)
 
 
 def get_available_ps_projects(lang="pl"):
@@ -6559,7 +6555,8 @@ def _device_bom_name_map(cur, bom_proj_ids):
 def _wire_hop(fdev, fpin, tdev, tpin, row):
     """Jeden przeskok ścieżki sygnału z atrybutami przewodu z krawędzi grafu."""
     def _g(k):
-        return ((row[k] if row else "") or "").strip()
+        v = row.get(k) if isinstance(row, dict) else (row[k] if row else "")
+        return (v or "").strip()
     ln = _g("length")
     if ln == "0":
         ln = ""
@@ -6579,6 +6576,7 @@ def _wire_hop(fdev, fpin, tdev, tpin, row):
         "wire_type": _g("wire_type"), "length": ln,
         "internal": (row.get("_internal") or "") if isinstance(row, dict) else "",
         "internal_label": (row.get("_internal_label") or "") if isinstance(row, dict) else "",
+        "bar_holder": (row.get("_bar_holder") or "") if isinstance(row, dict) else "",
         "relay_dev": (row.get("_relay_dev") or "") if isinstance(row, dict) else "",
         "pin_names": (row.get("_pin_names") or {}) if isinstance(row, dict) else {},
     }
@@ -7917,10 +7915,12 @@ def trace_circuit(ps_code, query, lang="pl"):
     # (duże topiki F10/F17 spoza raportu) — nie zgadujemy po sygnałach.
     fuse_miss = False
     fuse_rows = []
+    fuse_term_devs = []
+    fuse_bars = {}
     if dev_q:
         try:
             fuse_rows = cur.execute(
-                "SELECT device_clean, holder_code, rating, circuits"
+                "SELECT device_clean, device_code, holder_code, rating, circuits"
                 " FROM zuken_ps_fuses"
                 " WHERE UPPER(device_clean) = ?"
                 "   AND (? = '' OR ps_code = ?)",
@@ -7928,20 +7928,71 @@ def trace_circuit(ps_code, query, lang="pl"):
         except Exception:
             fuse_rows = []
     if fuse_rows and not dev_nodes:
-        holders = {(fr["holder_code"] or "").strip().split("-")[-1].upper()
-                   for fr in fuse_rows if (fr["holder_code"] or "").strip()}
+        holder_codes = {(fr["holder_code"] or "").strip()
+                        for fr in fuse_rows if (fr["holder_code"] or "").strip()}
+        # dokładny kod oprawki (raport okablowuje -FH, nie element -F)
         for (ndev, npin) in adj.keys():
-            if (ndev or "").split("-")[-1].upper() in holders:
+            if (ndev or "") in holder_codes:
                 dev_nodes.setdefault(ndev, set()).add(npin)
         if not dev_nodes:
-            # uchwyty Mega/MIDI są w raporcie jako urządzenia -U o jednym
-            # pinie (oba zaciski = jeden węzeł); element -F nie występuje —
-            # slot poznajemy po geometrii schematu (F10 -> U8, F17 -> U2)
-            slots = _ps_fuse_rails(cur, conn_ids, ps_code, adj) \
-                .get("slots", {}).get(dev_q) or ()
-            for sd in slots:
+            # sufiks oprawki — tylko gdy nie prowadzi w obcą lokalizację:
+            # holder bez prefiksu ('-FH19') albo urządzenie raportu bez
+            # prefiksu, i jednoznacznie. Dopasowanie gołego '-FH12' do
+            # '=CAB+MIK-FH12' przy deklarowanym '=BOX+TWR-FH12' brało
+            # obwód skrzynki MIK za tor tego bezpiecznika.
+            sufs = {h.split("-")[-1].upper() for h in holder_codes}
+            bare = any(not h.startswith("=") for h in holder_codes)
+            suf_devs = {}
+            for (ndev, _np) in adj.keys():
+                suf = (ndev or "").split("-")[-1].upper()
+                if suf in sufs and (bare or not (ndev or "").startswith("=")):
+                    suf_devs.setdefault(suf, set()).add(ndev)
+            ok_devs = {next(iter(ds)) for ds in suf_devs.values()
+                       if len(ds) == 1}
+            for (ndev, npin) in adj.keys():
+                if ndev in ok_devs:
+                    dev_nodes.setdefault(ndev, set()).add(npin)
+        if not dev_nodes:
+            # oprawka przewodowa innego numeru niż element (F20 w FH1,
+            # F19 w FH15) — parowanie -F -> -FH z geometrii schematu;
+            # uchwyty Mega/MIDI -U jak dotąd (oba zaciski = jeden węzeł;
+            # element -F nie występuje w raporcie: F10 -> U8, F17 -> U2)
+            _rails = _ps_fuse_rails(cur, conn_ids, ps_code, adj)
+            seeds = []
+            _fh = (_rails.get("holders") or {}).get(dev_q)
+            if _fh:
+                seeds.append(_fh)
+            seeds += list((_rails.get("slots") or {}).get(dev_q) or ())
+            for sd in seeds:
                 for (ndev, npin) in adj.keys():
                     if ndev == sd:
+                        dev_nodes.setdefault(ndev, set()).add(npin)
+            # element w raporcie z prądem w nazwie: -F8_3A
+            _rd = (_rails.get("rated") or {}).get(dev_q)
+            if _rd:
+                for (ndev, npin) in adj.keys():
+                    if ndev == _rd:
+                        dev_nodes.setdefault(ndev, set()).add(npin)
+            # element -F<n>_BOX: gniazdo to piny nA/nB urządzenia-skrzynki -A
+            _bp = (_rails.get("box_pins") or {}).get(dev_q)
+            if _bp:
+                for (ndev, npin) in adj.keys():
+                    if ndev == _bp[0] and npin in _bp[1]:
+                        dev_nodes.setdefault(ndev, set()).add(npin)
+            # oprawka przezroczysta dla raportu — końce jej przewodów (-RT)
+            _tm = list((_rails.get("terms") or {}).get(dev_q) or ())
+            # szyna-zwora na schemacie: {terminal: {side,pin,node,label,
+            # taps,sibs}} — wszystkie odczepy szyny są też seedami toru
+            fuse_bars = dict((_rails.get("bars") or {}).get(dev_q) or {})
+            for _bi in fuse_bars.values():
+                for _bt in (_bi.get("taps") or ()):
+                    if _bt not in _tm:
+                        _tm.append(_bt)
+            fuse_term_devs = [td for td in _tm
+                              if any(ndev == td for (ndev, _p) in adj)]
+            for td in _tm:
+                for (ndev, npin) in adj.keys():
+                    if ndev == td:
                         dev_nodes.setdefault(ndev, set()).add(npin)
     if fuse_rows:
         fr0 = next((fr for fr in fuse_rows
@@ -8279,6 +8330,127 @@ def trace_circuit(ps_code, query, lang="pl"):
                             or bom_names.get(clean) or "",
                 "desc": explain_device_code(ndev, glossary, lang=lang) or "",
                 "pins": pins_out,
+            })
+
+    # Bezpiecznik przez terminale -RT przy przezroczystej oprawce: scal
+    # obciążenia terminali w jeden syntetyczny węzeł elementu -F — symbol
+    # bezpiecznika rysuje się między stroną zasilania a stroną odbiornika
+    # (F9: 444 -> F9:1 -> [topik] -> F9:2 -> 159A_2 -> RT21 -> A10:15A).
+    if (fuse_term_devs and fuse_rows and loads_out
+            and all(ld["device"] in fuse_term_devs for ld in loads_out)):
+        tloads = {ld["device"]: ld for ld in loads_out}
+        fdev = next(((fr["device_code"] or "").strip()
+                     for fr in fuse_rows
+                     if (fr["device_code"] or "").strip()), "")
+        fclean = dev_q or clean_device_code(fdev) or fdev
+
+        def _term_feed(ld):
+            # strona zasilania: terminal, którego sieć kończy się na
+            # punkcie zasilania/studzie ('terminal' jak RT169/RT59)
+            return any(e["role"] == "terminal"
+                       for p in ld["pins"] for e in p["ends"])
+        ordered_t = [d for d in fuse_term_devs if d in tloads]
+        # szyny-zwory narzucają pin stroną geometrii schematu — na
+        # planszach Walii etykieta terminala POD symbolem -F to pin 1
+        # (F9:1=RT167 zwora), NAD symbolem = pin 2 (F10:2=F41:2 przez
+        # RT134, szyna BSI na pinach 2). Odczepy szyny nie dostają
+        # osobnych pinów — scalają się w pin zwory.
+        pin_no = {}
+        tap_skip = set()
+        for kd, bar in fuse_bars.items():
+            if kd not in ordered_t:
+                continue
+            pn = bar.get("pin") or {"dn": "1", "up": "2"}.get(
+                bar.get("side"), "")
+            if not pn:
+                continue
+            pin_no[kd] = pn
+            for t in bar.get("taps") or ():
+                if t != kd:
+                    tap_skip.add(t)
+                    pin_no.setdefault(t, pn)
+        rest = [d for d in ordered_t if d not in pin_no]
+        feeds = [d for d in rest if _term_feed(tloads[d])]
+        outs = [d for d in rest if not _term_feed(tloads[d])]
+        if pin_no:
+            free = [str(i) for i in range(1, 20)
+                    if str(i) not in set(pin_no.values())]
+            for i, d in enumerate(feeds + outs):
+                pin_no[d] = free[i]
+        elif len(feeds) == 1 and len(outs) == len(ordered_t) - 1:
+            pin_no = {feeds[0]: "1"}
+            pin_no.update({d: str(i + 2) for i, d in enumerate(outs)})
+        elif len(ordered_t) == 1:
+            pin_no = {ordered_t[0]: "1" if feeds else "2"}
+        else:
+            pin_no = {d: str(i + 1) for i, d in enumerate(ordered_t)}
+        pins_syn = []
+        for d in sorted(ordered_t,
+                        key=lambda d: _natural_sort_key(pin_no.get(d) or "1")):
+            if d in tap_skip:
+                continue
+            fpn = pin_no.get(d) or "1"
+            # terminal zwory: tor pin->odczepy prowadzimy przez syntetyczny
+            # węzeł szyny (rysowany prostokątem), a pozostałe bezpieczniki
+            # szyny dołączamy jako odnogi na tym węźle — klik otwiera ich
+            # własne obwody (F9:1 —[ZW]— F11:1, RT167 to odczep szyny)
+            bar = fuse_bars.get(d)
+            ends2 = []
+            if bar:
+                bdev = bar.get("node") or ""
+                lbl = bar.get("label") or ""
+                bh = bar.get("holder") or ""
+                h_pin = _wire_hop(fdev, fpn, bdev, "",
+                                  {"_bar_holder": bh})
+                for tap in bar.get("taps") or ():
+                    tl = tloads.get(tap)
+                    if not tl:
+                        continue
+                    for p in tl["pins"]:
+                        h_bar = _wire_hop(
+                            bdev, "", tap, p["pin"],
+                            {"_internal": "busbar",
+                             "_internal_label": lbl,
+                             "_bar_holder": bh})
+                        for e in p["ends"]:
+                            e2 = dict(e)
+                            e2["path"] = [h_pin, h_bar] \
+                                + list(e["path"] or [])
+                            ends2.append(e2)
+                for sib_dev, sib_pin in bar.get("sibs") or ():
+                    sib_clean = clean_device_code(sib_dev) or sib_dev
+                    ends2.append({
+                        "device": sib_dev, "pin": sib_pin,
+                        "clean": sib_clean,
+                        "role": "fuse",
+                        "function": "", "desc": "",
+                        "path": [h_pin,
+                                 _wire_hop(bdev, "", sib_dev,
+                                           sib_pin, {})],
+                        "via_fuse": False, "via_relay": False,
+                        "shared": 0})
+            else:
+                for p in tloads[d]["pins"]:
+                    pref_path = [_wire_hop(fdev, fpn, d, p["pin"], {})]
+                    for e in p["ends"]:
+                        e2 = dict(e)
+                        e2["path"] = pref_path + list(e["path"] or [])
+                        ends2.append(e2)
+            if ends2:
+                pins_syn.append({"pin": fpn, "role": "feed",
+                                 "ends": ends2})
+        if pins_syn:
+            first_idx = min(i for i, ld in enumerate(loads_out)
+                            if ld["device"] in tloads)
+            loads_out = [ld for ld in loads_out
+                         if ld["device"] not in tloads]
+            loads_out.insert(first_idx, {
+                "device": fdev,
+                "clean": fclean,
+                "function": (dev_funcs.get(fdev) or dev_funcs.get(fclean)
+                             or bom_names.get(fclean) or ""),
+                "desc": explain_device_code(fdev, glossary, lang=lang) or "",
+                "pins": pins_syn,
             })
 
     # ── 2b. Obwody cewek przekaźników napotkanych na ścieżkach ──────
@@ -8934,6 +9106,124 @@ def _pdf_page_label_positions(schem_id, filepath, page_num, file_mtime=None):
     return items
 
 
+_PDF_PAGE_SEGS = {}
+
+
+def _pdf_page_line_segments(filepath, page_num):
+    """Odcinki poziome/pionowe strony schematu (operatory m/l/re),
+    w jednostkach strony — do wykrywania narysowanych szyn-zwór
+    w skrzynkach bezpieczników. Cache: pamięć procesu."""
+    key = (filepath, page_num)
+    if key in _PDF_PAGE_SEGS:
+        return _PDF_PAGE_SEGS[key]
+    hseg, vseg = [], []
+    if pypdf is not None:
+        try:
+            reader = _PDF_READERS.get(filepath)
+            if reader is None:
+                reader = pypdf.PdfReader(filepath)
+                _PDF_READERS[filepath] = reader
+            if 1 <= page_num <= len(reader.pages):
+                st = {"m": None}
+
+                def _tx(a0, a1, cm):
+                    return (a0 * cm[0] + a1 * cm[2] + cm[4],
+                            a0 * cm[1] + a1 * cm[3] + cm[5])
+
+                def _vop(op, args, cm, tm):
+                    op = op.decode() if isinstance(op, bytes) else op
+                    try:
+                        a = [float(x) for x in args]
+                    except (TypeError, ValueError):
+                        st["m"] = None
+                        return
+                    if op == "m":
+                        st["m"] = _tx(a[0], a[1], cm)
+                    elif op == "l":
+                        if st.get("m"):
+                            x1, y1 = st["m"]
+                            x2, y2 = _tx(a[0], a[1], cm)
+                            if abs(y2 - y1) < 0.7:
+                                hseg.append((min(x1, x2), max(x1, x2),
+                                             (y1 + y2) / 2))
+                            elif abs(x2 - x1) < 0.7:
+                                vseg.append(((x1 + x2) / 2,
+                                             min(y1, y2), max(y1, y2)))
+                        st["m"] = _tx(a[0], a[1], cm)
+                    elif op == "re" and len(a) >= 4:
+                        x, y = _tx(a[0], a[1], cm)
+                        x2, y2 = _tx(a[0] + a[2], a[1] + a[3], cm)
+                        hseg.append((min(x, x2), max(x, x2), y))
+                        hseg.append((min(x, x2), max(x, x2), y2))
+                        vseg.append((min(x, x2), min(y, y2), max(y, y2)))
+                        vseg.append((max(x, x2), min(y, y2), max(y, y2)))
+                    else:
+                        st["m"] = None
+
+                reader.pages[page_num - 1].extract_text(
+                    visitor_operand_before=_vop)
+        except Exception:
+            hseg, vseg = [], []
+    _PDF_PAGE_SEGS[key] = (hseg, vseg)
+    return hseg, vseg
+
+
+def _merge_runs_h(segs, tol):
+    """Kolokwialne segmenty poziome (x0, x1, y) -> ciągłe biegi.
+    Najpierw klaster po y, potem sklejanie zakresów x — inaczej segment
+    z obcego pasma y wchłaniałby niezwiązane zakresy w jeden bieg."""
+    out = []
+    cl_y, cl_segs = 0.0, []
+
+    def _flush():
+        if not cl_segs:
+            return
+        run = None
+        for a0, a1 in sorted(cl_segs):
+            if run and a0 <= run[1] + tol:
+                run[1] = max(run[1], a1)
+            else:
+                run = [a0, a1, cl_y]
+                out.append(run)
+
+    for x0, x1, y in sorted(segs, key=lambda s: s[2]):
+        if cl_segs and abs(y - cl_y) <= tol:
+            cl_y = (cl_y * len(cl_segs) + y) / (len(cl_segs) + 1)
+            cl_segs.append((x0, x1))
+        else:
+            _flush()
+            cl_y, cl_segs = y, [(x0, x1)]
+    _flush()
+    return [(r[0], r[1], r[2]) for r in out]
+
+
+def _merge_runs_v(segs, tol):
+    """Jak _merge_runs_h, dla pionów (x, y0, y1) — klaster po x."""
+    out = []
+    cl_x, cl_segs = 0.0, []
+
+    def _flush():
+        if not cl_segs:
+            return
+        run = None
+        for a0, a1 in sorted(cl_segs):
+            if run and a0 <= run[2] + tol:
+                run[2] = max(run[2], a1)
+            else:
+                run = [cl_x, a0, a1]
+                out.append(run)
+
+    for x, y0, y1 in sorted(segs, key=lambda s: s[0]):
+        if cl_segs and abs(x - cl_x) <= tol:
+            cl_x = (cl_x * len(cl_segs) + x) / (len(cl_segs) + 1)
+            cl_segs.append((y0, y1))
+        else:
+            _flush()
+            cl_x, cl_segs = x, [(y0, y1)]
+    _flush()
+    return [(r[0], r[1], r[2]) for r in out]
+
+
 _FUSE_BAT_RE = re.compile(r"BATTERY|AKUM|BATT", re.IGNORECASE)
 _FUSE_RAILS_CACHE = {}
 
@@ -8981,7 +9271,17 @@ def _ps_fuse_rails(cur, conn_ids, ps_code, adj):
             'groups': [{'feed': feed_elem_dev | '',
                         'members': [{'clean': 'F9', 'elem': '=BOX+TWR-F9',
                                      'slot': '=BOX+TWR-U9',
-                                     'rating': '150A'}]}]}."""
+                                     'rating': '150A'}]}],
+            'holders': {fuse_clean: holder_dev} — oprawka przewodowa -FH
+            przypisana elementowi -F najbliższą etykietą; potrzebne, gdy
+            holder_code z zestawu zgaduje numer (F20 -> FH1, nie FH20).
+            'box_pins': {fuse_clean: (adev, (pinA, pinB))} — element -F<n>_BOX
+            siedzi w skrzynce -A; gniazdo to jej piny nA/nB.
+            'rated': {fuse_clean: dev} — element w raporcie z prądem
+            w nazwie (-F8_3A).
+            'terms': {fuse_clean: [dev,...]} — terminale -RT przy oprawce
+            przezroczystej dla raportu (oprawka nie jest węzłem;
+            końce jej przewodów są węzłami: F1 -> RT122+RT12).}"""
     row = None
     if ps_code:
         row = cur.execute("""
@@ -9001,13 +9301,16 @@ def _ps_fuse_rails(cur, conn_ids, ps_code, adj):
            row["file_mtime"] if row else 0.0, len(adj or {}))
     if key in _FUSE_RAILS_CACHE:
         return _FUSE_RAILS_CACHE[key]
-    out = {"slots": {}, "groups": []}
+    out = {"slots": {}, "groups": [], "holders": {},
+           "box_pins": {}, "rated": {}, "terms": {}}
     if not (row and conn_ids):
         _FUSE_RAILS_CACHE[key] = out
         return out
     schem_id, schem_path, schem_mtime = row["id"], row["filepath"], row["file_mtime"]
     schem_path = resolve_kb_filepath(schem_path, heal_db=True)
-    if not (schem_path and pypdf is not None and os.path.exists(schem_path)):
+    # pypdf potrzebny tylko gdy pozycje etykiet nie są zcache'owane w bazie —
+    # _pdf_page_label_positions zwróci wtedy pustą listę i strona jest pomijana
+    if not (schem_path and os.path.exists(schem_path)):
         _FUSE_RAILS_CACHE[key] = out
         return out
 
@@ -9033,9 +9336,7 @@ def _ps_fuse_rails(cur, conn_ids, ps_code, adj):
             if a and b and re.fullmatch(r".*-U\d+", a) \
                     and re.fullmatch(r".*-RT\d+", b):
                 rt_to_u.setdefault(clean_device_code(b) or "", set()).add(a)
-    if not rt_to_u:
-        _FUSE_RAILS_CACHE[key] = out
-        return out
+    # brak par -U<->-RT nie wyklucza parowania -F -> -FH — przechodzimy dalej
 
     # elementy z zestawu PS (device_code + prąd do etykiet krawędzi)
     fuse_info = {}
@@ -9057,9 +9358,34 @@ def _ps_fuse_rails(cur, conn_ids, ps_code, adj):
                 return d
         return cands[0] if cands else ""
 
+    def _fh_dev(hsuffix, pref=""):
+        # etykieta -FH<n> -> urządzenie raportu. Prefiks lokalizacji elementu
+        # rozstrzyga remisy, ale wygrywa tylko jednoznaczny kandydat —
+        # kilka oprawek o tym numerze w obcych lokalizacjach to zgadywanie.
+        cands = sorted(set(devs_by_clean.get(hsuffix, ())),
+                       key=_natural_sort_key)
+        if not cands:
+            return ""
+        if pref:
+            for d in cands:
+                if d.startswith(pref):
+                    return d
+        return cands[0] if len(cands) == 1 else ""
+
     fuse_slot = {}   # fuse_clean -> {page: {slot_dev,...}} — decyduje
                      # najwcześniejsza strona (szczegółowa plansza skrzynki;
                      # strony-zestawienia mają inne offsety etykiet -RT)
+    fuse_holder = {} # fuse_clean -> {page: holder_dev} — parowanie -F -> -FH
+                     # z geometrii (oprawka przewodowa innego numeru niż
+                     # element: F20 w FH1, F19 w FH15, F6 w FH15)
+    fuse_terms = {}  # fuse_clean -> {page: [dev,...]} — terminale -RT przy
+                     # oprawce/slocie nieobecnym w raporcie
+    fuse_term_side = {}  # fuse_clean -> {page: {"up"|"dn": term_dev}} —
+                     # strona geometrii własnego terminala (nad/pod -F)
+    fuse_bars = {}   # fuse_clean -> {page: {term_dev: bar_info}} —
+                     # terminal szyny-zwory łączącej pin z pinami
+                     # sąsiednich -F; bar_info = {"side","pin","node",
+                     # "label","taps","sibs"}
     page_groups = [] # [fuse_clean...] rzędy elementów per strona
     for pg in sorted(fuse_pages):
         items = _pdf_page_label_positions(schem_id, schem_path, pg, schem_mtime)
@@ -9092,6 +9418,7 @@ def _ps_fuse_rails(cur, conn_ids, ps_code, adj):
                     edges_rt.append((dx * dx + dy * dy, fi, ri))
         assign_rt = _min_cost_pairs(edges_rt, len(fuses), len(relays))
         members_pg = []
+        unres = []     # indeksy -F bez oprawki/slotu w raporcie
         for fi, (fx, fy, fl) in enumerate(fuses):
             fc = fl[1:]
             pref = ""
@@ -9099,11 +9426,18 @@ def _ps_fuse_rails(cur, conn_ids, ps_code, adj):
                 pref = dev.rsplit("-", 1)[0] if "-" in dev else ""
                 break
             slots = []
+            found = False
             hi = assign.get(fi)
             if hi is not None and re.fullmatch(r"-U\d+", holders[hi][2]):
                 ud = _u_dev(holders[hi][2].lstrip("-"), pref)
                 if ud:
                     slots.append(ud)
+                    found = True
+            elif hi is not None and holders[hi][2].startswith("-FH"):
+                hd = _fh_dev(holders[hi][2].lstrip("-"), pref)
+                if hd:
+                    fuse_holder.setdefault(fc, {}).setdefault(pg, hd)
+                    found = True
             elif assign.get(fi) is None:
                 ri = assign_rt.get(fi)
                 if ri is not None:
@@ -9111,10 +9445,110 @@ def _ps_fuse_rails(cur, conn_ids, ps_code, adj):
                             relays[ri][2].lstrip("-"), ()),
                             key=_natural_sort_key):
                         slots.append(ud)
+                    found = bool(slots)
             for sd in slots:
                 fuse_slot.setdefault(fc, {}).setdefault(pg, set()).add(sd)
             if slots:
                 members_pg.append((fx, fy, fc))
+            if not found:
+                unres.append((fi, fx, fy))
+        # Oprawka/slot nieobecny w raporcie jest dla niego przezroczysty —
+        # końce przewodów bezpiecznika to etykiety -RT nad i pod jego
+        # kolumną (F1 -> RT122 nad + RT12 pod, F24 -> RT150 + RT145)
+        if unres:
+            e_up, e_dn = [], []
+            for ui, (fi, fx, fy) in enumerate(unres):
+                for ri, (rx, ry, rl) in enumerate(relays):
+                    dx = rx - fx
+                    if abs(dx) > 55:
+                        continue
+                    dy = ry - fy
+                    if 15 <= dy <= 170:
+                        e_dn.append((dx * dx + dy * dy, ui, ri))
+                    elif -170 <= dy <= -15:
+                        e_up.append((dx * dx + dy * dy, ui, ri))
+            a_up = _min_cost_pairs(e_up, len(unres), len(relays))
+            a_dn = _min_cost_pairs(e_dn, len(unres), len(relays))
+            # zwora/mostek pinów między sąsiednimi -F (dwustanowiskowy
+            # uchwyt -U147 łączy F9:1=F11:1, szyna F10:2=F41:2): na stronie
+            # bez własnego terminala, w szerszym zasięgu kolumny
+            # (|dx|<=80 — szyna wyjeżdża poza obrys bezpiecznika), leży
+            # terminal zajęty przez inny -F na TEJ SAMEJ stronie — to
+            # terminal wspólnej szyny, nie osobny przewód. Parę
+            # zapamiętujemy dla OBU bezpieczników: tor prowadzimy przez
+            # węzeł zwory, a sąsiad rysuje się jako odnoga.
+            claimed = {}
+            for _ui, _ri in a_up.items():
+                claimed[_ri] = _ui
+            for _ui, _ri in a_dn.items():
+                claimed[_ri] = _ui
+            rt_for_slot = set(assign_rt.values())
+            bars_pg = {}   # unres-idx -> (relay-idx, winner-unres-idx, side)
+            for ui, (fi, fx, fy) in enumerate(unres):
+                for side, own, sgn in (("up", a_up, -1), ("dn", a_dn, 1)):
+                    if ui in own:
+                        continue
+                    best = None
+                    for ri, (rx, ry, rl) in enumerate(relays):
+                        dx, dy = rx - fx, (ry - fy) * sgn
+                        if not (15 <= dy <= 190) or abs(dx) > 80:
+                            continue
+                        wj = claimed.get(ri)
+                        if wj is None or wj == ui or ri in rt_for_slot:
+                            continue
+                        d2 = dx * dx + dy * dy
+                        if best is None or d2 < best[0]:
+                            best = (d2, ri, wj, side)
+                    if best:
+                        bars_pg.setdefault(ui, best[1:])
+            for ui, (fi, fx, fy) in enumerate(unres):
+                fc = fuses[fi][2].lstrip("-")
+                pref = ""
+                for dev, _rt in fuse_info.get(fc, ()):
+                    pref = dev.rsplit("-", 1)[0] if "-" in dev else ""
+                    break
+                devs = []
+                side_devs = {}
+                for sdir, ri in (("up", a_up.get(ui)),
+                                 ("dn", a_dn.get(ui))):
+                    if ri is None:
+                        continue
+                    d = _fh_dev(relays[ri][2].lstrip("-"), pref)
+                    if d and d not in devs:
+                        devs.append(d)
+                        side_devs[sdir] = d
+                if ui in bars_pg:
+                    bri, wj, bside = bars_pg[ui]
+                    bd = _fh_dev(relays[bri][2].lstrip("-"), pref)
+                    if bd:
+                        if bd not in devs:
+                            devs.append(bd)
+                        sib_fi = unres[wj][0]
+                        sib_fc = fuses[sib_fi][2].lstrip("-")
+                        sib_dev = next(
+                            (dev for dev, _t in fuse_info.get(sib_fc, ())),
+                            f"{pref}-{sib_fc}")
+                        self_dev = next(
+                            (dev for dev, _t in fuse_info.get(fc, ())),
+                            f"{pref}-{fc}")
+                        bpin = {"dn": "1", "up": "2"}.get(bside, "")
+                        btag = "_".join(sorted((fc, sib_fc),
+                                               key=_natural_sort_key))
+                        bnode = f"{pref}-ZW{btag}" if pref else f"-ZW{btag}"
+                        blbl = f"{fc}\u2194{sib_fc}"
+                        fuse_bars.setdefault(fc, {}).setdefault(pg, {})[bd] = \
+                            {"side": bside, "pin": bpin, "node": bnode,
+                             "label": blbl, "taps": [bd],
+                             "sibs": [(sib_dev, bpin)]}
+                        fuse_bars.setdefault(sib_fc, {}).setdefault(pg, {}) \
+                            [bd] = {"side": bside, "pin": bpin,
+                                    "node": bnode, "label": blbl,
+                                    "taps": [bd],
+                                    "sibs": [(self_dev, bpin)]}
+                if devs:
+                    fuse_terms.setdefault(fc, {}).setdefault(pg, devs)
+                    fuse_term_side.setdefault(fc, {}).setdefault(
+                        pg, side_devs)
         # rzędy: ta sama wysokość ±15 pt; przerwa >120 pt w osi X dzieli
         members_pg.sort(key=lambda m: (m[1], m[0]))
         rows = []
@@ -9133,6 +9567,293 @@ def _ps_fuse_rails(cur, conn_ids, ps_code, adj):
                 else:
                     cur_grp.append(m)
             page_groups.append(cur_grp)
+
+    # ── Narysowane szyny-zwory w skrzynkach (geometria wektorowa) ──
+    # Szyna między pinami ogniw to poziomy odcinek/prostokąt leżący
+    # ŚCIŚLE wewnątrz ścianek ogniw — ścianka biegnie przez nią dalej
+    # (krawędź skrzynki jest końcem ścianek i odpada sama). Wykrywa też
+    # zwory, przy których każdy bezpiecznik ma własny terminal — np.
+    # szyna pinów 2 skrzynki BSI (F1-F4 + przelotka FH0, etykieta
+    # 'Jumper', nota 'zworka MTA 0301226') albo prostokąt na pinach 2
+    # F33-F36 — niewidoczne dla metody brakującego terminala. Ogniwo
+    # bez elementu -F, ale z ciągłym pionem (zworka pionowa w oprawce
+    # jak FH0) dokłada do węzła szyny OBA swoje terminale.
+    # Zwory bywają w BOM jako artykuły 'BUS-BAR' przypięte do urządzeń
+    # -U (np. =CAB+MOR-U146/U147 = AK 602 010 002 '2 WAY BUS-BAR',
+    # -U210 = AK 602 010 300 '4 WAY BUS-BAR') — gdy etykieta -U leży
+    # przy narysowanej szynie, podpinamy ją jako realne urządzenie.
+    u_busbar = {}
+    try:
+        for r in cur.execute(
+                "SELECT DISTINCT bd.device_clean, bd.device_code "
+                "FROM zuken_bom_devices bd "
+                "JOIN zuken_bom_items bi ON bi.id = bd.bom_item_id "
+                "JOIN zuken_projects zp ON zp.id = bi.project_id "
+                "WHERE zp.ps_codes LIKE ? "
+                "AND (UPPER(bi.description) LIKE '%BUS%BAR%' "
+                "     OR UPPER(bi.description) LIKE '%JUMPER%')",
+                (f"%{ps_code}%",)):
+            if re.fullmatch(r"U\d+", r["device_clean"] or ""):
+                u_busbar.setdefault(r["device_clean"], r["device_code"])
+    except Exception:
+        pass
+    for pg in sorted(fuse_pages):
+        items = _pdf_page_label_positions(
+            schem_id, schem_path, pg, schem_mtime)
+        if not items:
+            continue
+        labs = sorted(
+            (x, y, l) for x, y, l in items
+            if re.fullmatch(r"-F\d+|-FH\d+", l))
+        if len(labs) < 2:
+            continue
+        rts = [(x, y, l) for x, y, l in items
+               if re.fullmatch(r"-RT\d+", l)]
+        uls = [(x, y, l) for x, y, l in items
+               if re.fullmatch(r"-U\d+", l)]
+        h_seg, v_seg = _pdf_page_line_segments(schem_path, pg)
+        if not h_seg or not v_seg:
+            continue
+        # rozstaw ogniw liczymy z etykiet -F (są w każdym ogniwie);
+        # etykiety -FH stoją obok i zaniżałyby medianę o połowę
+        fxs = sorted(l[0] for l in labs
+                     if re.fullmatch(r"-F\d+", l[2]))
+        xs = fxs if len(fxs) >= 3 else [l[0] for l in labs]
+        gaps = sorted(b - a for a, b in zip(xs, xs[1:]) if b - a > 8)
+        pitch = gaps[len(gaps) // 2] if gaps else 45.0
+        tol = max(1.0, pitch * 0.03)
+        hr = _merge_runs_h(h_seg, tol)
+        vr = _merge_runs_v(v_seg, tol)
+        # kolumny ogniw: -F i -FH jednego gniazda leżą niemal na tej
+        # samej osi x
+        cols = []   # [cx, n, flabel, fly, hlabel, hy]
+        for x, y, l in labs:
+            if cols and x - cols[-1][0] <= pitch * 0.42:
+                c = cols[-1]
+                c[0] = (c[0] * c[1] + x) / (c[1] + 1)
+                c[1] += 1
+                if l.startswith("-FH"):
+                    c[4], c[5] = l, y
+                else:
+                    c[2], c[3] = l, y
+            else:
+                cols.append([x, 1,
+                             "" if l.startswith("-FH") else l,
+                             0.0 if l.startswith("-FH") else y,
+                             l if l.startswith("-FH") else "",
+                             y if l.startswith("-FH") else 0.0])
+
+        def _cly(c):
+            return c[3] if c[2] else c[5]
+
+        cands = []   # (side, members, holder_labs) przed deduplikacją
+        for x0, x1, by in hr:
+            if x1 - x0 < pitch * 0.9:
+                continue
+            cov = []
+            for ci, c in enumerate(cols):
+                if x0 - pitch * 0.45 <= c[0] <= x1 + pitch * 0.45:
+                    cov.append(ci)
+            if len(cov) < 2:
+                continue
+            # ścianki ogniw = piony obejmujące etykietę z zapasem ~0.42
+            # rozstawu; ich zakresy pionowe dają obrys skrzynki (mediana).
+            # Przewód pinowy może być wyższy niż ścianka — odfiltrowuje
+            # go dopasowanie zakresu do obrysu.
+            wmrg = pitch * 0.42
+            near_w = {}   # ci -> [v-runs]
+            seen_w = set()
+            cand_w = []
+            for ci in cov:
+                c = cols[ci]
+                ly = _cly(c)
+                near = [w for w in vr
+                        if abs(w[0] - c[0]) <= pitch * 1.3
+                        and w[1] <= ly - wmrg and w[2] >= ly + wmrg]
+                near_w[ci] = near
+                for w in near:
+                    if w not in seen_w:
+                        seen_w.add(w)
+                        cand_w.append(w)
+            if len(cand_w) < 2:
+                continue
+            # obrys skrzynki = dominujący zakres pionowy ścianek —
+            # przewody pinowe mają inne, dowolne zakresy i przegrywają
+            pair_w = {}
+            for w in cand_w:
+                k = (round(w[1], 1), round(w[2], 1))
+                pair_w[k] = pair_w.get(k, 0) + 1
+            box_top, box_bot = max(pair_w.items(), key=lambda kv: kv[1])[0]
+            # tylko kolumny, których etykiety mieszczą się w obrysie —
+            # obce rzędy wpadające w zasięg x odpadają
+            cov = [ci for ci in cov
+                   if box_top - 2 <= _cly(cols[ci]) <= box_bot + 2]
+            if len(cov) < 2:
+                continue
+            # szyna leży ŚCIŚLE wewnątrz skrzynki — na krawędzi i poza nią
+            # kończą się ścianki ogniw / zaczynają przewody
+            if not (box_top + 1.5 < by < box_bot - 1.5):
+                continue
+            cell = {}
+            for ci in cov:
+                c = cols[ci]
+                real = [w for w in near_w[ci]
+                        if abs(w[1] - box_top) <= 4
+                        and abs(w[2] - box_bot) <= 4] or near_w[ci]
+                if c[2]:
+                    lw = max((w for w in real if w[0] <= c[0] - 1),
+                             key=lambda w: w[0], default=None)
+                    rw = min((w for w in real if w[0] >= c[0] + 1),
+                             key=lambda w: w[0], default=None)
+                else:
+                    # ogniwo-przelotka bez -F: pion zworki leży blisko
+                    # środka i pasuje do obrysu — ścianki bierzemy
+                    # zewnętrzne, żeby przelotka była wnętrzem ogniwa
+                    lw = min((w for w in real if w[0] <= c[0] - 3),
+                             key=lambda w: w[0], default=None)
+                    rw = max((w for w in real if w[0] >= c[0] + 3),
+                             key=lambda w: w[0], default=None)
+                cell[ci] = (lw, rw)
+            # krawędź skrzynki odpada: przy niej KOŃCZĄ się ścianki ogniw,
+            # przy szynie biegną przez nią dalej — liczymy KONCE ścianek
+            # dokładnie na tej wysokości względem przejść przez nią
+            ends_at = crosses = 0
+            for ci in cov:
+                for w in cell[ci]:
+                    if w is None:
+                        continue
+                    if min(abs(w[1] - by), abs(w[2] - by)) <= 1.5:
+                        ends_at += 1
+                    elif w[1] < by < w[2]:
+                        crosses += 1
+            if ends_at > crosses:
+                continue
+            # i co najmniej jedna ścianka ogniwa przecina ją w środku
+            # zakresu x (potwierdzenie, że to nie zwykły przewód nad/pod)
+            if not any(x0 + 1 < w[0] < x1 - 1
+                       and w[1] + 1 < by < w[2] - 1
+                       for ci in cov
+                       for w in (cell[ci][0], cell[ci][1])
+                       if w is not None):
+                continue
+            flys = [_cly(cols[ci]) for ci in cov if cols[ci][2]]
+            if not flys:
+                continue
+            # strona szyny względem etykiet -F: poniżej etykiety = dn->1,
+            # powyżej = up->2 (konwencja plansz ze zworkami pinowymi)
+            if by < min(flys) - 2:
+                side = "up"
+            elif by > max(flys) + 2:
+                side = "dn"
+            else:
+                continue
+            members = []       # (fc, fdev, own_term)
+            holder_labs = []   # etykiety -RT ogniw-przelotek (bez -F)
+            for ci in cov:
+                c = cols[ci]
+                ly = _cly(c)
+                lw, rw = cell[ci]
+                lwx = lw[0] if lw is not None else c[0] - pitch * 0.6
+                rwx = rw[0] if rw is not None else c[0] + pitch * 0.6
+                # końcówka pina ogniwa musi dosięgać szyny w jej zasięgu
+                # x i mieć przynajmniej 6 pt przewodu w którąś stronę —
+                # zwykły "dotyk" krawędzią odrzuca test ścianek wyżej
+                stub = any(
+                    lwx + 2 < s[0] < rwx - 2
+                    and x0 - 2 <= s[0] <= x1 + 2
+                    and s[1] - 1.5 <= by <= s[2] + 1.5
+                    and max(by - s[1], s[2] - by) >= 6
+                    for s in vr)
+                if not stub:
+                    continue
+                if c[2]:
+                    fc = c[2].lstrip("-")
+                    fdev = next(
+                        (d for d, _t in fuse_info.get(fc, ())), "")
+                    own = ((fuse_term_side.get(fc) or {}).get(pg) or {}
+                           ).get(side) or ""
+                    members.append((fc, fdev, own))
+                else:
+                    # ogniwo bez bezpiecznika — zworka pionowa w oprawce
+                    ups = [r for r in rts
+                           if lwx - 6 <= r[0] <= rwx + 6
+                           and ly - 200 <= r[1] < ly - 8]
+                    dns = [r for r in rts
+                           if lwx - 6 <= r[0] <= rwx + 6
+                           and ly + 8 < r[1] <= ly + 200]
+                    if ups:
+                        holder_labs.append(
+                            max(ups, key=lambda r: r[1]))
+                    if dns:
+                        holder_labs.append(
+                            min(dns, key=lambda r: r[1]))
+            if len(members) < 2:
+                continue
+            cands.append((side, members, holder_labs, (x0, x1, by)))
+        # obie krawędzie prostokąta zwory dają niemal ten sam zbiór ogniw
+        # — podzbiór nadzbioru to ta sama szyna, bierzemy pełny
+        uni = []
+        for side, members, holder_labs, bar_bb in cands:
+            ms = frozenset(m[0] for m in members)
+            if any(side == s2
+                   and ms < frozenset(m[0] for m in m2)
+                   for s2, m2, _h2, _b2 in cands):
+                continue
+            uni.append((side, members, holder_labs, bar_bb))
+        seen_bars = set()
+        for side, members, holder_labs, bar_bb in uni:
+            bk = (side, frozenset(m[0] for m in members))
+            if bk in seen_bars:
+                continue
+            seen_bars.add(bk)
+            if not any((fuse_term_side.get(m[0]) or {}).get(pg)
+                       for m in members):
+                continue  # szyna wśród bezpieczników slotowych modeluje
+                          # mechanizm -SZYNA
+            pref = next((m[1].rsplit("-", 1)[0] for m in members
+                         if m[1] and "-" in m[1]), "")
+            # najbliższa etykieta -U przy szynie = oprawka z artykułem
+            # BUS-BAR w BOM (zwykłe uchwyty -U odpadają — nie są w mapie)
+            holder = ""
+            bx0, bx1, by = bar_bb
+            best = pitch * 2.2
+            for ux, uy, ul in uls:
+                dev = u_busbar.get(ul.lstrip("-"))
+                if not dev:
+                    continue
+                d = ((max(0.0, bx0 - ux, ux - bx1)) ** 2
+                     + (uy - by) ** 2) ** 0.5
+                if d < best:
+                    best, holder = d, dev
+            # odczepy szyny: własne terminale członków na tej stronie
+            # + oba terminale ogniw-przelotek
+            taps = []
+            for fc, fdev, own in members:
+                if own and own not in taps:
+                    taps.append(own)
+            for _rx, _ry, rl in holder_labs:
+                td = _fh_dev(rl.lstrip("-"), pref)
+                if td and td not in taps:
+                    taps.append(td)
+            if not taps:
+                continue
+            codes = sorted((m[0] for m in members),
+                           key=_natural_sort_key)
+            node = f"{pref}-ZW{'_'.join(codes)}"
+            label = "\u2194".join(codes)
+            pin = {"dn": "1", "up": "2"}[side]
+            for fc, fdev, own in members:
+                if not ((fuse_term_side.get(fc) or {}).get(pg)):
+                    continue
+                key = own or taps[0]
+                if key not in fuse_terms[fc][pg]:
+                    fuse_terms[fc][pg].append(key)
+                fuse_bars.setdefault(fc, {}).setdefault(pg, {})[key] = {
+                    "side": side, "pin": pin, "node": node,
+                    "label": label, "holder": holder,
+                    "taps": [key] + [t for t in taps if t != key],
+                    "sibs": [(m[1], pin) for m in members
+                             if m[0] != fc and m[1]]}
 
     # elementy są na jednej szynie, gdy współwystępują w grupie na każdej
     # stronie, na której którykolwiek z nich jest zgrupowany — identyczne
@@ -9194,6 +9915,79 @@ def _ps_fuse_rails(cur, conn_ids, ps_code, adj):
     out["slots"] = {fc: sorted(fuse_slot[fc][min(fuse_slot[fc])],
                                key=_natural_sort_key)
                     for fc in fuse_slot}
+    out["holders"] = {fc: fuse_holder[fc][min(fuse_holder[fc])]
+                      for fc in fuse_holder}
+    out["terms"] = {fc: fuse_terms[fc][min(fuse_terms[fc])]
+                    for fc in fuse_terms}
+    # zwory tylko ze strony, na której powstały terminale — strony-
+    # zestawienia mają rozjeżdżające się etykiety i produkują złudne
+    # pary (F13 na str. 56 łapało cudzy terminal RT1 spoza kolumny)
+    out["bars"] = {}
+    for fc, pgs in fuse_bars.items():
+        pgs_t = fuse_terms.get(fc) or {}
+        pg = min(pgs_t) if pgs_t else min(pgs)
+        if pg in pgs:
+            out["bars"][fc] = pgs[pg]
+
+    # elementy -F<n>_BOX: skrzynka (np. Comms) to urządzenie -A<n>, a gniazdo
+    # bezpiecznika jej piny nA/nB — E3 eksportuje zaciski gniazd jako piny
+    # zespołu, osobne urządzenia -F<n>_BOX nie występują w raporcie
+    box_pins = {}
+    a_devs = {}
+    for (ad, ap) in adj:
+        if ad and re.fullmatch(r".*-A\d+", ad) \
+                and re.fullmatch(r"\d+[AB]", ap or ""):
+            a_devs.setdefault(ad, set()).add(ap)
+    if a_devs and any(re.fullmatch(r"F\d+_BOX", fc or "")
+                      for fc in fuse_info):
+        # strony symboli -A<n> / -F<n>_BOX — remis skrzynek rozstrzyga
+        # wspólna strona schematu
+        a_pages, box_fuse_pages = {}, {}
+        for pg, sname in cur.execute(
+                "SELECT page_number, symbol_name FROM zuken_pdf_symbols"
+                " WHERE schematic_id = ? AND (symbol_name LIKE '-A%'"
+                " OR symbol_name LIKE '%_BOX');", (schem_id,)):
+            if re.fullmatch(r"-A\d+", sname or ""):
+                a_pages.setdefault(sname[1:], set()).add(pg)
+            elif re.fullmatch(r"-F\d+_BOX", sname or ""):
+                box_fuse_pages.setdefault(sname[1:], set()).add(pg)
+        for fc in fuse_info:
+            m = re.fullmatch(r"F(\d+)_BOX", fc or "")
+            if not m:
+                continue
+            want = {m.group(1) + "A", m.group(1) + "B"}
+            cands = [ad for ad, pins in a_devs.items() if want <= pins]
+            if len(cands) > 1:
+                fps = box_fuse_pages.get(fc, set())
+                same = [ad for ad in cands
+                        if a_pages.get(ad.rsplit("-", 1)[-1], set()) & fps]
+                if same:
+                    cands = same
+            if cands:
+                box_pins[fc] = (sorted(cands, key=_natural_sort_key)[0],
+                                sorted(want))
+    out["box_pins"] = box_pins
+
+    # element w raporcie pod nazwą z doklejonym prądem: -F8_3A
+    # (zestaw zna go jako -F8 3A; importer zgaduje -FH8, którego nie ma)
+    rated = {}
+    for fc, variants in fuse_info.items():
+        if not re.fullmatch(r"F\d+", fc or ""):
+            continue
+        for dcode, rating in variants:
+            rnorm = re.sub(r"[^0-9A-Z]", "", (rating or "").upper())
+            if not rnorm:
+                continue
+            cands = sorted(set(devs_by_clean.get(f"{fc}_{rnorm}", ())),
+                           key=_natural_sort_key)
+            if len(cands) > 1:
+                pref = dcode.rsplit("-", 1)[0] if dcode and "-" in dcode else ""
+                cands = [d for d in cands if pref and d.startswith(pref)]
+            if len(cands) == 1:
+                rated[fc] = cands[0]
+                break
+    out["rated"] = rated
+
     _FUSE_RAILS_CACHE[key] = out
     return out
 
@@ -9691,12 +10485,18 @@ def get_ps_fuses(ps_code, search="", limit=100, offset=0, lang="pl"):
     def _resolve_dev_label(clean, sys_code, loc_code):
         """Etykieta z PDF (np. FH36) -> pełny kod urządzenia z BOM/raportów.
         Prefiks lokalizacji bezpiecznika ma pierwszeństwo, ale nie jest wymagany
-        (oprawka bywa w innej lokalizacji, np. -F20 z =CAB+BFC siedzi w -FH1 z +TWR)."""
+        (oprawka bywa w innej lokalizacji, np. -F20 z =CAB+BFC siedzi w -FH1 z +TWR).
+        Przy remisie wygrywa kandydat okablowany w raportach TEGO projektu —
+        inaczej wygrywa alfabetycznie urządzenie z innego PS (=CAB+BSI-FH15
+        z Walii zamiast =CAB+TWR-FH15 z EoE)."""
         cands = clean_to_devs.get(clean) or []
         if not cands:
             return ""
         pref = f"{sys_code or ''}{loc_code or ''}-{clean}"
-        return pref if pref in cands else cands[0]
+        if pref in cands:
+            return pref
+        wired = [d for d in cands if d in conn_devs]
+        return (wired or cands)[0]
 
     _geo_cache = {}
 
@@ -9784,7 +10584,7 @@ def get_ps_fuses(ps_code, search="", limit=100, offset=0, lang="pl"):
         _cand_cache[key] = out
         return out
 
-    def _fuse_wires(device_code, holder_code, fuse_clean="", loc_code="", sys_code=""):
+    def _fuse_wires(device_code, holder_code, fuse_clean="", loc_code="", sys_code="", rating=""):
         """Przewody dochodzące do bezpiecznika / jego oprawki (jak styki przekaźnika).
         Zwraca (wires, holder_used) — holder_used to kod oprawki, która faktycznie
         wystąpiła w połączeniach (może mieć inny numer niż bezpiecznik)."""
@@ -9802,6 +10602,43 @@ def get_ps_fuses(ps_code, search="", limit=100, offset=0, lang="pl"):
                 wires, matched = _query_fuse_wires([d for d in (device_code, alt_holder) if d])
                 if wires:
                     return wires, (alt_holder if alt_holder in matched else "")
+            # element w raporcie pod nazwą z doklejonym prądem: -F8_3A
+            rnorm = re.sub(r"[^0-9A-Z]", "", (rating or "").upper())
+            if rnorm:
+                cands = [d for d in clean_to_devs.get(f"{fuse_clean}_{rnorm}", ())
+                         if d not in (device_code, holder_code)]
+                pref = (device_code or "").rsplit("-", 1)[0] \
+                    if device_code and "-" in device_code else ""
+                pick = next((d for d in cands if pref and d.startswith(pref)),
+                            next((d for d in cands if d in conn_devs),
+                                 cands[0] if cands else ""))
+                if pick:
+                    wires, _m = _query_fuse_wires(
+                        [d for d in (device_code, pick) if d])
+                    # nawet gdy wiersze raportu nie niosą atrybutów przewodu
+                    # (ślepe zapisy) — pick to i tak właściwy element
+                    return wires, pick
+            # element -F<n>_BOX: gniazdo to piny nA/nB urządzenia-skrzynki -A
+            mb = re.fullmatch(r"F(\d+)_BOX", fuse_clean)
+            if mb:
+                want = {mb.group(1) + "A", mb.group(1) + "B"}
+                ph_b = ",".join("?" for _ in conn_proj_ids)
+                cur.execute(f"""
+                    SELECT DISTINCT from_device AS dev, from_pin AS pin
+                    FROM zuken_connections WHERE project_id IN ({ph_b})
+                    UNION
+                    SELECT to_device, to_pin
+                    FROM zuken_connections WHERE project_id IN ({ph_b});
+                """, conn_proj_ids + conn_proj_ids)
+                a_pins = {}
+                for bd, bp in cur.fetchall():
+                    if bd and re.fullmatch(r".*-A\d+", bd) and bp in want:
+                        a_pins.setdefault(bd, set()).add(bp)
+                bcands = [d for d, ps in a_pins.items() if want <= ps]
+                if len(bcands) == 1:
+                    wires, _m = _query_fuse_wires(bcands)
+                    wires = [w for w in wires if w.get("pin") in want]
+                    return wires, bcands[0]
         return [], ""
 
     def _query_fuse_wires(search_devs):
@@ -9936,6 +10773,7 @@ def get_ps_fuses(ps_code, search="", limit=100, offset=0, lang="pl"):
     known_devs = set()
     cur.execute("SELECT DISTINCT device_code FROM zuken_bom_devices;")
     known_devs.update(r[0] for r in cur.fetchall() if r[0])
+    conn_devs = set()
     if conn_proj_ids:
         ph_kd = ",".join("?" for _ in conn_proj_ids)
         cur.execute(f"""
@@ -9943,7 +10781,8 @@ def get_ps_fuses(ps_code, search="", limit=100, offset=0, lang="pl"):
             UNION
             SELECT DISTINCT to_device FROM zuken_connections WHERE project_id IN ({ph_kd});
         """, conn_proj_ids + conn_proj_ids)
-        known_devs.update(r[0] for r in cur.fetchall() if r[0])
+        conn_devs.update(r[0] for r in cur.fetchall() if r[0])
+        known_devs |= conn_devs
 
     clean_to_devs = {}
     for dev in sorted(known_devs):
@@ -9969,7 +10808,8 @@ def get_ps_fuses(ps_code, search="", limit=100, offset=0, lang="pl"):
         d["location_desc_en"] = _gdesc(d.get("location"), "desc_en")
         d["image_url"] = find_local_component_image(d.get("article_number"))
         wires, holder_used = _fuse_wires(d.get("device_code"), d.get("holder_code"),
-                                       d.get("device_clean"), d.get("location"), d.get("system"))
+                                       d.get("device_clean"), d.get("location"), d.get("system"),
+                                       d.get("rating"))
         if not holder_used:
             # Oprawka sparowana na schemacie, ale bez przewodów w raporcie
             for cand in _fuse_holder_candidates(d.get("device_clean"),
