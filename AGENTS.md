@@ -197,11 +197,25 @@ Wersja wielojęzykowa: `SUPPORTED_LANGS = ("pl", "en", "de")`, tłumaczenia w
   `connFaceSvg()` rysuje. Rodziny: JPT, MCP (AMP 2.8 3-rzędowe), MINIFIT,
   MICROFIT, MOLEXSR (Micro-Fit 1-rzędowy), SUPERSEAL, MATENLOK, TE2P (MQS/MCON
   2p), CIRC7 (TE okrągłe 7p, komórki kołowe), DF11 (Hirose 2-rzęd.),
-  FASTIN/FF250 (2-kolumnowe pionowe), TBP, RELAY9 (Hella 5/9), RCA,
+  FASTIN/FF250 — dwie serie: stara 1809xx (2-kolumnowe pionowe, rys. C-163007)
+  i nowsza "housing lance" 1721xx/17189x/171433 (poziome 2×n/2: 4p=172134,
+  6p=171898+171897, 8p=172135/172136, 10p=172137/172138; 2p=172129/172130
+  pionowo 2×1) — `L.lance`, zatrzask na górnej ściance, wbudowana numeracja
+  `unverified`; moduł centralki WAECO ML-22/44 ma DWIE wtyczki numerowane
+  wspólnie 1-10 (6p: dół 1,2,3 / góra 6,7,8; 4p: dół 4,5 / góra 9,10) —
+  pokryte rekordami USER `171898-1` (X158/X86, zweryfikowane z instrukcji)
+  i `172134-1` (X87, mapowanie pinów `unverified`); dokumenty w
+  `Baza wiedzy/PS012732/TE_*`,
   MIC (TE AMP Multi-Interlock 171892-1, 9p: siatka 2×5, góra 1-5, dół
   6,7,zatrzask,8,9 — środek dolnego rzędu to zatrzask, nie pin; X346/X347/
   X390-X393 = moduły Carnation),
   ROW (ogólny 1-rząd, `unverified`), USER (ręczny pinout, `/api/zuken/conn-pinouts`).
+  USER: `pins_map` to lista row-major lub obiekt `{"map": [...], "devices":
+  {"QC13": {"1": "4"}}, "unverified": true}` — `devices` wiąże rysunek
+  OBUDOWY z urządzeniem, gdy jego artykuł to goły terminal (np. QC12/QC13/QC14
+  = terminale MCP/MQS we wtyku `RBA2` Body Controllera Sprintera VS30, BCM V2
+  A907 900 08 06: siatka 2×18, MCP 1-8 + odstęp + MQS 9-34); `devmap` tłumaczy pin urządzenia na
+  etykietę komory, `'x'` w map = komórka poza wkładką (odstęp, nie rysowana).
   Nowe rodziny dodawać tylko ze zweryfikowaną numeracją (rysunek katalogowy/zdjęcie
   od Adama); niepewny kierunek → `unverified: true` (ostrzeżenie w oknie złącza).
   Typ bez rysunku: węzeł i tak klikalny — okno pokazuje przewody i pinout.

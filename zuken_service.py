@@ -8850,7 +8850,11 @@ def get_ps_connector_types(ps_code):
 
 def get_conn_pinouts():
     """Pinouty złączy wprowadzone ręcznie — słownik {ARTYKUŁ(upper): {rows, cols,
-    gender, map, note}}. map = lista row-major z etykietą pinu ('' = puste gniazdo)."""
+    gender, map, note}}. map = lista row-major z etykietą pinu ('' = puste gniazdo,
+    'x' = poza wkładką/obudową). pins_map może być też obiektem
+    {"map": [...], "devices": {"QC13": {"1": "4"}}, "unverified": true} —
+    devices wiąże rysunek z urządzeniem (terminal w obcej obudowie,
+    np. QC13 → wtyk RBA 2) i tłumaczy pin urządzenia na etykietę komory."""
     conn = get_db()
     try:
         out = {}
@@ -8861,21 +8865,40 @@ def get_conn_pinouts():
                 mp = json.loads(r["pins_map"] or "[]")
             except Exception:
                 mp = []
+            devices, unverified = {}, False
+            if isinstance(mp, dict):
+                devices = mp.get("devices") or {}
+                unverified = bool(mp.get("unverified"))
+                mp = mp.get("map") or []
             art = (r["article"] or "").strip().upper()
             if not art:
                 continue
-            out[art] = {
+            it = {
                 "rows": r["rows"], "cols": r["cols"],
                 "gender": r["gender"] or "F",
                 "map": [str(p) for p in mp],
                 "note": r["note"] or ""}
+            if devices:
+                it["devices"] = devices
+            if unverified:
+                it["unverified"] = True
+            out[art] = it
         return out
     finally:
         conn.close()
 
 
-def save_conn_pinout(article, rows, cols, pins_map, gender="F", note=""):
-    """Zapisuje/aktualizuje ręczny pinout złącza dla numeru artykułu."""
+def save_conn_pinout(article, rows, cols, pins_map, gender="F", note="",
+                     devices=None, unverified=None):
+    """Zapisuje/aktualizuje ręczny pinout złącza dla numeru artykułu.
+    devices/unverified → pins_map w formie-obiekt (patrz get_conn_pinouts)."""
+    payload = [str(p) for p in pins_map]
+    if devices is not None or unverified is not None:
+        payload = {"map": payload}
+        if devices:
+            payload["devices"] = devices
+        if unverified:
+            payload["unverified"] = True
     conn = get_db()
     try:
         conn.execute(
@@ -8888,7 +8911,7 @@ def save_conn_pinout(article, rows, cols, pins_map, gender="F", note=""):
             " updated_at=excluded.updated_at",
             (article.strip().upper(), int(rows), int(cols),
              str(gender or "F").upper()[:1],
-             json.dumps([str(p) for p in pins_map]),
+             json.dumps(payload),
              note or "",
              datetime.now().isoformat(timespec="seconds")))
         conn.commit()

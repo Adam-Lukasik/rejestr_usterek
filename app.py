@@ -144,7 +144,7 @@ app = Flask(__name__)
 # Limit uploadu dla paczek synchronizacyjnych / backupów (baza + Baza wiedzy)
 app.config["MAX_CONTENT_LENGTH"] = 2 * 1024 * 1024 * 1024
 
-VERSION = "2.1.6"
+VERSION = "2.1.7"
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # STATIC_DIR — zasoby kodu (UI, migracje, narzędzia); DATA_DIR — dane użytkownika
@@ -3482,7 +3482,9 @@ def api_zuken_conn_pinouts():
         zuken_service.save_conn_pinout(
             art, rows, cols, pmap,
             gender=data.get("gender") or "F",
-            note=data.get("note") or "")
+            note=data.get("note") or "",
+            devices=data.get("devices"),
+            unverified=data.get("unverified"))
         return jsonify({"status": "success"})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
