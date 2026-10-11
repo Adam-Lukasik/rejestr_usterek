@@ -214,11 +214,15 @@ Wersja wielojęzykowa: `SUPPORTED_LANGS = ("pl", "en", "de")`, tłumaczenia w
   X390-X393 = moduły Carnation),
   ROW (ogólny 1-rząd, `unverified`), USER (ręczny pinout, `/api/zuken/conn-pinouts`).
   USER: `pins_map` to lista row-major lub obiekt `{"map": [...], "devices":
-  {"QC13": {"1": "4"}}, "unverified": true}` — `devices` wiąże rysunek
+  {"QC13": {"1": "4"}}, "unverified": true, "latchSide": "left"}` — `devices`
+  wiąże rysunek
   OBUDOWY z urządzeniem, gdy jego artykuł to goły terminal (np. QC12/QC13/QC14
   = terminale MCP/MQS we wtyku `RBA2` Body Controllera Sprintera VS30, BCM V2
   A907 900 08 06: siatka 2×18, MCP 1-8 + odstęp + MQS 9-34); `devmap` tłumaczy pin urządzenia na
-  etykietę komory, `'x'` w map = komórka poza wkładką (odstęp, nie rysowana).
+  etykietę komory, `'x'` w map = komórka poza wkładką (odstęp, nie rysowana);
+  `latchSide` `"left"`/`"right"` = zatrzask na bocznej ściance obudowy, wypustka
+  przy dolnym rzędzie zamiast belki u góry/dołu (np. Carling VCH-01 = X133,
+  wtyk przełącznika Contura — numery wzdłuż ścianek, zatrzask przy pinie 3).
   Nowe rodziny dodawać tylko ze zweryfikowaną numeracją (rysunek katalogowy/zdjęcie
   od Adama); niepewny kierunek → `unverified: true` (ostrzeżenie w oknie złącza).
   Typ bez rysunku: węzeł i tak klikalny — okno pokazuje przewody i pinout.
