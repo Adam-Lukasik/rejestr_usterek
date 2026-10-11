@@ -8852,9 +8852,12 @@ def get_conn_pinouts():
     """Pinouty złączy wprowadzone ręcznie — słownik {ARTYKUŁ(upper): {rows, cols,
     gender, map, note}}. map = lista row-major z etykietą pinu ('' = puste gniazdo,
     'x' = poza wkładką/obudową). pins_map może być też obiektem
-    {"map": [...], "devices": {"QC13": {"1": "4"}}, "unverified": true} —
+    {"map": [...], "devices": {"QC13": {"1": "4"}}, "unverified": true,
+     "latchSide": "left"} —
     devices wiąże rysunek z urządzeniem (terminal w obcej obudowie,
-    np. QC13 → wtyk RBA 2) i tłumaczy pin urządzenia na etykietę komory."""
+    np. QC13 → wtyk RBA 2) i tłumaczy pin urządzenia na etykietę komory.
+    latchSide "left"/"right" rysuje zatrzask na bocznej ściance obudowy
+    (np. Carling VCH-01) zamiast u góry/dołu."""
     conn = get_db()
     try:
         out = {}
@@ -8865,10 +8868,11 @@ def get_conn_pinouts():
                 mp = json.loads(r["pins_map"] or "[]")
             except Exception:
                 mp = []
-            devices, unverified = {}, False
+            devices, unverified, latch_side = {}, False, ""
             if isinstance(mp, dict):
                 devices = mp.get("devices") or {}
                 unverified = bool(mp.get("unverified"))
+                latch_side = str(mp.get("latchSide") or "")
                 mp = mp.get("map") or []
             art = (r["article"] or "").strip().upper()
             if not art:
@@ -8882,6 +8886,8 @@ def get_conn_pinouts():
                 it["devices"] = devices
             if unverified:
                 it["unverified"] = True
+            if latch_side:
+                it["latchSide"] = latch_side
             out[art] = it
         return out
     finally:
@@ -8889,16 +8895,19 @@ def get_conn_pinouts():
 
 
 def save_conn_pinout(article, rows, cols, pins_map, gender="F", note="",
-                     devices=None, unverified=None):
+                     devices=None, unverified=None, latch_side=None):
     """Zapisuje/aktualizuje ręczny pinout złącza dla numeru artykułu.
-    devices/unverified → pins_map w formie-obiekt (patrz get_conn_pinouts)."""
+    devices/unverified/latch_side → pins_map w formie-obiekt
+    (patrz get_conn_pinouts)."""
     payload = [str(p) for p in pins_map]
-    if devices is not None or unverified is not None:
+    if devices is not None or unverified is not None or latch_side:
         payload = {"map": payload}
         if devices:
             payload["devices"] = devices
         if unverified:
             payload["unverified"] = True
+        if latch_side:
+            payload["latchSide"] = str(latch_side)
     conn = get_db()
     try:
         conn.execute(

@@ -75,7 +75,10 @@ Wersja wielojęzykowa: `SUPPORTED_LANGS = ("pl", "en", "de")`, tłumaczenia w
 - `webview_profile/` — trwały profil WebView2 (`private_mode=False` w `desktop_web.py`);
   trzyma localStorage UI: `ru_last_ps` (domyślny projekt PS stanowiska — fallback),
   `ru_last_ps_<username>` (ostatni projekt per użytkownik), `ru_theme`,
-  `ru_active_user`, stan paneli (gitignored)
+  `ru_active_user`, `ru_zuken_nav` (historia zapytań asystenta per projekt:
+  `{byPs:{"<PS>":[{q,mode},...]}}`, klucz "" = tryb „Wszystkie schematy",
+  po 30 wpisów na projekt; przełączenie projektu w oknie asystenta ładuje
+  jego historię — `zukenNavRestore`), stan paneli (gitignored)
 - `config.json` — jest w repo, ale **bez sekretów** (hasło SMTP przeniesione do
   `secrets.json`, gitignored). Stare hasło zostaje w historii git → rotacja w Gmailu.
 - `secrets.json` — sekrety lokalne (SMTP), nadpisuje klucze config.json (gitignored)

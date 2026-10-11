@@ -1406,6 +1406,8 @@
   .zuken-crumb:hover { background:rgba(2,132,199,0.1); }
   .zuken-crumb.active { color:var(--text-main); font-weight:800; cursor:default; background:none; }
   .zuken-crumb-sep { color:var(--text-muted); font-size:11px; }
+  .zuken-hist-item { display:block; width:100%; text-align:left; border:none; background:none; padding:7px 12px; font-size:12.5px; font-family:var(--font-mono,monospace); color:var(--text-main); cursor:pointer; border-radius:6px; }
+  .zuken-hist-item:hover { background:rgba(2,132,199,0.1); }
 </style>
 </head>
 <body>
@@ -2897,7 +2899,8 @@
         <button type="button" id="zuken-nav-fwd" class="zuken-nav-btn" onclick="zukenNavGo(ZUKEN_STATE.nav.idx + 1)" disabled title="Dalej" data-i18n-title="js.zuken.navFwd">▶</button>
       </div>
       <div style="flex:1; min-width:260px; position:relative;">
-        <input type="text" id="zuken-search-input" style="width:100%; padding:9px 12px; border-radius:var(--radius-md); border:1px solid var(--border); background:var(--bg-card-subtle); font-size:13.5px;" placeholder="Wpisz numer przewodu (np. 185D, 30B), złącze (X132), bezpiecznik (F18), odbiornik..." data-i18n-placeholder="zuken.searchPlaceholder" onkeydown="if(event.key==='Enter') runAiDiagnosisSearch();">
+        <input type="text" id="zuken-search-input" autocomplete="off" style="width:100%; padding:9px 12px; border-radius:var(--radius-md); border:1px solid var(--border); background:var(--bg-card-subtle); font-size:13.5px;" placeholder="Wpisz numer przewodu (np. 185D, 30B), złącze (X132), bezpiecznik (F18), odbiornik..." data-i18n-placeholder="zuken.searchPlaceholder" onkeydown="zukenSearchKeydown(event)" onfocus="showZukenHistory()" oninput="filterZukenHistory()" onblur="hideZukenHistory()">
+        <div id="zuken-history-list" style="display:none; position:absolute; top:100%; left:0; right:0; margin-top:4px; background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius-md); box-shadow:0 10px 28px rgba(15,23,42,0.22); z-index:60; max-height:260px; overflow-y:auto; padding:4px;"></div>
       </div>
       <button type="button" class="btn-primary-action" style="padding:9px 18px; font-size:13px; background:linear-gradient(135deg, #0284c7 0%, #2563eb 100%); border:none; display:inline-flex; align-items:center; gap:6px;" onclick="runAiDiagnosisSearch()">
         🔍 <span data-i18n="zuken.btnSearch">Analizuj obwód</span>
@@ -4379,6 +4382,8 @@ function syncPsSelectors() {
   if (zmodal && zmodal.style.display !== 'none' && zsel && ps) {
     ensureOptionAndSet(zsel, ps);
     ZUKEN_STATE.currentContext.projekt = ps;
+    zukenNavRestore(ps);
+    renderZukenNav();
   }
   // Formularz usterki: nigdy nie nadpisuj projektu edytowanego rekordu.
   const fp = document.getElementById('f-projekt');
@@ -7935,9 +7940,100 @@ function zukenNavPush(q, mode) {
   if (cur && cur.q === q && cur.mode === mode) return;
   n.stack = n.stack.slice(0, n.idx + 1);
   n.stack.push({ q, mode });
-  if (n.stack.length > 30) n.stack.shift();
+  if (n.stack.length > ZUKEN_NAV_MAX) n.stack.shift();
   n.idx = n.stack.length - 1;
+  zukenNavSave();
   renderZukenNav();
+}
+
+// Historia zapytań w localStorage — przeżywa zamknięcie okna i restart aplikacji.
+// Pamięć per projekt: każdy PS (i tryb "Wszystkie schematy" = klucz "") ma własną
+// listę do 30 ostatnich zapytań — jeden projekt nie wypycha historii innego.
+const ZUKEN_NAV_LS_KEY = 'ru_zuken_nav';
+const ZUKEN_NAV_MAX = 30;
+
+function zukenNavSave() {
+  try {
+    let saved = JSON.parse(localStorage.getItem(ZUKEN_NAV_LS_KEY) || 'null');
+    if (!saved || typeof saved !== 'object') saved = {};
+    const byPs = (saved.byPs && typeof saved.byPs === 'object') ? saved.byPs : {};
+    byPs[ZUKEN_STATE.nav.ps || ''] = ZUKEN_STATE.nav.stack;
+    localStorage.setItem(ZUKEN_NAV_LS_KEY, JSON.stringify({ byPs }));
+  } catch (e) {}
+}
+
+function zukenNavRestore(ps) {
+  ps = ps || '';
+  let saved = null;
+  try { saved = JSON.parse(localStorage.getItem(ZUKEN_NAV_LS_KEY) || 'null'); } catch (e) {}
+  let stack = [];
+  if (saved && saved.byPs && typeof saved.byPs === 'object') {
+    stack = Array.isArray(saved.byPs[ps]) ? saved.byPs[ps] : [];
+  } else if (saved && Array.isArray(saved.stack)) {
+    // stary format: jeden wspólny stos z polem ps przy wpisie
+    stack = saved.stack.filter(e => e && (e.ps || '') === ps);
+  }
+  stack = stack.filter(e => e && e.q && e.mode)
+    .map(e => ({ q: e.q, mode: e.mode }))
+    .slice(-ZUKEN_NAV_MAX);
+  ZUKEN_STATE.nav = { ps, stack, idx: stack.length - 1 };
+}
+
+// ═══ Rozwijana lista ostatnich zapytań pod polem wyszukiwania ═══
+// Najnowsze na górze, bez duplikatów (powtórzone zapytanie przesuwa się na szczyt).
+function zukenHistoryItems() {
+  const seen = new Set(), out = [];
+  const st = ZUKEN_STATE.nav.stack;
+  for (let i = st.length - 1; i >= 0; i--) {
+    const e = st[i], k = e.mode + '|' + e.q;
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(e);
+  }
+  return out;
+}
+
+function renderZukenHistory(filter) {
+  const dd = document.getElementById('zuken-history-list');
+  if (!dd) return;
+  const f = (filter || '').toLowerCase();
+  const items = zukenHistoryItems().filter(e => !f || e.q.toLowerCase().includes(f));
+  if (!items.length) { hideZukenHistory(); return; }
+  dd._items = items;
+  const head = `<div style="padding:4px 10px 2px; font-size:10.5px; font-weight:800; text-transform:uppercase; letter-spacing:0.6px; color:var(--text-muted);">🕘 ${escapeHtml(t('js.zuken.recentQueries'))}</div>`;
+  dd.innerHTML = head + items.map((e, i) =>
+    `<button type="button" class="zuken-hist-item" onmousedown="event.preventDefault(); zukenHistoryPick(${i})">${e.mode === 'circuit' ? '🔌 ' : ''}${escapeHtml(e.q)}</button>`
+  ).join('');
+  dd.style.display = 'block';
+}
+
+function showZukenHistory() {
+  renderZukenHistory(document.getElementById('zuken-search-input').value);
+}
+
+function hideZukenHistory() {
+  const dd = document.getElementById('zuken-history-list');
+  if (dd) dd.style.display = 'none';
+}
+
+function filterZukenHistory() {
+  const dd = document.getElementById('zuken-history-list');
+  if (dd && dd.style.display !== 'none') showZukenHistory();
+}
+
+function zukenHistoryPick(i) {
+  const dd = document.getElementById('zuken-history-list');
+  const e = dd && dd._items && dd._items[i];
+  hideZukenHistory();
+  if (!e) return;
+  document.getElementById('zuken-search-input').value = e.q;
+  if (e.mode === 'circuit') runCircuitTrace();
+  else runAiDiagnosisSearch();
+}
+
+function zukenSearchKeydown(ev) {
+  if (ev.key === 'Enter') { hideZukenHistory(); runAiDiagnosisSearch(); }
+  else if (ev.key === 'Escape') { hideZukenHistory(); }
 }
 
 function zukenNavGo(i) {
@@ -7945,6 +8041,7 @@ function zukenNavGo(i) {
   const e = n.stack[i];
   if (!e) return;
   n.idx = i;
+  zukenNavSave();
   document.getElementById('zuken-search-input').value = e.q;
   renderZukenNav();
   closeConnFace(); closeCircuitOverlay(); closeWirePath();
@@ -8019,11 +8116,12 @@ function openAiDiagnosisModal(ctx = {}) {
   }
 
   updateZukenContextBadge();
-  ZUKEN_STATE.nav = { stack: [], idx: -1 };
+  zukenNavRestore(activeVal);
   renderZukenNav();
 
   const defQuery = (ctx.default_query || ctx.element || ctx.opisProblem || '').trim();
-  if (input) input.value = defQuery;
+  const lastNav = ZUKEN_STATE.nav.stack[ZUKEN_STATE.nav.idx];
+  if (input) input.value = defQuery || (lastNav ? lastNav.q : '');
 
   modal.style.display = 'flex';
   if (defQuery) {
@@ -8098,6 +8196,8 @@ function onZukenProjectSelectChange(val) {
   if (!ZUKEN_STATE.currentContext) ZUKEN_STATE.currentContext = {};
   ZUKEN_STATE.currentContext.projekt = val;
   if (val) setCurrentPS(val);
+  zukenNavRestore(val);
+  renderZukenNav();
   const input = document.getElementById('zuken-search-input');
   if (input && input.value.trim()) {
     runAiDiagnosisSearch();
@@ -10968,6 +11068,7 @@ function connFaceLayout(info) {
              n: u.map.filter(x => x !== '' && x != null && x !== 'x').length || n,
              tee: false, order: u.map, custom: true, devmap,
              unverified: !!u.unverified, noteTxt: u.note || '',
+             sideLatch: u.latchSide || '',
              lever: CONN_LEVER_ARTS.has(art.toUpperCase().replace(/\s/g, '')) };
   }
 
@@ -11214,12 +11315,16 @@ function connFaceSvg(L, pin, opt) {
   const padX = midBand ? (mini ? 9 : 14) : pad, padY = midBand ? (mini ? 4 : 14) : pad;
   const bandH = midBand ? (mini ? 7 : Math.round(ch * 1.2)) : 0;
   const botEx = midBand ? (mini ? 3.5 : 8) : 0; // miejsce na wypusty pod korpusem
-  const latchH = L.fam === 'TBP' ? (mini ? 0 : 16) : lever ? (mini ? 4 : 8) : (mini ? 6 : 13);
+  // zatrzask na bocznej ściance (USER latchSide 'left'/'right', np. Carling
+  // VCH-01) — zapas na wypustę z boku, bez belki u góry/dołu
+  const slW = L.sideLatch ? (mini ? 4 : 8) : 0;
+  const slL = L.sideLatch === 'right' ? 0 : slW;
+  const latchH = L.fam === 'TBP' ? (mini ? 0 : 16) : lever ? (mini ? 4 : 8) : slW ? 0 : (mini ? 6 : 13);
   const lvW = lever ? (mini ? 11 : 26) : 0;
-  const W = padX * 2 + L.cols * cw + lvW, H = latchH + padY * 2 + L.rows * ch + bandH + botEx;
+  const W = padX * 2 + L.cols * cw + lvW + slW, H = latchH + padY * 2 + L.rows * ch + bandH + botEx;
   const latchTop = L.gender !== 'M'; // męska rysowana obrócona o 180°
   const boxY = (lever || latchTop) ? Math.max(latchH, 1) : 1, latchY = latchTop ? 1 : H - latchH + 2;
-  const bodyR = W - 1 - lvW, bodyH = H - latchH - botEx - 1; // prawa krawędź i wysokość korpusu
+  const bodyR = W - 1 - lvW - (slW - slL), bodyH = H - latchH - botEx - 1; // prawa krawędź i wysokość korpusu
   const cellY = r => boxY + padY + r * ch + (midBand && r >= 2 ? bandH : 0);
   const nest = opt.nested ? `x="${opt.x || 0}" y="${opt.y || 0}" width="${opt.width || W}" height="${opt.height || H}"` : '';
   const lw = mini ? 20 : 48;
@@ -11427,7 +11532,7 @@ function connFaceSvg(L, pin, opt) {
     for (let c = 0; c < L.cols; c++) {
       const pp = connFacePinAt(L, 0, c);
       const hot = pinSet.has(String(pp));
-      const sx = pad + c * cw + cw / 2, sy = latchH / 2 + 1, sr = 6;
+      const sx = pad + slL + c * cw + cw / 2, sy = latchH / 2 + 1, sr = 6;
       s += `<circle cx="${sx}" cy="${sy}" r="${sr}" fill="${primOf(pp) || 'var(--bg-card-subtle,#e2e8f0)'}" stroke="${hot ? '#0284c7' : 'var(--border,#94a3b8)'}" stroke-width="${hot ? 2.5 : 1}"/>`;
       s += `<line x1="${sx - sr + 2}" y1="${sy}" x2="${sx + sr - 2}" y2="${sy}" stroke="${hot ? '#0284c7' : 'var(--text-muted,#64748b)'}" stroke-width="1.4"/>`;
     }
@@ -11452,7 +11557,12 @@ function connFaceSvg(L, pin, opt) {
       });
     }
   }
-  s += `<rect x="1" y="${boxY}" width="${W - 2 - lvW}" height="${bodyH}" rx="4" fill="var(--bg-card-subtle,#e2e8f0)" stroke="var(--border,#94a3b8)" stroke-width="1.2"/>`;
+  s += `<rect x="${1 + slL}" y="${boxY}" width="${bodyR - 1 - slL}" height="${bodyH}" rx="4" fill="var(--bg-card-subtle,#e2e8f0)" stroke="var(--border,#94a3b8)" stroke-width="1.2"/>`;
+  if (slW && !lever) {
+    // język zatrzasku na bocznej ściance przy dolnym rzędzie gniazd
+    const bh = Math.min(ch * 1.15, bodyH - 4), bxx = L.sideLatch === 'right' ? bodyR + 0.5 : 1;
+    s += `<rect x="${bxx}" y="${cellY(L.rows - 1) + (ch - bh) / 2}" width="${slW - 1.5}" height="${bh}" rx="${mini ? 1.5 : 3}" fill="var(--bg-card-subtle,#e2e8f0)" stroke="var(--border,#94a3b8)" stroke-width="1"/>`;
+  }
   if (lever) {
     // dźwignia: otwarta rama wysunięta w prawo od korpusu + sworznie
     const fy = boxY + bodyH * 0.1, fh = bodyH * 0.8, fw = lvW - 5;
@@ -11474,7 +11584,7 @@ function connFaceSvg(L, pin, opt) {
       const p = connFacePinAt(L, r, c);
       if (p === 'x') continue; // USER: poza wkładką — odstęp, brak komory
       const hot = pinSet.has(String(p));
-      const x = padX + c * cw, y = cellY(r);
+      const x = padX + slL + c * cw, y = cellY(r);
       if (midBand) {
         // kwadratowe otwory gniazd zajmujące ~3/4 rastra (jak na zdjęciu)
         const cs = Math.round(cw * 0.74);
@@ -11536,6 +11646,7 @@ async function openConnPinoutEditor(arg) {
     xcells: saved ? new Set(saved.map.map((p, k) => saved.map[k] === 'x' ? k : -1).filter(k => k >= 0)) : new Set(),
     devices: (saved && saved.devices) || null,
     unverified: !!(saved && saved.unverified),
+    sideLatch: (saved && saved.latchSide) || '',
     note: (saved && saved.note) || '',
     has: !!saved,
   };
@@ -11643,7 +11754,8 @@ async function connPinEdSave() {
     await apiCall('/api/zuken/conn-pinouts', 'POST', {
       article: ed.art, rows: ed.rows, cols: ed.cols, gender, map,
       note: ed.note || '', devices: ed.devices || undefined,
-      unverified: ed.unverified || undefined });
+      unverified: ed.unverified || undefined,
+      latchSide: ed.sideLatch || undefined });
     await ensureConnUserPinouts(true);
     closeConnPinoutEditor();
     showToast(t('js.zuken.connPinoutSaved', { v: ed.art }), 'success');

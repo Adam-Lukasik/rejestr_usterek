@@ -3484,7 +3484,8 @@ def api_zuken_conn_pinouts():
             gender=data.get("gender") or "F",
             note=data.get("note") or "",
             devices=data.get("devices"),
-            unverified=data.get("unverified"))
+            unverified=data.get("unverified"),
+            latch_side=data.get("latchSide"))
         return jsonify({"status": "success"})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
