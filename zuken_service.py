@@ -8154,9 +8154,26 @@ def trace_circuit(ps_code, query, lang="pl"):
                     used_sigs.append(sig)
                     break
         if load_devs:
+            # zapytanie o konkretny numer przewodu ('177A1', '1130') —
+            # zasiej tylko piny, na które ten przewód ląduje; inaczej
+            # pierwszy pin 'feed' z własnego przewodu (177A na X133:3)
+            # przejmował diagram, a pytany pin schodził na bocznicę.
+            # Zapytanie opisowe / nazwa sygnału zostawia wszystkie piny
+            # odbiornika (kontekst: masa i pozostałe obwody aparatu).
+            wire_like = (re.fullmatch(r"[0-9][0-9A-Z_.'\-]*", q.strip())
+                         and any(s.upper() == q.upper() for s in used_sigs))
+            sig_pins = {}
+            if wire_like:
+                for s in used_sigs:
+                    for (sd, sp) in (sig_nodes.get(s) or set()):
+                        if sp:
+                            sig_pins.setdefault(sd, set()).add(sp)
             for d in load_devs[:12]:
-                pins = sorted({p for (dd, p) in adj if dd == d},
-                              key=_natural_sort_key)
+                if d in sig_pins:
+                    pins = sorted(sig_pins[d], key=_natural_sort_key)
+                else:
+                    pins = sorted({p for (dd, p) in adj if dd == d},
+                                  key=_natural_sort_key)
                 seed_devices.append((d, pins[:16]))
         elif not relay_view_devs:
             for nd in sorted(all_terms,

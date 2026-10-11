@@ -199,7 +199,17 @@ Wersja wielojęzykowa: `SUPPORTED_LANGS = ("pl", "en", "de")`, tłumaczenia w
   po artykule/opisie z `zuken_ps_connectors`/BOM, `connFacePinAt()` numeruje gniazda,
   `connFaceSvg()` rysuje. Rodziny: JPT, MCP (AMP 2.8 3-rzędowe), MINIFIT,
   MICROFIT, MOLEXSR (Micro-Fit 1-rzędowy), SUPERSEAL, MATENLOK, TE2P (MQS/MCON
-  2p), CIRC7 (TE okrągłe 7p, komórki kołowe), DF11 (Hirose 2-rzęd.),
+  2p), CIRC7 (okrągłe 7p, komórki kołowe) — **dwie numeracje tej samej
+  geometrii**, rozróżniane flagą `L.was`: TE 1718230-x (X388/X396 =
+  wtyczka do oryginalnej wiązki auta bazowego) wg rys. TE: środek=1,
+  pierścień 2-7; wkładka lampy Waś "03 złącze waś" (artykuł `WAS IV.1`,
+  X268/X395 — złącze przy samej lampie, nie mylić z X388!): pierścień
+  1-6 od góry za ruchem wskazówek, środek=7 — tłoczone numery na zdjęciu
+  gniazda lampy (funkcje E3 zgodne: 1=GND, 2=pozycja, 3=cofania,
+  4=kierunek, 5=stop, 6=mgła, 7=pozycja2); wypustka pozycjonująca na
+  obwodzie między pinami 4 a 5 — trapezowe wcięcie, rysowane TYLKO dla
+  `L.was` (dla tej rodziny wyłączona generyczna belka zatrzasku — to
+  złącze bagnetowe), DF11 (Hirose 2-rzęd.),
   FASTIN/FF250 — dwie serie: stara 1809xx (2-kolumnowe pionowe, rys. C-163007)
   i nowsza "housing lance" 1721xx/17189x/171433 (poziome 2×n/2: 4p=172134,
   6p=171898+171897, 8p=172135/172136, 10p=172137/172138; 2p=172129/172130
@@ -235,6 +245,19 @@ Wersja wielojęzykowa: `SUPPORTED_LANGS = ("pl", "en", "de")`, tłumaczenia w
   (VAG 4H0 906 231 / osłona 1-968321-2, X168): dźwignia po prawej stronie
   korpusu, wypusty prowadnic i narożne, a dla siatki 4×10 — kwadratowy rastr
   z pasem szczelin między bankami pinów i numerami rzędów na marginesach.
+- Diagram obwodu (`circuitSvgForLoad`): węzeł-pin aparatu-seeda na styku toru
+  zasilania i masy (ostatni węzeł `trunk` + pierwszy `gndChain`, ten sam `dev`,
+  brak krawędzi wewnętrznej) **scalany w JEDEN węzeł** złącza (`nd.pins`,
+  `nd._absWire` = krawędź wchłoniętego pinu masy dla koloru w mini) — osobne
+  pudełka pinów czytały się jak "dwie połówki" wtyczki (X388 = jedna wtyczka
+  w lampę Waś). Ograniczone do złączy (`/^x/i` clean lub znany `connFaceLayout`)
+  — pary wtyk/gniazdo (X300/X300' = inny `dev` + krawędź 'mate') i topiki
+  (krawędź 'fuse' na pinach oprawki) zostają osobnymi węzłami w ramce seeda.
+  `rowOf` dostaje alias `dev:pin` → indeks scalonego węzła dla wszystkich
+  `nd.pins`. Piktogramy typu urządzenia: `DEV_KINDS`/`devKind()` (regex na
+  info+desc+module_label → lamp/fan/motor/speaker/horn/lock/pump/heater/
+  solenoid/antenna/module), `devGlyph()` rysuje symbol schematowy po LEWEJ
+  stronie węzła (seed + role load/source), `DEV_KIND_EMOJI` w etykietach odnóg.
   Podgląd SVG bez UI: wyciągnąć funkcje z HTML-a w node i zrzut przez headless Edge.
 
 - Klikalność w asystencie: `entLink(q, label)` (jawny link) i `entText(raw)` (escape +

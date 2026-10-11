@@ -11041,7 +11041,7 @@ function connHalfInfo(connMeta, clean, devSfx) {
 // Uwaga: u TE „Plug Housing" (Superseal, MATE-N-LOK) mieści styki żeńskie → F.
 function connFaceLayout(info) {
   const art = (info.article || '').trim(), desc = info.desc || '', blob = art + ' ' + desc;
-  let gender = '', fam = '', rows = 0, cols = 0, tee = false, lance = false;
+  let gender = '', fam = '', rows = 0, cols = 0, tee = false, lance = false, was = false;
   let n = parseInt(info.pins, 10) || 0;
   const cn = desc.match(/(\d+)\s*circuits?/i) || desc.match(/PIN:\s*(\d+)/i)
           || desc.match(/(\d+)\s*pos/i) || desc.match(/(\d+)\s*pole/i) || desc.match(/(\d+)[\s-]*way/i);
@@ -11124,10 +11124,16 @@ function connFaceLayout(info) {
     if (/female|receptacle|socket|buchse/i.test(blob)) gender = 'F';
     if (/male|tab|stift/i.test(blob)) gender = 'M';
     if (!gender) gender = 'F';
-  } else if (/round\s*connector/i.test(blob) || /^171823\d-/.test(art)) {
-    // TE okrągłe 1.5mm 7p (1718230-x): siatka 3x3 — środek=1, pierścień
-    // 2-7 (rys. TE 1718230: czoło 2 góra, 3 UR, 4 LR, 5 dół, 6 LL, 7 UL).
+  } else if (/round\s*connector/i.test(blob) || /^171823\d-/.test(art)
+             || /^was[\s-]*(iv|\d)/i.test(art) || /złącze\s*typu\s*waś/i.test(blob)) {
+    // okrągłe 7p — DWIE różne numeracje tej samej geometrii:
+    // TE 1718230-x (X388/X396 — wtyczka do oryginalnej wiązki auta):
+    //   wg rys. TE środek=1, pierścień 2-7;
+    // wkładka lampy Waś "03 złącze waś" (artykuł WAS IV.1, X268/X395):
+    //   pierścień 1-6 od góry za ruchem wskazówek, środek=7 — tłoczone
+    //   numery na zdjęciu gniazda lampy + wypustka pozycjonująca 4↔5.
     fam = 'CIRC7'; rows = 3; cols = 3; n = 7;
+    was = /^was[\s-]*(iv|\d)/i.test(art) || /złącze\s*typu\s*waś/i.test(blob);
     if (/male\s*term|pin\s*h(ous|sg)|\bpin\b/i.test(blob)) gender = 'M';
     if (/female|socket|receptacle/i.test(blob)) gender = 'F';
     if (!gender) gender = 'M';
@@ -11193,7 +11199,7 @@ function connFaceLayout(info) {
   // seria lance: kształt zweryfikowany z katalogu TE 1654369-1, ale kolejność
   // komór znana tylko dla obsługiwanych rekordów USER → wbudowana numeracja
   // niezweryfikowana
-  return { fam, gender, cols, rows, n, tee, lance, unverified: lance || undefined };
+  return { fam, gender, cols, rows, n, tee, lance, was: was || undefined, unverified: lance || undefined };
 }
 
 // Numer gniazda w komórce (r=0 góra, c=0 lewa) patrząc OD STRONY PRZEWODÓW.
@@ -11248,11 +11254,19 @@ function connFacePinAt(L, r, c) {
       // MQS/MCON 2p: F od strony przewodów 1|2, M 2|1 (rys. TE 968699/1718333/1703498)
       return L.gender === 'F' ? c + 1 : n - c;
     case 'CIRC7': {
-      // okrągłe 7p: środek=1, pierścień 2-7; od strony przewodów
-      // M:[,2,/3,1,7/4,5,6]  F:[,2,/7,1,3/6,5,4]
-      const ord = L.gender === 'M'
-        ? ['', '2', '', '3', '1', '7', '4', '5', '6']
-        : ['', '2', '', '7', '1', '3', '6', '5', '4'];
+      // okrągłe 7p — TE (rys. 1718230): środek=1, pierścień 2-7;
+      // wkładka Waś (WAS IV.1): środek=7, pierścień 1-6 od góry za
+      // ruchem wskazówek (tłoczone numery na zdjęciu gniazda lampy).
+      // od strony przewodów:
+      //   TE  M:[,2,/3,1,7/4,5,6]  F:[,2,/7,1,3/6,5,4]
+      //   Waś M:[,1,/6,7,2/5,4,3]  F:[,1,/2,7,6/3,4,5]
+      const ord = L.was
+        ? (L.gender === 'M'
+          ? ['', '1', '', '6', '7', '2', '5', '4', '3']
+          : ['', '1', '', '2', '7', '6', '3', '4', '5'])
+        : (L.gender === 'M'
+          ? ['', '2', '', '3', '1', '7', '4', '5', '6']
+          : ['', '2', '', '7', '1', '3', '6', '5', '4']);
       return ord[r * cols + c] || '';
     }
     case 'MIC': {
@@ -11312,14 +11326,25 @@ function connFaceSvg(L, pin, opt) {
   // narożne, dźwignia po prawej stronie korpusu
   const midBand = lever && L.rows === 4 && L.cols === 10;
   const cw = mini ? 13 : (midBand ? 26 : 30), ch = mini ? 10 : (midBand ? 26 : 24), pad = mini ? 3 : 7;
-  const padX = midBand ? (mini ? 9 : 14) : pad, padY = midBand ? (mini ? 4 : 14) : pad;
+  let padX = midBand ? (mini ? 9 : 14) : pad, padY = midBand ? (mini ? 4 : 14) : pad;
+  // CIRC7: okrągły korpus — piny równomiernie na okręgu (sześciokąt, pin 1
+  // u góry) + środek; siatka 3x3 tylko do mapowania komórka→pozycja kątowa
+  const CIRC7_ANG = { '0,1': -90, '1,2': -30, '2,2': 30, '2,1': 90, '2,0': 150, '1,0': -150 };
+  let circR = 0, circRing = 0;
+  if (L.fam === 'CIRC7') {
+    const rad = Math.min(cw, ch) * 0.34;
+    circRing = Math.min(cw, ch) * 1.25;
+    circR = circRing + rad + (mini ? 2 : 7);
+    padX = circR + 2 - L.cols * cw / 2;
+    padY = circR + 2 - L.rows * ch / 2;
+  }
   const bandH = midBand ? (mini ? 7 : Math.round(ch * 1.2)) : 0;
   const botEx = midBand ? (mini ? 3.5 : 8) : 0; // miejsce na wypusty pod korpusem
   // zatrzask na bocznej ściance (USER latchSide 'left'/'right', np. Carling
   // VCH-01) — zapas na wypustę z boku, bez belki u góry/dołu
   const slW = L.sideLatch ? (mini ? 4 : 8) : 0;
   const slL = L.sideLatch === 'right' ? 0 : slW;
-  const latchH = L.fam === 'TBP' ? (mini ? 0 : 16) : lever ? (mini ? 4 : 8) : slW ? 0 : (mini ? 6 : 13);
+  const latchH = L.fam === 'TBP' ? (mini ? 0 : 16) : L.fam === 'CIRC7' ? 0 : lever ? (mini ? 4 : 8) : slW ? 0 : (mini ? 6 : 13);
   const lvW = lever ? (mini ? 11 : 26) : 0;
   const W = padX * 2 + L.cols * cw + lvW + slW, H = latchH + padY * 2 + L.rows * ch + bandH + botEx;
   const latchTop = L.gender !== 'M'; // męska rysowana obrócona o 180°
@@ -11557,7 +11582,28 @@ function connFaceSvg(L, pin, opt) {
       });
     }
   }
-  s += `<rect x="${1 + slL}" y="${boxY}" width="${bodyR - 1 - slL}" height="${bodyH}" rx="4" fill="var(--bg-card-subtle,#e2e8f0)" stroke="var(--border,#94a3b8)" stroke-width="1.2"/>`;
+  if (L.fam === 'CIRC7') {
+    // okrągła obudowa (bagnet Waś/TE 1718230): pierścień + wkładka
+    const ccx = padX + slL + L.cols * cw / 2, ccy = boxY + padY + L.rows * ch / 2;
+    s += `<circle cx="${ccx}" cy="${ccy}" r="${circR}" fill="var(--bg-card-subtle,#e2e8f0)" stroke="var(--border,#94a3b8)" stroke-width="1.2"/>`;
+    s += `<circle cx="${ccx}" cy="${ccy}" r="${circR * 0.88}" fill="none" stroke="var(--border,#94a3b8)" stroke-width="0.8"/>`;
+    // wypustka pozycjonująca między pinami 4 a 5 — zweryfikowana tylko
+    // na wkładce Waś (zdjęcie gniazda lampy); dla wersji TE nie rysujemy
+    if (L.was) {
+      let a45 = 0;
+      for (let r = 0; r < L.rows; r++)
+        for (let c = 0; c < L.cols; c++) {
+          const p = connFacePinAt(L, r, c);
+          if ((p === '4' || p === '5') && CIRC7_ANG[`${r},${c}`] !== undefined)
+            a45 += CIRC7_ANG[`${r},${c}`] * Math.PI / 360;
+        }
+      const wq = mini ? 0.14 : 0.1, rO = circR + 2, rI = circR * 0.78;
+      const pt = (rr, da) => `${(ccx + rr * Math.cos(a45 + da)).toFixed(1)},${(ccy + rr * Math.sin(a45 + da)).toFixed(1)}`;
+      s += `<polygon points="${pt(rO, -wq)} ${pt(rI, -wq * 0.5)} ${pt(rI, wq * 0.5)} ${pt(rO, wq)}" fill="var(--bg-card,#f8fafc)" stroke="var(--border,#94a3b8)" stroke-width="1.1"/>`;
+    }
+  } else {
+    s += `<rect x="${1 + slL}" y="${boxY}" width="${bodyR - 1 - slL}" height="${bodyH}" rx="4" fill="var(--bg-card-subtle,#e2e8f0)" stroke="var(--border,#94a3b8)" stroke-width="1.2"/>`;
+  }
   if (slW && !lever) {
     // język zatrzasku na bocznej ściance przy dolnym rzędzie gniazd
     const bh = Math.min(ch * 1.15, bodyH - 4), bxx = L.sideLatch === 'right' ? bodyR + 0.5 : 1;
@@ -11596,7 +11642,11 @@ function connFaceSvg(L, pin, opt) {
       }
       if (L.fam === 'CIRC7') {
         if (p === '') continue; // puste narożniki siatki — nie istnieją fizycznie
-        const cx = x + cw / 2, cy = y + ch / 2, rad = Math.min(cw, ch) * 0.34;
+        const rad = Math.min(cw, ch) * 0.34;
+        const ang = CIRC7_ANG[`${r},${c}`];
+        const ccx = padX + slL + L.cols * cw / 2, ccy = cellY(0) + L.rows * ch / 2;
+        const cx = ang === undefined ? ccx : ccx + circRing * Math.cos(ang * Math.PI / 180);
+        const cy = ang === undefined ? ccy : ccy + circRing * Math.sin(ang * Math.PI / 180);
         const fg = pinFg(p, hot);
         s += `<circle cx="${cx}" cy="${cy}" r="${rad}" fill="${primOf(p) || emptyCellFill(hot)}" stroke="${hot ? '#0284c7' : 'var(--border,#cbd5e1)'}" stroke-width="${hot ? (mini ? 2 : 3) : 1}"/>`;
         s += `<text x="${cx}" y="${cy + (mini ? 2.5 : 3.5)}" text-anchor="middle" font-size="${mini ? 6 : 10}" font-weight="${hot ? 800 : 600}" fill="${fg.fg}" font-family="monospace"${fg.ex}>${p}</text>`;
@@ -12120,6 +12170,25 @@ function circuitSvgForLoad(ld, connMeta, opts) {
   };
   const trunk2 = withRelays(trunk), gndChain2 = withRelays(gndChain);
 
+  // Pin-końcówki TEGO SAMEGO złącza na styku toru zasilania i masy
+  // rysujemy jako JEDEN węzeł — fizycznie to jedna wtyczka wpięta
+  // w aparat (np. X388 lampy Waś: zasilanie na pinie 2, masa z pinu 1),
+  // a nie "dwie połówki" złącza. Dotyczy tylko złączy (kod X* lub
+  // znany layout wtyczki); pary wtyk/gniazdo i topiki mają własne
+  // krawędzie wewnętrzne i zostają osobnymi węzłami.
+  {
+    const a = trunk2[trunk2.length - 1], b = gndChain2[0];
+    if (a && b && a.dev && a.dev === b.dev && a.clean === b.clean
+        && a.pin && b.pin && !b.edge
+        && (/^x/i.test(a.clean || '')
+            || connFaceLayout(connHalfInfo(connMeta, a.clean, (a.dev || '').split('-').pop())))) {
+      a.pins = [...new Set([a.pin, b.pin])];
+      a._absWire = (gndChain2[1] && gndChain2[1].edge) || null;
+      if (!a.info && b.info) a.info = b.info;
+      gndChain2.shift();
+    }
+  }
+
   // Złącza objęte reworkiem projektu → badge 🔧 na węźle diagramu
   const rwTitles = {};
   ((ZUKEN_STATE.lastCircuit || {}).reworks || []).forEach(rw => {
@@ -12130,10 +12199,12 @@ function circuitSvgForLoad(ld, connMeta, opts) {
   const rowOf = {};
   trunk2.forEach((nd, i) => { rowOf[nd.dev + ':' + nd.pin] = i; });
   gndChain2.forEach((nd, j) => { rowOf[nd.dev + ':' + nd.pin] = trunk2.length + j; });
-  // aliasy: odnogi czepiające się węzła-symbolu kotwiczymy do niego
+  // aliasy: odnogi czepiające się węzła-symbolu kotwiczymy do niego;
+  // piny wchłonięte przy scaleniu węzła złącza → wskazują na węzeł
   trunk2.concat(gndChain2).forEach((nd, i) => {
     if (nd._relay) rowOf[nd.dev + ':' + nd.pin] = i;
   });
+  trunk2.forEach((nd, i) => (nd.pins || []).forEach(p => { rowOf[nd.dev + ':' + p] = i; }));
 
   const stubs = [];
   const addStub = e => {
@@ -12227,6 +12298,47 @@ function circuitSvgForLoad(ld, connMeta, opts) {
     '':       { stroke: '#94a3b8', icon: '' },
   };
 
+  // Typ urządzenia na końcu toru / przy seedzie — „co tu siedzi"
+  // (lampa, wentylator, głośnik, moduł sterownika…): piktogram jak
+  // na schemacie po lewej stronie węzła + emoji w etykietach odnóg.
+  const DEV_KINDS = [
+    ['lamp',     /lamp|light|świat|halogen|beam|marker|pozyc|number\s*plate|rejestr|petterson|reflekt|leucht|scheinwerf|obrys/i],
+    ['lock',     /zamek|lock|verriegel|zamyk/i],
+    ['speaker',  /speaker|głoś|lautsprech/i],
+    ['horn',     /horn|klakson|hupe|syren|siren|buzzer|brzęcz/i],
+    ['fan',      /went|fan|blower|dmuchaw|lüfter/i],
+    ['pump',     /pump|pomp/i],
+    ['heater',   /heat|ogrzew|heiz|warm|defrost|podgrzew/i],
+    ['motor',    /motor|silnik|actuat|siłown|napęd/i],
+    ['solenoid', /solenoid|valve|zawór|clutch|sprzęg/i],
+    ['antenna',  /anten/i],
+    ['module',   /moduł|module|sterownik|control|ecu|acetech|carnation|evpss|inomatic|genisys|oxp\d|ixp|\bpsm\b|\bsam\b|\bbsi\b|body\s*contr|gateway/i],
+  ];
+  const devKind = txt => {
+    const hit = DEV_KINDS.find(([, re]) => re.test(txt || ''));
+    return hit ? hit[0] : '';
+  };
+  const devGlyph = (kind, gx, gy, s, col) => {
+    const c = s / 2, r = s * 0.42, cxg = gx + c, cyg = gy + c;
+    const P = (d, extra) => `<path d="${d}" fill="none" stroke="${col}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"${extra || ''}/>`;
+    const C = rr => `<circle cx="${cxg}" cy="${cyg}" r="${rr}" fill="none" stroke="${col}" stroke-width="1.5"/>`;
+    switch (kind) {
+      case 'lamp':     return C(r) + P(`M${cxg - r * 0.72} ${cyg - r * 0.72} L${cxg + r * 0.72} ${cyg + r * 0.72} M${cxg + r * 0.72} ${cyg - r * 0.72} L${cxg - r * 0.72} ${cyg + r * 0.72}`);
+      case 'motor':    return C(r) + `<text x="${cxg}" y="${cyg + s * 0.2}" font-size="${s * 0.55}" font-weight="800" fill="${col}" text-anchor="middle" font-family="monospace">M</text>`;
+      case 'fan':      return C(r) + [0, 120, 240].map(a => `<ellipse cx="${cxg}" cy="${cyg - r * 0.5}" rx="${s * 0.11}" ry="${s * 0.23}" fill="${col}" transform="rotate(${a} ${cxg} ${cyg})"/>`).join('');
+      case 'pump':     return C(r) + P(`M${cxg - r * 0.5} ${cyg + r * 0.45} L${cxg - r * 0.5} ${cyg - r * 0.45} L${cxg + r * 0.6} ${cyg} Z`, ` fill="${col}"`);
+      case 'heater':   return `<rect x="${gx + 1}" y="${gy + s * 0.2}" width="${s - 2}" height="${s * 0.6}" rx="2" fill="none" stroke="${col}" stroke-width="1.5"/>` + P(`M${gx + s * 0.18} ${cyg + s * 0.16} l${s * 0.11} -${s * 0.32} l${s * 0.11} ${s * 0.32} l${s * 0.11} -${s * 0.32} l${s * 0.11} ${s * 0.32} l${s * 0.11} -${s * 0.32} l${s * 0.11} ${s * 0.32}`);
+      case 'speaker':  return P(`M${gx + s * 0.14} ${cyg - s * 0.12} h${s * 0.14} v${s * 0.24} h-${s * 0.14} Z`, ` fill="${col}"`) + P(`M${gx + s * 0.28} ${cyg - s * 0.12} L${gx + s * 0.6} ${cyg - s * 0.32} v${s * 0.64} L${gx + s * 0.28} ${cyg + s * 0.12}`) + P(`M${gx + s * 0.7} ${cyg - s * 0.16} a${s * 0.2} ${s * 0.2} 0 0 1 0 ${s * 0.32} M${gx + s * 0.78} ${cyg - s * 0.3} a${s * 0.36} ${s * 0.36} 0 0 1 0 ${s * 0.6}`);
+      case 'horn':     return P(`M${gx + s * 0.18} ${cyg + s * 0.1} v-${s * 0.2} l${s * 0.52} -${s * 0.24} v${s * 0.68} Z`, ` fill="${col}"`);
+      case 'lock':     return `<rect x="${gx + s * 0.2}" y="${cyg - s * 0.02}" width="${s * 0.6}" height="${s * 0.4}" rx="2" fill="none" stroke="${col}" stroke-width="1.5"/>` + P(`M${cxg - s * 0.17} ${cyg - s * 0.02} v-${s * 0.14} a${s * 0.17} ${s * 0.17} 0 0 1 ${s * 0.34} 0 v${s * 0.14}`);
+      case 'solenoid': return P(`M${gx + s * 0.14} ${cyg - s * 0.3} v${s * 0.6} h${s * 0.72} v-${s * 0.6}`) + [0.2, 0.38, 0.56].map(f => `<path d="M${gx + s * (0.14 + f)} ${cyg - s * 0.3} a${s * 0.09} ${s * 0.09} 0 0 1 ${s * 0.18} 0" fill="none" stroke="${col}" stroke-width="1.4"/>`).join('');
+      case 'antenna':  return P(`M${cxg} ${gy + s * 0.92} v-${s * 0.5} m-${s * 0.22} ${s * 0.22} l${s * 0.22} -${s * 0.22} l${s * 0.22} ${s * 0.22}`) + P(`M${cxg - s * 0.26} ${cyg - s * 0.16} a${s * 0.32} ${s * 0.32} 0 0 1 ${s * 0.52} 0`, ` stroke-dasharray="2 2"`);
+      case 'module':   return `<rect x="${gx + s * 0.2}" y="${gy + s * 0.2}" width="${s * 0.6}" height="${s * 0.6}" rx="1.5" fill="none" stroke="${col}" stroke-width="1.5"/>` + [0.35, 0.5, 0.65].map(f => `<line x1="${gx + s * f}" y1="${gy + s * 0.2}" x2="${gx + s * f}" y2="${gy + s * 0.06}" stroke="${col}" stroke-width="1.4"/><line x1="${gx + s * f}" y1="${gy + s * 0.8}" x2="${gx + s * f}" y2="${gy + s * 0.94}" stroke="${col}" stroke-width="1.4"/>`).join('');
+    }
+    return '';
+  };
+  const DEV_KIND_EMOJI = { lamp: '💡', lock: '🔒', speaker: '🔊', horn: '📯', fan: '🌀', pump: '⛽', heater: '♨️', motor: '⚙️', solenoid: '🧲', antenna: '📡', module: '🧩' };
+
   let svg = '', edgeLbls = '';
   allNodes.forEach((nd, i) => {
     const y = nodeY(i), x = cx;
@@ -12253,7 +12365,8 @@ function circuitSvgForLoad(ld, connMeta, opts) {
     const fill = nd.role === 'gnd' ? '#1e293b' : 'var(--bg-card, #fff)';
     const fg = nd.role === 'gnd' ? '#f8fafc' : 'var(--text-main, #0f172a)';
     const cm = (connMeta || {})[nd.clean] || {};
-    const pinFrac = nd.pin ? (nd._lay ? `${nd.pin}/${nd._lay.n}` : (cm.pins ? `${nd.pin}/${cm.pins}` : '')) : '';
+    const pinList = (nd.pins || []).length ? [...nd.pins].sort((x, y) => +x - +y).join(',') : nd.pin;
+    const pinFrac = pinList ? (nd._lay ? `${pinList}/${nd._lay.n}` : (cm.pins ? `${pinList}/${cm.pins}` : '')) : '';
     const devSfx = (nd.dev || '').split('-').pop() || nd.clean;
     const ownSfx = devSfx;
     // każdy węzeł z pinem otwiera okno (zestawienie lub przewody + pinout)
@@ -12335,22 +12448,34 @@ function circuitSvgForLoad(ld, connMeta, opts) {
     if (canFace)
       svg += `<g style="cursor:pointer" onclick="showConnFace(this, event)" data-clean="${escapeHtml(nd.clean)}" data-dev="${escapeHtml(devSfx)}" data-mate="${escapeHtml(nd.mate || '')}" data-pin="${escapeHtml(nd.pin)}"><title>${escapeHtml(t('js.zuken.connViewTitle') + '\n' + t('js.zuken.ctrlClickHint'))}</title>`;
     svg += `<rect x="${x}" y="${y}" width="${boxW}" height="${nodeH[i]}" rx="7" fill="${fill}" stroke="${rs.stroke}" stroke-width="2"/>`;
-    const nodeTitle = (nd.ml ? `${nd.ml.module} · ${nd.ml.code}` : `${ownSfx}${nd.pin ? ':' + nd.pin : ''}`) + (nd.mate ? ` ⇄ ${nd.mate}` : '');
+    const nodeTitle = (nd.ml ? `${nd.ml.module} · ${nd.ml.code}` : `${ownSfx}${nd.pin && !nd.pins ? ':' + nd.pin : ''}`) + (nd.mate ? ` ⇄ ${nd.mate}` : '');
     const hm = hopMeta[nd.dev + ':' + nd.pin] || {};
     const midInfo = nd.role === '' ? [hm.fn, hm.deg > 2 ? t('js.zuken.spliceWires', { n: hm.deg }) : ''] : [];
     const nodeInfo = nd.ml ? [nd.ml.function, `${nd.clean}:${nd.pin}`].filter(Boolean).join(' · ')
       : [nd.info, ...midInfo, pinFrac, cm.type || cm.article || cm.supplier || ''].filter(Boolean).join(' · ');
     svg += `<text x="${x + 8}" y="${y + 15}" font-size="11" font-weight="700" fill="${fg}" font-family="monospace">${rs.icon ? rs.icon + ' ' : ''}${escapeHtml(nodeTitle)}</text>`;
     if (nodeInfo) svg += `<text x="${x + 8}" y="${y + 28}" font-size="9" fill="${nd.role === 'gnd' ? '#cbd5e1' : 'var(--text-muted, #64748b)'}">${escapeHtml(String(nodeInfo).slice(0, 46))}</text>`;
+    // piktogram typu urządzenia przy seedzie i końcach toru (za wtyczkiem
+    // X388 jest lampa, za X164 silnik…) — czytelne „co siedzi na końcu"
+    const _dk = (nd._seed || nd.role === 'load' || nd.role === 'source')
+      ? devKind([nd.info, cm.desc, cm.type, (nd.ml || {}).module].filter(Boolean).join(' '))
+      : '';
+    if (_dk) svg += devGlyph(_dk, cx - 26, y + (boxH - 16) / 2, 16, rs.stroke);
     if (nd._lay) {
       const gw = 6 + nd._lay.cols * 13;
       const gwDisp = Math.min(gw, boxW - 10);
+      const _pins = nd.pins || [nd.pin];
       const _wc = nd.edge ? wireColorPair(nd.edge.wire_color) : null;
-      svg += connFaceSvg(nd._lay, nd.pin, {
+      const _wcm = {};
+      _pins.forEach(p => {
+        const c = p === nd.pin ? _wc : (nd._absWire ? wireColorPair(nd._absWire.wire_color) : null);
+        if (c) _wcm[String(p)] = [c];
+      });
+      svg += connFaceSvg(nd._lay, _pins, {
         mini: true, nested: true,
         x: x + (boxW - gwDisp) / 2, y: y + boxH + 1,
         width: gwDisp, height: nd._gh,
-        wireColors: _wc ? { [String(nd.pin)]: [_wc] } : null
+        wireColors: Object.keys(_wcm).length ? _wcm : null
       });
     }
     const rwT = rwTitles[(nd.clean || '').toUpperCase()];
@@ -12398,6 +12523,7 @@ function circuitSvgForLoad(ld, connMeta, opts) {
     svg += `<line x1="${ax}" y1="${ay}" x2="${stubX}" y2="${y}" stroke="${wireStroke}" stroke-width="1.6" stroke-dasharray="4 3"/>`;
     const eSfx = (e.device || '').split('-').pop() || e.clean;
     const ml = e.module_label;
+    const eKind = devKind(`${e.function || ''} ${e.desc || ''} ${(ml || {}).module || ''}`);
     // węzły pośrednie za rozgałęzieniem (np. U31 → U38 → RT112)
     const tail = (e.path || []).slice(divIdx + 1);
     const via = tail.slice(0, -1).map(h => h.to_clean || (h.to || '').split('-').pop()).filter(Boolean);
@@ -12413,7 +12539,7 @@ function circuitSvgForLoad(ld, connMeta, opts) {
       ? `<g style="cursor:pointer" onclick="showConnFace(this, event)" data-clean="${escapeHtml(e.clean)}" data-dev="${escapeHtml(eSfx)}" data-mate="" data-pin="${escapeHtml(e.pin)}"><title>${escapeHtml(t('js.zuken.connViewTitle') + '\n' + tip + '\n' + t('js.zuken.ctrlClickHint'))}</title>`
       : `<g class="ent-link" data-ent-q="${escapeHtml(eSfx)}" style="cursor:pointer"><title>${escapeHtml(tip + '\n' + t('js.zuken.entLinkTitle', { v: eSfx }))}</title>`;
     svg += `<rect x="${stubX}" y="${y - 15}" width="${stubW}" height="30" rx="6" fill="var(--bg-card, #fff)" stroke="${rm.color}" stroke-width="1.4" stroke-dasharray="3 2"/>`;
-    svg += `<text x="${stubX + 7}" y="${y - 1}" font-size="10" font-weight="700" fill="${rm.color}" font-family="monospace">${rm.icon} ${escapeHtml(stubTitle.slice(0, 40))}</text>`;
+    svg += `<text x="${stubX + 7}" y="${y - 1}" font-size="10" font-weight="700" fill="${rm.color}" font-family="monospace">${DEV_KIND_EMOJI[eKind] || rm.icon} ${escapeHtml(stubTitle.slice(0, 40))}</text>`;
     const sub = (ml && e.role === 'source')
       ? [ml.function, eSfx + (e.pin ? ':' + e.pin : ''), wireLbl].filter(Boolean).join(' · ')
       : [e.function || e.desc || '', wireLbl].filter(Boolean).join(' · ');
