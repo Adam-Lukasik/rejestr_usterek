@@ -1,5 +1,5 @@
 -- Wygenerowano automatycznie przez tools/export_migrations.py
--- Data: 2026-11-01T10:23:32
+-- Data: 2026-11-01T20:06:36
 -- UWAGA: DELETE+INSERT — tabele systemowe są zarządzane centralnie,
 -- ich stan po migracji jest identyczny jak w dev-bazie.
 
@@ -41,6 +41,8 @@ CREATE TABLE IF NOT EXISTS zuken_translations (
             updated_at TEXT
         );
 DELETE FROM zuken_translations WHERE COALESCE(source, 'core') != 'local';
+INSERT OR REPLACE INTO zuken_translations (form, kind, pl, en, de, sample, source, auto, updated_at) VALUES ('fuse holder-in-line w/led for atm type auto fuses 12/24vdc', 'phrase', 'Oprawka bezpiecznika liniowego z LED (ATM, 12/24VDC)', 'Fuse holder in-line w/LED for ATM type auto fuses 12/24VDC', 'Inline-Sicherungshalter mit LED für ATM 12/24VDC', NULL, 'core', 0, '2026-11-01 09:25:10');
+INSERT OR REPLACE INTO zuken_translations (form, kind, pl, en, de, sample, source, auto, updated_at) VALUES ('interface - 4/22 - junior timer', 'phrase', 'Interfejs – 4/22 – Junior Timer', 'Interface – 4/22 – Junior Timer', 'Schnittstelle – 4/22 – Junior Timer', NULL, 'core', 0, '2026-11-01 09:25:10');
 INSERT OR REPLACE INTO zuken_translations (form, kind, pl, en, de, sample, source, auto, updated_at) VALUES ('gnd', 'token', 'masa', 'GND', 'Masse', 'gnd', 'core', 1, '2026-11-01 09:20:06');
 INSERT OR REPLACE INTO zuken_translations (form, kind, pl, en, de, sample, source, auto, updated_at) VALUES ('earth', 'token', 'masa', 'earth', 'Masse', 'earth', 'core', 1, '2026-11-01 09:20:06');
 INSERT OR REPLACE INTO zuken_translations (form, kind, pl, en, de, sample, source, auto, updated_at) VALUES ('ground', 'token', 'masa', 'ground', 'Masse', 'ground', 'core', 1, '2026-11-01 09:20:06');
