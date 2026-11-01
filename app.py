@@ -3602,6 +3602,43 @@ def api_zuken_aliases():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/zuken/terms", methods=["GET", "POST", "DELETE"])
+def api_zuken_terms():
+    """Słownik tłumaczeń tekstów schematu (zuken_translations).
+    GET: lista/kolejka (publiczny); POST/DELETE: edycja — tylko admin."""
+    try:
+        if request.method == "GET":
+            return jsonify(zuken_service.list_terms(
+                q=request.args.get("q", "") or "",
+                missing=request.args.get("missing", "") in ("1", "true"),
+                limit=int(request.args.get("limit", 100)),
+                offset=int(request.args.get("offset", 0))))
+        user = get_current_user()
+        if not user or user.get("role") != "admin":
+            return jsonify({"error": smsg("adminRequired")}), 403
+        if request.method == "DELETE":
+            form = (request.args.get("form") or "").strip()
+            if not form:
+                return jsonify({"error": "form required"}), 400
+            return jsonify(zuken_service.delete_term(form))
+        data = request.get_json(silent=True) or {}
+        res = zuken_service.upsert_term(data)
+        if not res.get("ok"):
+            return jsonify(res), 400
+        return jsonify(res)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/zuken/terms/unknown", methods=["GET"])
+def api_zuken_terms_unknown():
+    """Kolejka nietłumaczonych terminów schematu (auto-zbierana)."""
+    try:
+        return jsonify(zuken_service.list_unknown_terms())
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/api/zuken/known-devices", methods=["GET"])
 def api_zuken_known_devices():
     """Kody aparatów projektu PS — do linkowania kodów w odpowiedziach asystenta."""

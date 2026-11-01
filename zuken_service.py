@@ -397,6 +397,44 @@ def init_zuken_tables():
         );
     """)
 
+    # Słownik tłumaczeń tekstów ze schematów E3 (nazwy sygnałów, funkcje
+    # urządzeń, tytuły arkuszy...) -> pl/en/de. Tabela systemowa: eksportowana
+    # przez tools/export_migrations.py (SYSTEM_TABLES) i rozsyłana z updatem.
+    # source='core' = wpisy paczkowe (z dev-bazy), 'local' = dopisane lokalnie
+    # (migracja kasuje tylko 'core', więc lokalne przetrwają update).
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS zuken_translations (
+            form TEXT PRIMARY KEY,
+            kind TEXT DEFAULT 'phrase',
+            pl TEXT,
+            en TEXT,
+            de TEXT,
+            sample TEXT,
+            source TEXT DEFAULT 'core',
+            auto INTEGER DEFAULT 0,
+            updated_at TEXT
+        );
+    """)
+    try:
+        tcols = [r[1] for r in cur.execute("PRAGMA table_info(zuken_translations)").fetchall()]
+        if "source" not in tcols:
+            cur.execute("ALTER TABLE zuken_translations ADD COLUMN source TEXT DEFAULT 'core';")
+        if "sample" not in tcols:
+            cur.execute("ALTER TABLE zuken_translations ADD COLUMN sample TEXT;")
+    except Exception:
+        pass
+
+    # Lokalna kolejka nietłumaczonych terminów (auto-zbierana przy
+    # wyświetlaniu) — NIE jest eksportowana, każda instalacja ma swoją.
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS zuken_term_unknown (
+            form TEXT PRIMARY KEY,
+            count INTEGER DEFAULT 1,
+            first_seen TEXT,
+            last_seen TEXT
+        );
+    """)
+
     # Tabele dla wektorowych schematów PDF wyeksportowanych z Zuken E3
     cur.execute("""
         CREATE TABLE IF NOT EXISTS zuken_pdf_schematics (
@@ -1336,7 +1374,7 @@ def import_zuken_bom_xlsx(filepath, ps_code=None, lang="pl"):
     return len(parsed_articles), total_devices, zsmsg("importedBom", lang, n=len(parsed_articles), m=total_devices)
 
 
-def find_bom_components_for_devices(device_codes, ps_code=None, lang="pl"):
+def _find_bom_components_for_devices_impl(device_codes, ps_code=None, lang="pl"):
     """
     Dla podanej listy kodów aparatów (np. ['=BOX+TWL-X52', '-X434', '=BOX+TWR-FH49'])
     odnajduje powiązane artykuły z BOM wraz z dostawcami, linkami i zdjęciami.
@@ -1432,7 +1470,7 @@ def find_bom_components_for_devices(device_codes, ps_code=None, lang="pl"):
     return result_list
 
 
-def get_bom_catalog(query="", supplier="", category="", ps_code="", has_image="", limit=100, offset=0, lang="pl"):
+def _get_bom_catalog_impl(query="", supplier="", category="", ps_code="", has_image="", limit=100, offset=0, lang="pl"):
     """Zwraca listę artykułów z BOM z filtrowaniem i paginacją."""
     conn = get_db()
     cur = conn.cursor()
@@ -3977,7 +4015,393 @@ def explain_device_code(code, glossary_map=None, lang="pl"):
         if found_desc:
             parts.append(found_desc)
 
+    # 'de': glossary ma tylko pl/en — opisy tłumaczymy słownikiem terminów
+    if lang == "de":
+        parts = [translate_term(p, "de") or p for p in parts]
+
     return " → ".join(parts) if parts else code
+
+
+# ═══════════════════════════════════════════════════════════════════
+# LOKALIZACJA TEKSTÓW SCHEMATU (słownik zuken_translations)
+#
+# Dane E3 (nazwy sygnałów, funkcje urządzeń, tytuły arkuszy, obwody
+# bezpieczników, wyjścia EVPSS, kolory przewodów) są pisane w języku
+# projektu — mieszanka DE/EN/PL. Tłumaczenie jest DISPLAY-TIME: walker
+# _localize_payload dokłada pola <klucz>_t do odpowiedzi API, oryginały
+# zostają (zapytania, aliasy, logika kolorów przewodów działają na nich).
+# Edycja słownika: sekcja "Tłumaczenia schematów" w Słownikach (admin),
+# dystrybucja przez SYSTEM_TABLES/export_migrations.
+# ═══════════════════════════════════════════════════════════════════
+
+_TERMS_CACHE = {"map": None, "rev": None, "expand": None}
+
+_TERM_SPLIT_RE = re.compile(r"([\s_/,;()\[\]{}<>|&!?+:\\\-–—'\"→⇒·.]+)")
+_TERM_LETTERS_RE = re.compile(r"[A-Za-zÀ-ž]")
+_TERM_ALPHA_RE = re.compile(r"^[A-Za-zÀ-ž]{2,}$")
+
+
+def _tnorm(s):
+    """Normalizacja formy słownikowej: podkreślenia/myślniki -> spacja,
+    zwinięcie białych znaków, casefold."""
+    s = re.sub(r"[_–—]+", " ", str(s or ""))
+    s = re.sub(r"\s+", " ", s).strip()
+    return s.casefold()
+
+
+def _invalidate_terms_cache():
+    _TERMS_CACHE["map"] = _TERMS_CACHE["rev"] = _TERMS_CACHE["expand"] = None
+
+
+def _terms_map(cur=None):
+    """{forma_norm: {kind, pl, en, de}} — cache modułowy."""
+    if _TERMS_CACHE["map"] is not None:
+        return _TERMS_CACHE["map"]
+    own = cur is None
+    conn = None
+    if own:
+        conn = get_db()
+        cur = conn.cursor()
+    m = {}
+    try:
+        for r in cur.execute("SELECT form, kind, pl, en, de FROM zuken_translations;"):
+            m[r["form"]] = {"kind": r["kind"] or "phrase",
+                            "pl": r["pl"] or "", "en": r["en"] or "",
+                            "de": r["de"] or ""}
+    except Exception:
+        m = {}
+    if own:
+        conn.close()
+    _TERMS_CACHE["map"] = m
+    return m
+
+
+def _terms_rev(cur=None):
+    """Indeks odwrotny: {lang: {norm_target_text}} — rozpoznaje teksty,
+    które już SĄ wynikiem tłumaczenia (idempotencja; bez zapychania
+    kolejki unknown własnymi tłumaczeniami)."""
+    if _TERMS_CACHE["rev"] is not None:
+        return _TERMS_CACHE["rev"]
+    rev = {"pl": set(), "en": set(), "de": set()}
+    for e in _terms_map(cur).values():
+        for lg in ("pl", "en", "de"):
+            if e.get(lg):
+                rev[lg].add(_tnorm(e[lg]))
+    _TERMS_CACHE["rev"] = rev
+    return rev
+
+
+def _term_is_code(tok):
+    """Token identyfikatorowy (cyfra gdziekolwiek albo <2 znaki):
+    KL15, X133, O2.12, GND_X133, #5996, RT94, -F19, 20A — nietłumaczone."""
+    return len(tok) < 2 or bool(re.search(r"\d", tok))
+
+
+def _log_term_misses(cur, forms):
+    if cur is None:
+        return
+    for f in dict.fromkeys(forms):
+        try:
+            cur.execute("""
+                INSERT INTO zuken_term_unknown (form, count, first_seen, last_seen)
+                VALUES (?, 1, datetime('now'), datetime('now'))
+                ON CONFLICT(form) DO UPDATE SET
+                    count = count + 1, last_seen = datetime('now');
+            """, (f,))
+        except Exception:
+            pass
+
+
+def translate_term(text, lang="pl", cur=None, _tmap=None, _trev=None):
+    """Tłumaczy tekst schematu wg słownika zuken_translations.
+    1) cała fraza (forma norm), 2) greedy n-gram po tokenach (<=4),
+    tokeny z cyfrą/symbole zostają, reszta nietrafiona -> kolejka unknown.
+    Zwraca przetłumaczony tekst albo oryginał."""
+    if not text or not str(text).strip():
+        return text or ""
+    if lang not in ("pl", "en", "de"):
+        lang = "pl"
+    tmap = _tmap if _tmap is not None else _terms_map(cur)
+    if not tmap:
+        return text
+    trev = _trev if _trev is not None else _terms_rev(cur)
+    src = str(text).strip()
+    norm = _tnorm(src)
+
+    # tekst już jest w docelowym języku (np. przetłumaczony wcześniej
+    # w tym pipeline) — zostaw bez logowania
+    if norm in trev.get(lang, ()):
+        return src
+
+    def _styled(v, like):
+        """Styl wielkości liter jak w oryginale: ALL-CAPS -> caps,
+        Leading-cap -> cap pierwszej."""
+        letters = _TERM_LETTERS_RE.findall(like)
+        if len(letters) > 1 and all(c.upper() == c for c in letters):
+            return v.upper()
+        if like[:1].isupper():
+            return v[:1].upper() + v[1:]
+        return v
+
+    def _entry_out(entry, like):
+        v = (entry.get(lang) or entry.get("en") or entry.get("pl") or "").strip()
+        return _styled(v, like) if v else ""
+
+    # 1) cała fraza
+    hit = tmap.get(norm)
+    if hit:
+        if hit["kind"] == "jargon":
+            return src
+        o = _entry_out(hit, src)
+        if o:
+            return o
+
+    # 2) tokeny (indeksy parzyste) + separatory (nieparzyste)
+    toks = _TERM_SPLIT_RE.split(src)
+    out = []
+    misses = []
+    i = 0
+    while i < len(toks):
+        tok = toks[i]
+        if not tok or _TERM_SPLIT_RE.fullmatch(tok):
+            out.append(tok)
+            i += 1
+            continue
+        if _term_is_code(tok):
+            out.append(tok)
+            i += 1
+            continue
+        # greedy najdłuższy n-gram (do 4 tokenów, separatory wewn. tylko spacja/_)
+        best = None
+        for span in (4, 3, 2, 1):
+            j = i + (span - 1) * 2
+            if j >= len(toks):
+                continue
+            frag_parts = toks[i:j + 1]
+            ok = True
+            for k in range(1, len(frag_parts), 2):
+                if re.search(r"[^\s_]", frag_parts[k]):
+                    ok = False
+                    break
+            if not ok:
+                continue
+            frag = "".join(frag_parts)
+            fnorm = _tnorm(frag)
+            e = tmap.get(fnorm)
+            if e is None and fnorm in trev.get(lang, ()):
+                e = "TARGET"
+            if e:
+                best = (j, e, frag)
+                break
+        if best:
+            j, e, frag = best
+            if e == "TARGET" or e["kind"] == "jargon":
+                out.append(frag)
+            else:
+                out.append(_entry_out(e, frag) or frag)
+            i = j + 1
+        else:
+            out.append(tok)
+            if _TERM_ALPHA_RE.match(tok):
+                misses.append(_tnorm(tok))
+            i += 1
+    # nic nie przetłumaczono tokenowo, a fraza jest sensowna -> całość
+    # do kolejki (zamiast każdego słowa osobno)
+    if misses:
+        phrase_is_alpha = all(
+            _TERM_SPLIT_RE.fullmatch(t) or _TERM_ALPHA_RE.match(t)
+            for t in toks if t.strip())
+        if len(misses) == len([t for t in toks
+                               if t.strip() and not _TERM_SPLIT_RE.fullmatch(t)]) \
+                and phrase_is_alpha and len(toks) <= 7:
+            _log_term_misses(cur, [norm])
+        else:
+            _log_term_misses(cur, misses)
+    return "".join(out)
+
+
+_LOCALIZE_KEYS = {
+    "signal_name", "function", "to_function", "from_function",
+    "sheet_title", "circuits", "system_desc", "location_desc",
+    "cable_name", "rule", "full_name", "wire_color",
+    "desc", "target_desc", "start_desc", "label", "context_info",
+}
+
+
+def _localize_payload(obj, lang="pl", cur=None):
+    """Dokłada pola <klucz>_t z tłumaczeniem do znanych pól tekstowych
+    w odpowiedzi API (rekurencyjnie po dict/list). Oryginały bez zmian.
+    Specjalne: more_signals (lista -> more_signals_t), circuits-dict
+    (klucze sygnałów -> circuits_t mapa wyświetlania).
+    Wywołane bez kursora otwiera własne połączenie (wrappery API po
+    zamknięciu swojego) i commituje wpisy do zuken_term_unknown."""
+    if lang not in ("pl", "en", "de"):
+        return obj
+    own = cur is None
+    conn = None
+    if own:
+        try:
+            conn = get_db()
+            cur = conn.cursor()
+        except Exception:
+            cur = None
+    tmap = _terms_map(cur)
+    if not tmap:
+        if conn:
+            conn.close()
+        return obj
+    trev = _terms_rev(cur)
+
+    def tr(v):
+        return translate_term(v, lang, cur=cur, _tmap=tmap, _trev=trev)
+
+    def walk(o, in_conn_meta=False):
+        if isinstance(o, list):
+            for it in o:
+                walk(it, in_conn_meta)
+            return
+        if not isinstance(o, dict):
+            return
+        for k, v in list(o.items()):
+            if k.endswith("_t"):
+                continue
+            # opisy/etykiety w conn_meta to teksty katalogowe (artykuły) —
+            # wg decyzji zostają oryginalne (EN)
+            skip_key = in_conn_meta and k in ("desc", "label", "context_info")
+            if k == "circuits" and isinstance(v, dict):
+                cmap = {}
+                for ck in v:
+                    tv = tr(ck)
+                    if tv != ck:
+                        cmap[ck] = tv
+                if cmap:
+                    o["circuits_t"] = cmap
+                continue
+            if k == "more_signals" and isinstance(v, list):
+                tl = [tr(x) if isinstance(x, str) else x for x in v]
+                if tl != v:
+                    o["more_signals_t"] = tl
+                continue
+            if isinstance(v, str) and v.strip() and k in _LOCALIZE_KEYS and not skip_key:
+                nv = tr(v)
+                if nv and nv != v:
+                    o[k + "_t"] = nv
+            elif isinstance(v, (dict, list)):
+                walk(v, in_conn_meta or k == "conn_meta")
+
+    walk(obj)
+    if conn is not None:
+        try:
+            conn.commit()
+        except Exception:
+            pass
+        conn.close()
+    return obj
+
+
+def _term_token_expand(cur=None):
+    """token -> zbiór tokenów wszystkich powiązanych form (fraza słownika
+    + jej pl/en/de): służy do trafiania zapytania wpisanego po
+    przetłumaczonej nazwie ('centralny zamek' -> VERSORGUNG
+    ZENTRALVERRIEGELUNG / CENTRAL LOCKING)."""
+    if _TERMS_CACHE["expand"] is not None:
+        return _TERMS_CACHE["expand"]
+    expand = {}
+    for form, e in _terms_map(cur).items():
+        if e.get("kind") == "jargon":
+            continue
+        alltxt = " ".join(x for x in (form, e.get("pl"), e.get("en"),
+                                      e.get("de")) if x)
+        toks = set(_circuit_tokens(alltxt))
+        for t in toks:
+            expand.setdefault(t, set()).update(toks)
+    _TERMS_CACHE["expand"] = expand
+    return expand
+
+
+# ── CRUD słownika tłumaczeń (edytor w Słownikach; POST/DELETE = admin) ──
+
+def list_terms(q="", missing=False, limit=100, offset=0):
+    """Lista wpisów słownika tłumaczeń (edytor). missing=1 -> kolejka
+    nietłumaczonych z zuken_term_unknown (najczęstsze najpierw)."""
+    init_zuken_tables()
+    conn = get_db()
+    cur = conn.cursor()
+    if missing:
+        rows = [{"form": r["form"], "count": r["count"],
+                 "last_seen": r["last_seen"]}
+                for r in cur.execute("""
+                    SELECT form, count, last_seen FROM zuken_term_unknown
+                    ORDER BY count DESC, form LIMIT ? OFFSET ?;""",
+                    (limit, offset))]
+        total = cur.execute("SELECT COUNT(*) FROM zuken_term_unknown;").fetchone()[0]
+        conn.close()
+        return {"items": rows, "total": total}
+    cond, params = "", []
+    if q:
+        cond = "WHERE form LIKE ? OR sample LIKE ? OR pl LIKE ? OR en LIKE ? OR de LIKE ?"
+        like = f"%{q.strip()}%"
+        params = [like] * 5
+    total = cur.execute(
+        f"SELECT COUNT(*) FROM zuken_translations {cond};", params).fetchone()[0]
+    rows = [dict(r) for r in cur.execute(f"""
+        SELECT form, kind, pl, en, de, sample, source, auto, updated_at
+        FROM zuken_translations {cond}
+        ORDER BY form LIMIT ? OFFSET ?;""", (*params, limit, offset))]
+    conn.close()
+    return {"items": rows, "total": total}
+
+
+def list_unknown_terms():
+    """Kolejka nietłumaczonych terminów (auto-zbierana)."""
+    return list_terms(missing=True, limit=500)
+
+
+def upsert_term(data):
+    """Zapis wpisu słownika z edytora (admin). forms[] = dodatkowe formy
+    źródłowe o tym samym tłumaczeniu (warianty zapisu/inny język
+    źródłowy). Wpisy użytkownika -> source='local'."""
+    init_zuken_tables()
+    pl = (data.get("pl") or "").strip()
+    en = (data.get("en") or "").strip()
+    de = (data.get("de") or "").strip()
+    kind = (data.get("kind") or "phrase").strip() or "phrase"
+    forms = []
+    for f in ([data.get("form") or ""] + list(data.get("forms") or [])):
+        nf = _tnorm(f)
+        if nf and nf not in forms:
+            forms.append(nf)
+    if not forms:
+        return {"ok": False, "error": "form required"}
+    conn = get_db()
+    cur = conn.cursor()
+    for nf in forms:
+        cur.execute("""
+            INSERT INTO zuken_translations (form, kind, pl, en, de, source, auto, updated_at)
+            VALUES (?, ?, ?, ?, ?, 'local', 0, datetime('now'))
+            ON CONFLICT(form) DO UPDATE SET
+                kind = excluded.kind, pl = excluded.pl, en = excluded.en,
+                de = excluded.de, source = 'local', auto = 0,
+                updated_at = datetime('now');
+        """, (nf, kind, pl, en, de))
+        cur.execute("DELETE FROM zuken_term_unknown WHERE form = ?;", (nf,))
+    conn.commit()
+    conn.close()
+    _invalidate_terms_cache()
+    return {"ok": True, "forms": forms}
+
+
+def delete_term(form):
+    init_zuken_tables()
+    nf = _tnorm(form)
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM zuken_translations WHERE form = ?;", (nf,))
+    n = cur.rowcount
+    conn.commit()
+    conn.close()
+    _invalidate_terms_cache()
+    return {"ok": True, "deleted": n}
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -4819,7 +5243,7 @@ def _build_acetech_info(parsed, query_text="", lang="pl"):
     return result
 
 
-def get_controller_diagnostic_info(ps_code=None, query_text="", lang="pl"):
+def _get_controller_diagnostic_info_impl(ps_code=None, query_text="", lang="pl"):
     """Wykrywa raport sterownika w folderze projektu (Carnation HTML,
     Acetech PDF, ...) i zwraca kontekstowe informacje dla zapytania.
     Dla zadeklarowanego, lecz nieparsowanego typu (np. Inomatic) zwraca
@@ -4981,7 +5405,7 @@ def format_wire_length(val, lang="pl"):
         return str(val)
 
 
-def diagnose_defect(element="", typ="", opisProblem="", ps_code=None, client=None, vin=None, record_id=None, solution_id=None, lang="pl"):
+def _diagnose_defect_impl(element="", typ="", opisProblem="", ps_code=None, client=None, vin=None, record_id=None, solution_id=None, lang="pl"):
     """
     Główna funkcja diagnostyczna:
     - Analizuje opis usterki oraz powiązane warianty naprawy (solutions),
@@ -6622,7 +7046,7 @@ def _annotate_wire_far_end(entry, dev, pin, adj, glossary, dev_funcs, lang="pl")
         entry["far_ends"] = out[:8]
 
 
-def trace_signal_net(ps_code, query, lang="pl"):
+def _trace_signal_net_impl(ps_code, query, lang="pl"):
     """Śledzenie sygnału dla asystenta: zapytanie 'X429', 'X429:3',
     'X429 pin 3', 'RT94', '=BOX+TWR-RT94:1' -> pełne sieci połączeń
     z końcami i ścieżkami (hopy z numerem/kolorem/przekrojem/długością)."""
@@ -6725,6 +7149,21 @@ _CONN_TYPE_FILLER = re.compile(
     r"|genuine|system|only|multi|interlok)\b", re.IGNORECASE)
 
 _CIRCUIT_FUSE_RE = re.compile(r"^(FH?|FR|U)\d", re.IGNORECASE)
+_FUSE_HOLDER_RE = re.compile(r"^F[HR]\d", re.IGNORECASE)   # oprawka -FH/-FR
+_FUSE_ELEM_RE = re.compile(r"^F\d", re.IGNORECASE)         # element topikowy -F
+# Katalogowy limit obciążalności gniazda w opisie artykułu ('up to 30A') —
+# mylący, bo to nie prąd osadzonego bezpiecznika (FH15: max 30A, F19 20A).
+_HOLDER_MAX_RE = re.compile(
+    r"\b(?:up\s*to|max\.?|maks\.?)\s+\d+(?:[.,]\d+)?\s*a\b", re.IGNORECASE)
+
+
+def _strip_holder_rating_text(s):
+    """Opis oprawki bez limitu katalogowego ('FUSE HOLDER ... UP TO 30A
+    12/24VDC' -> '... AUTO FUSES 12/24VDC')."""
+    if not s:
+        return s
+    return re.sub(r"\s{2,}", " ", _HOLDER_MAX_RE.sub("", s)).strip(" ·,-")
+
 
 # Słowa kluczowe w funkcji/opisie złącza wskazujące, że jest to złącze
 # modułu sterownika (Acetech, Carnation, EVPSS, Inomatic, ...).
@@ -7022,6 +7461,17 @@ def _query_token_groups(query, cur=None):
     for t in q_toks:
         if t not in covered:
             groups.append({t} | _CIRCUIT_SYNONYMS.get(t, set()))
+    # ekwiwalenty ze słownika tłumaczeń: zapytanie po przetłumaczonej nazwie
+    # ('centralny zamek') trafia w sygnały po DE/EN ('VERSORGUNG
+    # ZENTRALVERRIEGELUNG', 'CENTRAL LOCKING') — tokeny w grupie to OR,
+    # więc rozszerzenie tylko podnosi recall.
+    expand = _term_token_expand(cur)
+    if expand:
+        for g in groups:
+            extra = set()
+            for t in g:
+                extra |= expand.get(t, set())
+            g |= extra
     return groups
 
 
@@ -7789,7 +8239,7 @@ def _thickest_wire_end(adj, start, pass_fn, max_steps=40):
     return _walk(start, [], {start}, 0)
 
 
-def trace_circuit(ps_code, query, lang="pl"):
+def _trace_circuit_impl(ps_code, query, lang="pl"):
     """Pełna ścieżka obwodu dla zapytania diagnostycznego.
     q: kod urządzenia ('X63', 'X63:1'), nazwa sygnału/odbiornika
     ('12V SOCKET 3', 'gniazdo 12v 3', 'rear blues') lub wyjście EVPSS ('O2.12').
@@ -7917,6 +8367,18 @@ def trace_circuit(ps_code, query, lang="pl"):
     fuse_rows = []
     fuse_term_devs = []
     fuse_bars = {}
+    _rails = None
+    _fdisp = []
+
+    def _fuse_disp(cur2):
+        """(fuse_of, ratings) — leniwe parowanie oprawka -> osadzony
+        bezpiecznik (F19 w FH15); przed zamknięciem conn z głównym
+        kursorem, w post-procesie odpowiedzi ze świeżym."""
+        if not _fdisp:
+            _fdisp.append(_fuse_holder_fuses(cur2, conn_ids, ps_code, adj,
+                                             rails=_rails))
+        return _fdisp[0]
+
     if dev_q:
         try:
             fuse_rows = cur.execute(
@@ -7999,9 +8461,32 @@ def trace_circuit(ps_code, query, lang="pl"):
                     if (fr["holder_code"] or "").strip()), fuse_rows[0])
         rating = (fr0["rating"] or "").strip()
         circ = (fr0["circuits"] or "").strip()
-        func_label = (dev_q + (f" {rating}" if rating else "")
-                      + (f" ({circ})" if circ else ""))
+        if _FUSE_HOLDER_RE.match(dev_q):
+            # zapytanie o OPRAWKĘ: 'rating' w jej wierszu to katalogowy
+            # limit gniazda ('up to 30A'), nie osadzony bezpiecznik —
+            # pokazujemy faktyczny element -F (F19 20A) z parowania
+            # geometrii schematu
+            _of, _rt = _fuse_disp(cur)
+            fc = next((_of[d] for d in sorted(
+                dev_nodes, key=_natural_sort_key) if d in _of), "")
+            if not fc:
+                fc = next((_of[d] for d in _of
+                           if (clean_device_code(d) or "") == dev_q), "")
+            ftxt = (fc + (f" {_rt[fc]}" if _rt.get(fc) else "")) if fc else ""
+            func_label = (dev_q + (f" \u2192 {ftxt}" if ftxt else "")
+                          + (f" ({circ})" if circ else ""))
+        else:
+            func_label = (dev_q + (f" {rating}" if rating else "")
+                          + (f" ({circ})" if circ else ""))
         fuse_miss = not dev_nodes
+    if not func_label and dev_nodes and _FUSE_HOLDER_RE.match(dev_q or ""):
+        # oprawka bez wiersza w zestawie bezpieczników — dopnij osadzony -F
+        _of, _rt = _fuse_disp(cur)
+        fc = next((_of[d] for d in sorted(
+            dev_nodes, key=_natural_sort_key) if d in _of), "")
+        if fc:
+            func_label = f"{dev_q} \u2192 {fc}" + (
+                f" {_rt[fc]}" if _rt.get(fc) else "")
     if not dev_nodes and dev_q:
         rdev = relay_clean2dev.get(dev_q)
         if not rdev:
@@ -8820,6 +9305,77 @@ def trace_circuit(ps_code, query, lang="pl"):
         except Exception:
             pass
 
+    # ── 4b. Oprawki: faktyczny bezpiecznik zamiast limitu 'up to' ─────
+    # Krawędź wewnętrzna oprawki pokazuje osadzony element -F (FH15 ->
+    # 'F19 20A', nie katalogowe 'up to 30A' z opisu gniazda); opisy
+    # oprawek pozbawiamy limitu, a węzeł dostaje 'fuse_label' dla
+    # frontendu (etykieta scalonego pinu i nagłówka karty/diagramu).
+    has_fuse_hops = fuse_rows or any(
+        h.get("internal") == "fuse"
+        for ld in loads_out
+        for p in list(ld["pins"]) + list(ld.get("relay_coils") or [])
+        for e in (p.get("ends") or []) for h in (e.get("path") or []))
+    if has_fuse_hops:
+        try:
+            conn_f = get_db()
+            fuse_of, fuse_rt = _fuse_disp(conn_f.cursor())
+            conn_f.close()
+        except Exception:
+            fuse_of, fuse_rt = {}, {}
+        fuse_of_clean = {}
+        for _hd, _fc in fuse_of.items():
+            fuse_of_clean.setdefault(clean_device_code(_hd) or _hd, _fc)
+
+        def _fuse_edge_label(dev):
+            """'F19 20A' dla oprawki (z mapy) albo elementu (z zestawu)."""
+            c = clean_device_code(dev) or dev or ""
+            fc = fuse_of.get(dev) or fuse_of_clean.get(c)
+            if fc:
+                return fc + (f" {fuse_rt[fc]}" if fuse_rt.get(fc) else "")
+            if _FUSE_HOLDER_RE.match(c) or not _FUSE_ELEM_RE.match(c):
+                return ""
+            rt = fuse_rt.get(c) or ""
+            return (f"{c} {rt}" if rt and rt.replace(" ", "") not in c
+                    else "")
+
+        def _retouch_end(e):
+            for h in (e.get("path") or []):
+                if h.get("internal") == "fuse":
+                    lbl = _fuse_edge_label(h.get("from") or "")
+                    if lbl:
+                        h["internal_label"] = lbl
+                if _FUSE_HOLDER_RE.match(h.get("to_clean") or ""):
+                    h["to_function"] = _strip_holder_rating_text(
+                        h.get("to_function"))
+                    fl = _fuse_edge_label(h.get("to") or "")
+                    if fl and fl not in (h["to_function"] or ""):
+                        h["to_function"] = (
+                            (h["to_function"] or "") + f" \u00b7 {fl}"
+                        ).strip(" \u00b7")
+            if _FUSE_HOLDER_RE.match(e.get("clean") or ""):
+                e["function"] = _strip_holder_rating_text(e.get("function"))
+                e["desc"] = _strip_holder_rating_text(e.get("desc"))
+
+        for ld in loads_out:
+            if _FUSE_HOLDER_RE.match(ld.get("clean") or ""):
+                ld["function"] = _strip_holder_rating_text(ld.get("function"))
+                ld["desc"] = _strip_holder_rating_text(ld.get("desc"))
+            lbl = _fuse_edge_label(ld.get("device") or "")
+            if lbl:
+                ld["fuse_label"] = lbl
+            for p in ld["pins"]:
+                for e in (p.get("ends") or []):
+                    _retouch_end(e)
+            for rc in (ld.get("relay_coils") or []):
+                for e in (rc.get("ends") or []):
+                    _retouch_end(e)
+        for ck, cm in conn_meta.items():
+            if not _FUSE_HOLDER_RE.match(ck):
+                continue
+            cm["desc"] = _strip_holder_rating_text(cm.get("desc"))
+            for hv in (cm.get("halves") or {}).values():
+                hv["desc"] = _strip_holder_rating_text(hv.get("desc"))
+
     # Reworki projektu — frontend oznacza badge ⚠️ węzły-złącza objęte reworkiem
     reworks = list_reworks(ps_code) if ps_code else []
 
@@ -8956,7 +9512,7 @@ def delete_conn_pinout(article):
         conn.close()
 
 
-def get_ps_connectors(ps_code, search="", system_filter="", limit=100, offset=0, lang="pl"):
+def _get_ps_connectors_impl(ps_code, search="", system_filter="", limit=100, offset=0, lang="pl"):
     """Pobiera listę złączy z pinoutem dla projektu PS z filtrowaniem i paginacją."""
     if not ps_code:
         return {"items": [], "total": 0}
@@ -10041,6 +10597,42 @@ def _ps_fuse_rails(cur, conn_ids, ps_code, adj):
     return out
 
 
+def _fuse_holder_fuses(cur, conn_ids, ps_code, adj, rails=None):
+    """Oprawka -FH/-FR -> osadzony element -F (kod + prąd z zestawu).
+
+    Parowanie z geometrii schematu (_ps_fuse_rails['holders']) rozstrzyga
+    oprawki o innym numerze niż element (F19 w FH15, F20 w FH1); jako
+    fallback dokładny holder_code z zestawu bezpieczników — ale tylko gdy
+    urządzenie tego kodu jest okablowane w raporcie (holder_code '-FH19'
+    zgadnięty z '-F19' byłby zgadywaniem).
+    Zwraca (fuse_of {holder_dev: fuse_clean}, ratings {clean: '20A'})."""
+    ratings, hold_by_code = {}, {}
+    try:
+        for fr in cur.execute(
+                "SELECT device_clean, rating, holder_code"
+                "  FROM zuken_ps_fuses WHERE ps_code = ?",
+                (ps_code or "",)):
+            fc = (fr["device_clean"] or "").strip()
+            if fc:
+                ratings.setdefault(fc, (fr["rating"] or "").strip())
+            hc = (fr["holder_code"] or "").strip()
+            if hc and fc:
+                hold_by_code.setdefault(hc, fc)
+    except Exception:
+        pass
+    if rails is None:
+        rails = _ps_fuse_rails(cur, conn_ids, ps_code, adj)
+    fuse_of = {}
+    for fc, hd in (rails.get("holders") or {}).items():
+        if hd:
+            fuse_of[hd] = fc
+    adj_devs = {d for (d, _p) in adj}
+    for hd, fc in hold_by_code.items():
+        if hd in adj_devs:
+            fuse_of.setdefault(hd, fc)
+    return fuse_of, ratings
+
+
 # ═══ Asystent: listy elementów wg kategorii ('bezpiecznik 7,5A', 'przekaźnik') ═══
 _ASSIST_RATING_RE = re.compile(r"(?<![\w.,])(\d+(?:[.,]\d+)?)\s*A(?![A-Z0-9])")
 _ASSIST_NUM_RE = re.compile(r"(?<![\w.,])(\d+(?:[.,]\d+)?)(?![\w.,])")
@@ -10083,7 +10675,7 @@ def _assist_groups_match(groups, hay):
                for g in groups)
 
 
-def assistant_list(ps_code, query, lang="pl"):
+def _assistant_list_impl(ps_code, query, lang="pl"):
     """Zapytanie kategorii -> klikalna lista elementów projektu PS.
     'bezpiecznik 7,5A' / '7,5A' / 'fuse 10A' -> bezpieczniki o tym prądzie,
     'przekaźnik' / 'relay horn' -> przekaźniki, 'gniazdo 12V' / 'gniazdo NAK'
@@ -10310,7 +10902,7 @@ def get_ps_device_codes(ps_code):
     return res
 
 
-def get_ps_fuses(ps_code, search="", limit=100, offset=0, lang="pl"):
+def _get_ps_fuses_impl(ps_code, search="", limit=100, offset=0, lang="pl"):
     """Pobiera zestaw bezpieczników dla projektu PS z filtrowaniem."""
     if not ps_code:
         return {"items": [], "total": 0}
@@ -10934,6 +11526,27 @@ def get_ps_fuses(ps_code, search="", limit=100, offset=0, lang="pl"):
 
     items = [d for d in items if not _is_bare_alias(d)]
 
+    # Oprawki -FH/-FR: 'rating' ich wiersza to katalogowy limit gniazda
+    # ('up to 30A'), nie osadzony bezpiecznik — pokazujemy faktyczny
+    # element -F (odwrotność holder_real).
+    fuse_in = {}
+    for d in items:
+        if str(d.get("device_clean") or "").startswith(("FH", "FR")):
+            continue
+        hd = d.get("holder_real") or ""
+        if hd and hd not in fuse_in:
+            fuse_in[hd] = d
+    for d in items:
+        if str(d.get("device_clean") or "").startswith(("FH", "FR")):
+            f = fuse_in.get(d.get("device_code") or "")
+            if f:
+                d["fuse_in"] = {"clean": f.get("device_clean") or "",
+                                "rating": f.get("rating") or ""}
+            d["description"] = _strip_holder_rating_text(d.get("description"))
+        elif d.get("holder_description"):
+            d["holder_description"] = _strip_holder_rating_text(
+                d["holder_description"])
+
     # Sortowanie naturalne wg numeru bezpiecznika: F1, F2, ..., F12, FH36
     def _fuse_num_key(d):
         c = str(d.get("device_clean") or "")
@@ -10954,7 +11567,7 @@ def get_ps_fuses(ps_code, search="", limit=100, offset=0, lang="pl"):
     return result
 
 
-def get_ps_relays(ps_code, search="", limit=100, offset=0, lang="pl"):
+def _get_ps_relays_impl(ps_code, search="", limit=100, offset=0, lang="pl"):
     """Pobiera zestaw przekaźników dla projektu PS z filtrowaniem."""
     if not ps_code:
         return {"items": [], "total": 0}
@@ -11051,13 +11664,14 @@ def export_ps_summary_csv(ps_code, summary_type="connectors", lang="pl"):
 
     if summary_type == "connectors":
         writer.writerow(zshdr("connectors", lang))
-        data = get_ps_connectors(ps_code, limit=5000)
+        data = get_ps_connectors(ps_code, limit=5000, lang=lang)
         for item in data.get("items", []):
             pins = item.get("pins", [])
+            loc_desc = item.get("location_desc_t") or item["location_desc"]
             if not pins:
                 writer.writerow([
                     ps_code, item["device_code"], item["device_clean"], item["system"], item["location"],
-                    item["location_desc"], item["article_number"], item["supplier"], item["description"],
+                    loc_desc, item["article_number"], item["supplier"], item["description"],
                     item["pin_count"], "", "", "", "", "", "", "", "", ""
                 ])
             else:
@@ -11066,32 +11680,33 @@ def export_ps_summary_csv(ps_code, summary_type="connectors", lang="pl"):
                     for conn_info in p_group.get("connections", []):
                         writer.writerow([
                             ps_code, item["device_code"], item["device_clean"], item["system"], item["location"],
-                            item["location_desc"], item["article_number"], item["supplier"], item["description"],
+                            loc_desc, item["article_number"], item["supplier"], item["description"],
                             item["pin_count"], pin_num, conn_info.get("signal", ""), conn_info.get("wire_number", ""),
-                            conn_info.get("wire_color", ""), conn_info.get("cross_section", ""),
+                            conn_info.get("wire_color_t") or conn_info.get("wire_color", ""), conn_info.get("cross_section", ""),
                             conn_info.get("wire_type", ""), conn_info.get("target_device", ""),
-                            conn_info.get("target_pin", ""), conn_info.get("target_desc", "")
+                            conn_info.get("target_pin", ""), conn_info.get("target_desc_t") or conn_info.get("target_desc", "")
                         ])
 
     elif summary_type == "fuses":
         writer.writerow(zshdr("fuses", lang))
-        data = get_ps_fuses(ps_code, limit=2000)
+        data = get_ps_fuses(ps_code, limit=2000, lang=lang)
         for item in data.get("items", []):
             writer.writerow([
                 ps_code, item["device_code"], item["device_clean"], item["rating"], item["fuse_type"],
                 item["holder_code"], item["box_code"], item["system"], item["location"],
-                item["circuits"], item["article_number"], item["supplier"], item["description"]
+                item.get("circuits_t") or item["circuits"], item["article_number"], item["supplier"], item["description"]
             ])
 
     elif summary_type == "relays":
         writer.writerow(zshdr("relays", lang))
-        data = get_ps_relays(ps_code, limit=2000)
+        data = get_ps_relays(ps_code, limit=2000, lang=lang)
         for item in data.get("items", []):
-            loc_desc = item.get("location_desc") or ""
+            loc_desc = item.get("location_desc_t") or item.get("location_desc") or ""
+            func = item.get("function_t") or item["function"]
             contacts = item.get("contacts", [])
             if not contacts:
                 writer.writerow([
-                    ps_code, item["device_code"], item["device_clean"], item["function"], item["relay_type"],
+                    ps_code, item["device_code"], item["device_clean"], func, item["relay_type"],
                     item["supplier"], item["socket_code"], item["system"], item["location"], loc_desc,
                     "", "", "", "", "", "", "", "", ""
                 ])
@@ -11101,14 +11716,72 @@ def export_ps_summary_csv(ps_code, summary_type="connectors", lang="pl"):
                     if c.get("relay_pin") and c["relay_pin"] != pin_lbl:
                         pin_lbl = f"{pin_lbl}/{c['relay_pin']}"
                     writer.writerow([
-                        ps_code, item["device_code"], item["device_clean"], item["function"], item["relay_type"],
+                        ps_code, item["device_code"], item["device_clean"], func, item["relay_type"],
                         item["supplier"], item["socket_code"], item["system"], item["location"], loc_desc,
                         f"Pin {pin_lbl} ({c.get('role', '')})".strip(),
-                        c.get("signal", ""), c.get("wire_number", ""), c.get("wire_color", ""),
+                        c.get("signal", ""), c.get("wire_number", ""),
+                        c.get("wire_color_t") or c.get("wire_color", ""),
                         c.get("cross_section", ""), c.get("length", ""),
-                        c.get("target_device", ""), c.get("target_pin", ""), c.get("target_desc", "")
+                        c.get("target_device", ""), c.get("target_pin", ""),
+                        c.get("target_desc_t") or c.get("target_desc", "")
                     ])
 
     return output.getvalue()
+
+
+# ═══════════════════════════════════════════════════════════════════
+# WRAPPERY LOKALIZUJĄCE — publiczne funkcje API zwracają payload z
+# polami <klucz>_t (tłumaczenie wg wybranego języka UI). Implementacje
+# pod nazwami *_impl (wywołania wewnętrzne idą przez wrapper — pola _t
+# przechodzą, a CSV używa ich z fallbackiem na oryginał).
+# ═══════════════════════════════════════════════════════════════════
+
+def get_controller_diagnostic_info(ps_code=None, query_text="", lang="pl"):
+    return _localize_payload(
+        _get_controller_diagnostic_info_impl(ps_code, query_text, lang), lang)
+
+
+def diagnose_defect(element="", typ="", opisProblem="", ps_code=None, client=None,
+                    vin=None, record_id=None, solution_id=None, lang="pl"):
+    return _localize_payload(
+        _diagnose_defect_impl(element, typ, opisProblem, ps_code, client, vin,
+                              record_id, solution_id, lang), lang)
+
+
+def trace_signal_net(ps_code, query, lang="pl"):
+    return _localize_payload(_trace_signal_net_impl(ps_code, query, lang), lang)
+
+
+def trace_circuit(ps_code, query, lang="pl"):
+    return _localize_payload(_trace_circuit_impl(ps_code, query, lang), lang)
+
+
+def get_ps_connectors(ps_code, search="", system_filter="", limit=100, offset=0, lang="pl"):
+    return _localize_payload(
+        _get_ps_connectors_impl(ps_code, search, system_filter, limit, offset, lang), lang)
+
+
+def assistant_list(ps_code, query, lang="pl"):
+    return _localize_payload(_assistant_list_impl(ps_code, query, lang), lang)
+
+
+def get_ps_fuses(ps_code, search="", limit=100, offset=0, lang="pl"):
+    return _localize_payload(_get_ps_fuses_impl(ps_code, search, limit, offset, lang), lang)
+
+
+def get_ps_relays(ps_code, search="", limit=100, offset=0, lang="pl"):
+    return _localize_payload(_get_ps_relays_impl(ps_code, search, limit, offset, lang), lang)
+
+
+def get_bom_catalog(query="", supplier="", category="", ps_code="", has_image="",
+                    limit=100, offset=0, lang="pl"):
+    return _localize_payload(
+        _get_bom_catalog_impl(query, supplier, category, ps_code, has_image,
+                              limit, offset, lang), lang)
+
+
+def find_bom_components_for_devices(device_codes, ps_code=None, lang="pl"):
+    return _localize_payload(
+        _find_bom_components_for_devices_impl(device_codes, ps_code, lang), lang)
 
 

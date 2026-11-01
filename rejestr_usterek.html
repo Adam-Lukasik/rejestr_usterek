@@ -1877,6 +1877,21 @@
             </div>
             <div id="dict-list-aliasy" style="display:flex; flex-direction:column; gap:6px; max-height:300px; overflow-y:auto;"></div>
           </div>
+
+          <!-- Tłumaczenia tekstów schematów E3 (zuken_translations) -->
+          <div class="detail-section-card" id="dict-terms-card">
+            <div class="section-card-title">
+              <span data-i18n="ui.dict.termsTitle">Tłumaczenia schematów</span>
+            </div>
+            <div style="font-size:11px; color:var(--text-muted); margin-bottom:10px;" data-i18n="ui.dict.termsHint"></div>
+            <div style="display:flex; gap:8px; margin-bottom:10px; flex-wrap:wrap; align-items:center;">
+              <button type="button" class="btn-secondary-action" id="terms-tab-unknown" style="padding:4px 10px; font-size:11.5px;" onclick="termsShowMissing(true)" data-i18n="ui.dict.termsMissing">Do tłumaczenia</button>
+              <button type="button" class="btn-secondary-action" id="terms-tab-all" style="padding:4px 10px; font-size:11.5px;" onclick="termsShowMissing(false)" data-i18n="ui.dict.termsAll">Wszystkie</button>
+              <input type="text" id="inp-terms-q" data-i18n-placeholder="ui.dict.termsSearchPh" placeholder="Szukaj terminu..." style="flex:1; min-width:160px; padding:5px 10px;" onkeydown="if(event.key==='Enter'){event.preventDefault();renderTerms();}">
+            </div>
+            <div id="dict-list-terms" style="display:flex; flex-direction:column; gap:8px; max-height:480px; overflow-y:auto;"></div>
+            <div id="dict-terms-note" style="font-size:11px; color:var(--text-muted); margin-top:8px; display:none;" data-i18n="ui.dict.termsReadonly"></div>
+          </div>
         </div>
       </div>
     </section>
@@ -6401,6 +6416,7 @@ function renderDictionaries() {
   }
 
   renderAliases();
+  renderTerms();
 }
 
 // Nazwy firmowe / aliasy asystenta (tabela zuken_query_aliases + wbudowane)
@@ -6448,6 +6464,104 @@ async function deleteAliasItem(phrase) {
   } catch (e) {
     showToast(e.message, 'error');
   }
+}
+
+// Tłumaczenia tekstów schematów (zuken_translations) — edycja tylko admin
+const TERMS_STATE = { missing: true };
+function _isAdmin() { return STATE.activeUser && STATE.activeUser.role === 'admin'; }
+
+function termsShowMissing(missing) {
+  TERMS_STATE.missing = missing;
+  renderTerms();
+}
+
+async function renderTerms() {
+  const box = document.getElementById('dict-list-terms');
+  if (!box) return;
+  const note = document.getElementById('dict-terms-note');
+  if (note) note.style.display = _isAdmin() ? 'none' : 'block';
+  const tabU = document.getElementById('terms-tab-unknown');
+  const tabA = document.getElementById('terms-tab-all');
+  if (tabU) tabU.style.fontWeight = TERMS_STATE.missing ? '800' : '400';
+  if (tabA) tabA.style.fontWeight = TERMS_STATE.missing ? '400' : '800';
+  const q = (document.getElementById('inp-terms-q') || {}).value || '';
+  const url = '/api/zuken/terms?limit=200' + (TERMS_STATE.missing ? '&missing=1' : '') +
+    (q ? '&q=' + encodeURIComponent(q) : '');
+  let res;
+  try {
+    res = await apiCall(url);
+  } catch (e) { box.innerHTML = `<div style="color:var(--text-muted); font-size:12px;">${escapeHtml(e.message)}</div>`; return; }
+  const items = res.items || [];
+  if (!items.length) {
+    box.innerHTML = `<div style="color:var(--text-muted); font-size:12px; padding:8px;">${escapeHtml(t('ui.dict.termsEmpty'))}</div>`;
+    return;
+  }
+  const ro = !_isAdmin();
+  if (TERMS_STATE.missing) {
+    box.innerHTML = items.map(it => `
+      <div style="padding:8px 10px; background:var(--bg-card-subtle); border:1px solid var(--border); border-radius:var(--radius-md);">
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+          <b style="font-size:12px; color:var(--text-main);">${escapeHtml(it.form)}</b>
+          <span class="tag-project" style="font-size:10px;">×${it.count}</span>
+        </div>
+        ${ro ? '' : `<div style="display:flex; gap:4px; margin-top:6px; flex-wrap:wrap;">
+          <input id="tt-pl-${it.form.replace(/[^a-z0-9]/g, '_')}" placeholder="PL" style="flex:1; min-width:90px; padding:3px 7px; font-size:11.5px;">
+          <input id="tt-en-${it.form.replace(/[^a-z0-9]/g, '_')}" placeholder="EN" style="flex:1; min-width:90px; padding:3px 7px; font-size:11.5px;">
+          <input id="tt-de-${it.form.replace(/[^a-z0-9]/g, '_')}" placeholder="DE" style="flex:1; min-width:90px; padding:3px 7px; font-size:11.5px;">
+          <button class="btn-primary-action" style="padding:3px 10px; font-size:11px;" onclick="saveTermFromUnknown('${escapeHtml(it.form).replace(/'/g, "\\'")}')">${escapeHtml(t('ui.dict.termsSave'))}</button>
+        </div>`}
+      </div>`).join('');
+    return;
+  }
+  box.innerHTML = items.map(it => `
+    <div style="padding:8px 10px; background:var(--bg-card-subtle); border:1px solid var(--border); border-radius:var(--radius-md);">
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+        <b style="font-size:12px; color:var(--text-main);">${escapeHtml(it.form)}</b>
+        <span style="font-size:10px; color:var(--text-muted);">${escapeHtml(it.kind || '')}${it.auto ? ' · auto' : ''}${it.source === 'local' ? ' · local' : ''}</span>
+      </div>
+      ${it.sample ? `<div style="font-size:10.5px; color:var(--text-muted); margin-top:2px;">${escapeHtml(it.sample)}</div>` : ''}
+      ${ro ? `<div style="font-size:11.5px; margin-top:4px;">PL: ${escapeHtml(it.pl || '—')} · EN: ${escapeHtml(it.en || '—')} · DE: ${escapeHtml(it.de || '—')}</div>`
+        : `<div style="display:flex; gap:4px; margin-top:6px; flex-wrap:wrap;">
+          <input id="tt-pl-${it.form.replace(/[^a-z0-9]/g, '_')}" value="${escapeHtml(it.pl || '')}" placeholder="PL" style="flex:1; min-width:80px; padding:3px 7px; font-size:11.5px;">
+          <input id="tt-en-${it.form.replace(/[^a-z0-9]/g, '_')}" value="${escapeHtml(it.en || '')}" placeholder="EN" style="flex:1; min-width:80px; padding:3px 7px; font-size:11.5px;">
+          <input id="tt-de-${it.form.replace(/[^a-z0-9]/g, '_')}" value="${escapeHtml(it.de || '')}" placeholder="DE" style="flex:1; min-width:80px; padding:3px 7px; font-size:11.5px;">
+          <button class="btn-primary-action" style="padding:3px 8px; font-size:11px;" onclick="saveTerm('${escapeHtml(it.form).replace(/'/g, "\\'")}', '${escapeHtml(it.kind || 'phrase')}')">${escapeHtml(t('ui.dict.termsSave'))}</button>
+          <button class="btn-secondary-action" style="padding:3px 8px; font-size:11px; color:var(--red);" onclick="deleteTerm('${escapeHtml(it.form).replace(/'/g, "\\'")}')">✕</button>
+        </div>`}
+    </div>`).join('');
+}
+
+async function _postTerm(form, kind) {
+  const id = form.replace(/[^a-z0-9]/g, '_');
+  const pl = (document.getElementById('tt-pl-' + id) || {}).value || '';
+  const en = (document.getElementById('tt-en-' + id) || {}).value || '';
+  const de = (document.getElementById('tt-de-' + id) || {}).value || '';
+  await apiCall('/api/zuken/terms', 'POST', { form, kind, pl, en, de });
+}
+
+async function saveTerm(form, kind) {
+  try {
+    await _postTerm(form, kind);
+    showToast(t('ui.dict.termsSaved'), 'success');
+  } catch (e) { showToast(e.message, 'error'); }
+}
+
+async function saveTermFromUnknown(form) {
+  try {
+    await _postTerm(form, 'phrase');
+    showToast(t('ui.dict.termsSaved'), 'success');
+    renderTerms();
+  } catch (e) { showToast(e.message, 'error'); }
+}
+
+async function deleteTerm(form) {
+  if (!confirm(t('ui.dict.confirmDeleteItem', { v: form }))) return;
+  try {
+    await apiCall('/api/zuken/terms?form=' + encodeURIComponent(form), 'DELETE');
+    showToast(t('ui.dict.termsRemoved'), 'success');
+    renderTerms();
+  } catch (e) { showToast(e.message, 'error'); }
+}
 }
 
 async function addDictionaryItem(key, inputId) {
@@ -8078,7 +8192,7 @@ function assistListCardHtml(lst) {
   const rows = items.map(it => `<div class="ent-link-row" data-ent-q="${escapeHtml(it.q)}" title="${escapeHtml(t('js.zuken.entLinkTitle', { v: it.q }))}">
       <span class="ent-row-code">${escapeHtml(it.q)}</span>
       <span class="ent-row-badge">${escapeHtml(it.badge || '')}</span>
-      <span class="ent-row-label">${escapeHtml(it.label || '')}</span>
+      <span class="ent-row-label"${origTitle(it, 'label')}>${escapeHtml(tr(it, 'label'))}</span>
       <span class="ent-row-sub">${escapeHtml(it.sub || '')}</span>
     </div>`).join('');
   return `<div id="zuken-assist-list" style="padding:12px 16px; background:linear-gradient(135deg, rgba(217,119,6,0.08), rgba(2,132,199,0.05)); border:1px solid rgba(217,119,6,0.35); border-radius:var(--radius-md);">
@@ -8473,7 +8587,7 @@ function renderDiagnosisResults(data) {
             <div style="display:flex; gap:8px; flex-wrap:wrap;">
               ${cl.relevant_outputs.map(out => `
                 <div style="padding:4px 10px; background:var(--bg-card); border:1px solid var(--border); border-radius:6px; font-family:var(--font-mono, monospace); font-size:12px;">
-                  <strong style="color:#4f46e5;">${escapeHtml(out.full_name)}</strong> (${t('js.zuken.maxCurrent')} <strong style="color:#16a34a;">${escapeHtml(out.max_current)}</strong>)
+                  <strong style="color:#4f46e5;"${origTitle(out, 'full_name')}>${escapeHtml(tr(out, 'full_name') || out.code)}</strong> (${t('js.zuken.maxCurrent')} <strong style="color:#16a34a;">${escapeHtml(out.max_current)}</strong>)
                 </div>
               `).join('')}
             </div>
@@ -8486,7 +8600,7 @@ function renderDiagnosisResults(data) {
             <div style="display:flex; gap:8px; flex-wrap:wrap;">
               ${cl.relevant_inputs.map(inp => `
                 <div style="padding:4px 10px; background:var(--bg-card); border:1px solid var(--border); border-radius:6px; font-family:var(--font-mono, monospace); font-size:12px;">
-                  <strong style="color:#0284c7;">${escapeHtml(inp.full_name || inp.code)}</strong> ${inp.num ? `<span style="color:var(--text-muted); font-size:11px;">(${t('js.zuken.pinLine')} ${escapeHtml(inp.num)})</span>` : ''}
+                  <strong style="color:#0284c7;">${escapeHtml(tr(inp, 'full_name') || inp.code)}</strong> ${inp.num ? `<span style="color:var(--text-muted); font-size:11px;">(${t('js.zuken.pinLine')} ${escapeHtml(inp.num)})</span>` : ''}
                 </div>
               `).join('')}
             </div>
@@ -8581,7 +8695,7 @@ function renderDiagnosisResults(data) {
                       </span>
                     </div>
                     <div style="font-size:15.5px; font-weight:800; color:var(--text-main);">
-                      ${t('js.zuken.sheetLabel', { v: escapeHtml(matchItem.sheet_number || String(matchItem.page_number)) })} <span style="color:var(--primary); font-weight:800;">${escapeHtml(matchItem.sheet_title || t('js.zuken.schematicFallback'))}</span>
+                      ${t('js.zuken.sheetLabel', { v: escapeHtml(matchItem.sheet_number || String(matchItem.page_number)) })} <span style="color:var(--primary); font-weight:800;">${escapeHtml(tr(matchItem, 'sheet_title') || t('js.zuken.schematicFallback'))}</span>
                     </div>
                     <div style="font-size:12px; color:var(--text-muted); margin-top:2px;">
                       ${t('js.zuken.schematicName')} <strong>${escapeHtml(matchItem.revision_name || matchItem.filename)}</strong> ${t('js.zuken.pageInPdf', { v: matchItem.page_number })}
@@ -8644,7 +8758,7 @@ function renderDiagnosisResults(data) {
                     <div>
                       <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px; margin-bottom:4px;">
                         <div style="font-size:13px; font-weight:800; color:var(--text-main);">
-                          ${t('js.zuken.sheetLabel', { v: escapeHtml(m.sheet_number || String(m.page_number)) })} <span style="color:var(--primary); font-weight:700;">${escapeHtml(m.sheet_title || t('js.zuken.schematicFallback'))}</span>
+                          ${t('js.zuken.sheetLabel', { v: escapeHtml(m.sheet_number || String(m.page_number)) })} <span style="color:var(--primary); font-weight:700;">${escapeHtml(tr(m, 'sheet_title') || t('js.zuken.schematicFallback'))}</span>
                         </div>
                         <span style="font-size:10px; font-weight:700; padding:1px 5px; border-radius:4px; background:${badgeBg}; border:1px solid ${badgeBorder}; color:${badgeText}; white-space:nowrap;">
                           ${revLabel}
@@ -8711,7 +8825,7 @@ function renderDiagnosisResults(data) {
           <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:12px; border-bottom:1px solid var(--border); padding-bottom:8px;">
             <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
               <span class="tag-project" style="font-size:12px; font-weight:700; background:rgba(37,99,235,0.12); color:var(--primary); border:1px solid rgba(37,99,235,0.3);">
-                ${escapeHtml(sigName)}
+                ${escapeHtml(((data.circuits_t || {})[sigName]) || sigName)}
               </span>
               ${isTopCircuit ? `
                 <span style="font-size:10.5px; font-weight:800; background:rgba(16,185,129,0.15); color:#059669; border:1px solid rgba(16,185,129,0.3); padding:2px 7px; border-radius:4px;">
@@ -10329,7 +10443,7 @@ async function loadZukenFusesList() {
             ${(w.far_ends || []).map(e => `<div data-fe="${escapeHtml(JSON.stringify(e))}" onclick="showWirePath(this)" style="font-size:10.5px; margin-top:1px; padding-left:21px; font-family:var(--font-mono, monospace); color:#16a34a; font-weight:700; cursor:pointer;" title="${escapeHtml(e.device)}">⇒ ${escapeHtml(e.clean || e.device)}${e.pin ? ':' + escapeHtml(e.pin) : ''}${(e.function || e.desc) ? ` <span style="font-weight:400; font-family:inherit; color:var(--text-muted); font-size:10px;">— ${escapeHtml(e.function || e.desc)}</span>` : ''}</div>`).join('')}
             ${w.external ? `<div style="font-size:10.5px; margin-top:1px; padding-left:21px;"><span class="badge" style="font-weight:700; background:rgba(217,119,6,0.12); color:#b45309; font-size:10px;">${escapeHtml(t('ui.zuken.fuseExternalHarness', { name: w.external }))}</span></div>` : ''}
           </div>`).join('')
-        : `<span style="font-weight:600; color:var(--text-muted);">${escapeHtml(item.circuits || t('js.zuken.circuitInstall'))}</span>`;
+        : `<span style="font-weight:600; color:var(--text-muted);"${origTitle(item, 'circuits')}>${escapeHtml(tr(item, 'circuits') || t('js.zuken.circuitInstall'))}</span>`;
 
       html += `
         <tr>
@@ -10338,7 +10452,9 @@ async function loadZukenFusesList() {
             ${item.device_code && item.device_code !== item.device_clean ? `<div style="font-size:11px; font-weight:normal; color:var(--text-muted);">${escapeHtml(item.device_code)}</div>` : ''}
           </td>
           <td style="white-space:nowrap;">
-            ${getFuseAmpBadge(String(item.device_clean || '').startsWith('FH') && item.rating ? '≤' + item.rating : item.rating)}
+            ${item.fuse_in
+              ? `<span style="font-family:var(--font-mono, monospace); font-weight:800; color:#d97706; margin-right:5px;" title="${escapeHtml(t('js.zuken.fuseInHolder'))}">${escapeHtml(item.fuse_in.clean)}</span>${item.fuse_in.rating ? getFuseAmpBadge(item.fuse_in.rating) : ''}`
+              : getFuseAmpBadge(/^F[HR]/.test(String(item.device_clean || '')) ? '' : item.rating)}
             <span style="color:var(--text-muted); margin:0 4px;">—</span>
             <span class="badge" style="font-weight:700; background:rgba(2,132,199,0.1); color:#0284c7;">${escapeHtml(item.fuse_type || 'UNI')}</span>
           </td>
@@ -10740,6 +10856,9 @@ function wireColorPair(colorText) {
     ['róż', '#ec4899'], ['roz', '#ec4899'], ['pink', '#ec4899'],
     ['pomar', '#f97316'], ['orange', '#f97316'],
     ['szar', '#9ca3af'], ['grau', '#9ca3af'], ['grey', '#9ca3af'], ['gray', '#9ca3af'],
+    ['rot', '#ef4444'], ['schwarz', '#1e293b'], ['blau', '#3b82f6'],
+    ['weiß', '#ffffff'], ['gelb', '#eab308'], ['braun', '#92400e'],
+    ['violett', '#8b5cf6'], ['lila', '#8b5cf6'], ['rosa', '#ec4899'],
   ];
   const hits = [];
   DEFS.forEach(([k, col]) => { const i = s.indexOf(k); if (i >= 0) hits.push([i, col]); });
@@ -10751,11 +10870,17 @@ function wireColorPair(colorText) {
 }
 
 // Wspólna etykieta przewodu: nr sieci/przewodu · nazwa sygnału (Motor 1) · kolor · przekrój · długość
+// Pola *_t = tłumaczenie wg języka UI (backend _localize_payload); oryginał w title.
+function tr(o, k) { return (o && o[k + '_t']) || (o ? o[k] : '') || ''; }
+function origTitle(o, k) {
+  return (o && o[k + '_t'] && o[k] && o[k + '_t'] !== o[k])
+    ? ` title="${escapeHtml(t('js.zuken.origPrefix', { v: o[k] }))}"` : '';
+}
 function wireLabelAttrs(h) {
   const cs = (h.cross_section || '').replace(/\s*mm²?$/i, '');
   const net = h.wire_number || h.signal || '';
-  const sname = (h.signal_name || '').trim();
-  return [net, (sname && sname !== net) ? sname : '', h.wire_color || '', cs ? cs + ' mm²' : '',
+  const sname = (tr(h, 'signal_name') || '').trim();
+  return [net, (sname && sname !== net) ? sname : '', tr(h, 'wire_color'), cs ? cs + ' mm²' : '',
     (h.length && h.length !== '0') ? fmtWireLength(h.length) : ''].filter(Boolean);
 }
 
@@ -10791,8 +10916,8 @@ function circuitEndHtml(e) {
     return circuitHopInline(h, partner);
   }).filter(Boolean).join(' ');
   const metaBits = [];
-  if (ml) metaBits.push(entText(endL) + (e.plug ? ` · ${escapeHtml(t('js.zuken.plugLabel'))} ${entText(e.plug.clean)} (${escapeHtml(e.plug.label)})` : ''));
-  if (e.function || e.desc) metaBits.push(escapeHtml(e.function || e.desc));
+  if (ml) metaBits.push(entText(endL) + (e.plug ? ` · ${escapeHtml(t('js.zuken.plugLabel'))} ${entText(e.plug.clean)} (${escapeHtml(tr(e.plug, 'label'))})` : ''));
+  if (e.function || e.desc) metaBits.push(escapeHtml(tr(e, 'function') || tr(e, 'desc')));
   if (ml && ml.max_current) metaBits.push(escapeHtml(ml.max_current));
   if (e.role === 'gnd' && e.shared > 0) metaBits.push(escapeHtml(t('js.zuken.sharedGnd', { n: e.shared })));
   const fe = { path: e.path || [], clean: e.clean, device: e.device, pin: e.pin, function: e.function || '' };
@@ -10806,11 +10931,12 @@ function circuitCardHtml(cp, query) {
   if (!cp || !cp.ok || !(cp.loads || []).length) return '';
   ZUKEN_STATE.lastCircuit = cp;
   const ev = cp.evpss;
-  const evHtml = ev ? ` <span style="display:inline-block; padding:1px 8px; border-radius:10px; background:rgba(37,99,235,0.12); color:#2563eb; font-size:11px; font-weight:700; vertical-align:1px;">⚡ ${escapeHtml(ev.code || '')}${ev.function ? ' · ' + escapeHtml(ev.function) : ''}${ev.max_current ? ' · ' + escapeHtml(ev.max_current) : ''}</span>` : '';
+  const evHtml = ev ? ` <span style="display:inline-block; padding:1px 8px; border-radius:10px; background:rgba(37,99,235,0.12); color:#2563eb; font-size:11px; font-weight:700; vertical-align:1px;">⚡ ${escapeHtml(ev.code || '')}${ev.function ? ' · ' + escapeHtml(tr(ev, 'function')) : ''}${ev.max_current ? ' · ' + escapeHtml(ev.max_current) : ''}</span>` : '';
   const rulesHtml = ((ev && ev.rules) || []).map(r =>
     ` <span title="${escapeHtml((r.actions || []).join('  |  '))}" style="display:inline-block; padding:1px 7px; border-radius:9px; background:rgba(217,119,6,0.12); color:#b45306; font-size:10.5px; font-weight:700; vertical-align:1px;">${escapeHtml((r.rule || '').split(':')[0])}</span>`).join('');
-  const moreHtml = (cp.more_signals || []).map(s =>
-    ` <button class="tag-project" style="cursor:pointer; border:none;" data-sig="${escapeHtml(s)}" onclick="applyZukenQuickTag(this.dataset.sig)">${escapeHtml(s)}</button>`).join('');
+  const _msT = cp.more_signals_t || [];
+  const moreHtml = (cp.more_signals || []).map((s, i) =>
+    ` <button class="tag-project" style="cursor:pointer; border:none;" data-sig="${escapeHtml(s)}" onclick="applyZukenQuickTag(this.dataset.sig)">${escapeHtml(_msT[i] || s)}</button>`).join('');
 
   const pinSecMeta = {
     feed:  { icon: '⚡', label: t('js.zuken.feedPath'),  color: '#b45309', bg: 'rgba(217,119,6,0.06)',   border: '#d97706' },
@@ -10841,7 +10967,7 @@ function circuitCardHtml(cp, query) {
         byPin[pin])).join('');
     }).join('');
     return `<div style="margin-bottom:10px;">
-      <div style="font-weight:800; font-size:13px; color:var(--text-main); font-family:var(--font-mono, monospace);">${rv ? '🔁' : '🔌'} ${escapeHtml(rv ? rv.relay_clean : ld.clean)}${(ld.function || ld.desc) ? ` <span style="font-family:inherit; font-weight:600; font-size:11.5px; color:var(--text-muted);">— ${escapeHtml(ld.function || ld.desc)}</span>` : ''}</div>
+      <div style="font-weight:800; font-size:13px; color:var(--text-main); font-family:var(--font-mono, monospace);">${rv ? '🔁' : '🔌'} ${escapeHtml(rv ? rv.relay_clean : ld.clean)}${ld.fuse_label ? ` <span style="color:#d97706;">→ ${escapeHtml(ld.fuse_label)}</span>` : ''}${(ld.function || ld.desc) ? ` <span style="font-family:inherit; font-weight:600; font-size:11.5px; color:var(--text-muted);"${origTitle(ld, 'function')}>— ${escapeHtml(tr(ld, 'function') || tr(ld, 'desc'))}</span>` : ''}</div>
       ${pinsHtml}${coilHtml}
     </div>`;
   }).join('');
@@ -10850,7 +10976,7 @@ function circuitCardHtml(cp, query) {
 
   return `<div style="padding:12px 16px; background:linear-gradient(135deg, rgba(2,132,199,0.08), rgba(22,163,74,0.06)); border:1px solid rgba(2,132,199,0.35); border-radius:var(--radius-md);">
     <div style="position:sticky; top:0; z-index:5; margin:-13px -17px 8px; padding:12px 16px 8px; background:linear-gradient(135deg, rgba(2,132,199,0.10), rgba(22,163,74,0.08)), var(--bg-card, #fff); border-radius:var(--radius-md) var(--radius-md) 0 0; border-bottom:1px solid rgba(2,132,199,0.25); display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px;">
-      <div style="font-size:12px; font-weight:800; color:#0284c7; text-transform:uppercase; letter-spacing:0.5px;">⚡ ${escapeHtml(t('js.zuken.circuitTitle'))}: ${escapeHtml((cp.resolved && cp.resolved.label) || query)}${evHtml}${rulesHtml}</div>
+      <div style="font-size:12px; font-weight:800; color:#0284c7; text-transform:uppercase; letter-spacing:0.5px;">⚡ ${escapeHtml(t('js.zuken.circuitTitle'))}: ${escapeHtml((cp.resolved && (cp.resolved.label_t || cp.resolved.label)) || query)}${evHtml}${rulesHtml}</div>
       <div style="display:flex; gap:6px;">
         <button type="button" onclick="showCircuitChecklist()" style="padding:5px 11px; font-size:11.5px; font-weight:700; border:1px solid var(--border); border-radius:8px; background:var(--bg-card); color:var(--text-main); cursor:pointer;">📋 ${escapeHtml(t('js.zuken.checklistBtn'))}</button>
         <button type="button" onclick="showCircuitDiagram()" style="padding:5px 11px; font-size:11.5px; font-weight:700; border:1px solid var(--border); border-radius:8px; background:var(--bg-card); color:var(--text-main); cursor:pointer;">⤢ ${escapeHtml(t('js.zuken.diagramEnlarge'))}</button>
@@ -10925,7 +11051,7 @@ function showCircuitChecklist() {
             dev: h.to_clean, seg: h, isEnd
           });
         });
-        const plugTxt = src.plug ? ` · ${escapeHtml(t('js.zuken.plugLabel'))} ${escapeHtml(src.plug.clean)} (${escapeHtml(src.plug.label)})` : '';
+        const plugTxt = src.plug ? ` · ${escapeHtml(t('js.zuken.plugLabel'))} ${escapeHtml(src.plug.clean)} (${escapeHtml(tr(src.plug, 'label'))})` : '';
         const stepsHtml = nodes.map(s => {
           n++;
           const segTxt = s.seg ? circuitSegDesc(s.seg) : '';
@@ -11882,11 +12008,11 @@ async function showConnFace(el, ev) {
         const cs = (c.cross_section || '').replace(/\s*mm²?$/i, '');
         const tgtDev = (c.target_device || '').split('-').pop() || '';
         const tgt = tgtDev + (c.target_pin ? ':' + c.target_pin : '');
-        const tgtDesc = (c.target_desc || '').split('→').pop().trim();
+        const tgtDesc = (tr(c, 'target_desc') || '').split('→').pop().trim();
         return `<tr style="${hot ? 'background:rgba(2,132,199,0.12); font-weight:700;' : ''}">
           <td style="padding:1px 6px; font-family:var(--font-mono,monospace); font-weight:700; white-space:nowrap;">${escapeHtml(String(p.pin))}</td>
           <td style="padding:1px 6px; font-family:var(--font-mono,monospace); white-space:nowrap;"><span style="display:inline-block; width:11px; height:4px; border-radius:2px; background:${circuitWireStroke(c.wire_color)}; margin-right:4px; vertical-align:middle;"></span>${entLink(c.wire_number || c.signal || '')}</td>
-          <td style="padding:1px 6px; font-size:10px; white-space:nowrap;">${escapeHtml(c.signal_name || '')}</td>
+          <td style="padding:1px 6px; font-size:10px; white-space:nowrap;"${origTitle(c, 'signal_name')}>${escapeHtml(tr(c, 'signal_name'))}</td>
           <td style="padding:1px 6px; font-size:9.5px; color:var(--text-muted); white-space:nowrap;">${escapeHtml([c.wire_color, cs ? cs + ' mm²' : ''].filter(Boolean).join(' · '))}</td>
           <td style="padding:1px 6px; font-family:var(--font-mono,monospace); font-size:10px; white-space:nowrap; text-align:right;">${(c.length && c.length !== '0') ? escapeHtml(fmtWireLength(c.length)) : ''}</td>
           <td style="padding:1px 6px; font-family:var(--font-mono,monospace); font-size:10px; white-space:nowrap;">→ ${tgtDev ? entLink(tgtDev, tgt) : escapeHtml(tgt)}${tgtDesc ? ` <span style="color:var(--text-muted); font-family:inherit; font-size:9px;">${escapeHtml(tgtDesc)}</span>` : ''}</td>
@@ -12085,14 +12211,14 @@ function circuitSvgForLoad(ld, connMeta, opts) {
   // funkcja i liczba przewodów w węzłach pośrednich (łączenia/Splice)
   const hopMeta = {};
   ((ld && ld.pins) || [feedPin, gndPin]).forEach(p => ((p && p.ends) || []).forEach(e => (e.path || []).forEach(h => {
-    hopMeta[h.to + ':' + h.to_pin] = { fn: h.to_function || '', deg: h.to_degree || 0, barh: h.bar_holder || '' };
+    hopMeta[h.to + ':' + h.to_pin] = { fn: tr(h, 'to_function'), deg: h.to_degree || 0, barh: h.bar_holder || '' };
   })));
 
   const trunk = [];
   if (src || thruEnd) {
     if (src) {
       trunk.push({ dev: src.device, pin: src.pin, clean: src.clean, edge: null, role: src.role,
-                   info: src.function || src.desc || '', ml: src.module_label || null });
+                   info: tr(src, 'function') || tr(src, 'desc') || '', ml: src.module_label || null });
       [...(src.path || [])].reverse().forEach(h =>
         trunk.push({ dev: h.from, pin: h.from_pin, clean: h.from_clean, edge: h, role: '', info: '' }));
     } else {
@@ -12115,7 +12241,7 @@ function circuitSvgForLoad(ld, connMeta, opts) {
       mid.role = ''; mid.info = ld.function || ld.desc || '';
       trunk.push({ dev: ld.device, pin: downPin.pin, clean: ld.clean,
                    edge: { internal: 'fuse',
-                           internal_label: `${ld.clean} ${feedPin.pin}\u2192${downPin.pin}` },
+                           internal_label: `${ld.fuse_label || ld.clean} ${feedPin.pin}\u2192${downPin.pin}` },
                    role: '', info: '' });
       (downEnd.path || []).forEach(h =>
         trunk.push({ dev: h.to, pin: h.to_pin, clean: h.to_clean, edge: h, role: '', info: '' }));
@@ -12154,7 +12280,7 @@ function circuitSvgForLoad(ld, connMeta, opts) {
           dev: h.relay_dev || '', pin: '',
           clean: (rc && rc.clean) || (h.internal_label || '').split(' ')[0] || nd.clean,
           edge: h, role: 'relay',
-          info: (rc && rc.function) || '',
+          info: (rc && tr(rc, 'function')) || '',
           _relay: {
             // a = węzeł nad symbolem, b = pod symbolem (strony styku)
             a: { dev: prev ? prev.dev : '', clean: prev ? prev.clean : '', pin: prev ? prev.pin : '' },
@@ -12451,7 +12577,7 @@ function circuitSvgForLoad(ld, connMeta, opts) {
     const nodeTitle = (nd.ml ? `${nd.ml.module} · ${nd.ml.code}` : `${ownSfx}${nd.pin && !nd.pins ? ':' + nd.pin : ''}`) + (nd.mate ? ` ⇄ ${nd.mate}` : '');
     const hm = hopMeta[nd.dev + ':' + nd.pin] || {};
     const midInfo = nd.role === '' ? [hm.fn, hm.deg > 2 ? t('js.zuken.spliceWires', { n: hm.deg }) : ''] : [];
-    const nodeInfo = nd.ml ? [nd.ml.function, `${nd.clean}:${nd.pin}`].filter(Boolean).join(' · ')
+    const nodeInfo = nd.ml ? [tr(nd.ml, 'function'), `${nd.clean}:${nd.pin}`].filter(Boolean).join(' · ')
       : [nd.info, ...midInfo, pinFrac, cm.type || cm.article || cm.supplier || ''].filter(Boolean).join(' · ');
     svg += `<text x="${x + 8}" y="${y + 15}" font-size="11" font-weight="700" fill="${fg}" font-family="monospace">${rs.icon ? rs.icon + ' ' : ''}${escapeHtml(nodeTitle)}</text>`;
     if (nodeInfo) svg += `<text x="${x + 8}" y="${y + 28}" font-size="9" fill="${nd.role === 'gnd' ? '#cbd5e1' : 'var(--text-muted, #64748b)'}">${escapeHtml(String(nodeInfo).slice(0, 46))}</text>`;
@@ -12541,7 +12667,7 @@ function circuitSvgForLoad(ld, connMeta, opts) {
     svg += `<rect x="${stubX}" y="${y - 15}" width="${stubW}" height="30" rx="6" fill="var(--bg-card, #fff)" stroke="${rm.color}" stroke-width="1.4" stroke-dasharray="3 2"/>`;
     svg += `<text x="${stubX + 7}" y="${y - 1}" font-size="10" font-weight="700" fill="${rm.color}" font-family="monospace">${DEV_KIND_EMOJI[eKind] || rm.icon} ${escapeHtml(stubTitle.slice(0, 40))}</text>`;
     const sub = (ml && e.role === 'source')
-      ? [ml.function, eSfx + (e.pin ? ':' + e.pin : ''), wireLbl].filter(Boolean).join(' · ')
+      ? [tr(ml, 'function'), eSfx + (e.pin ? ':' + e.pin : ''), wireLbl].filter(Boolean).join(' · ')
       : [e.function || e.desc || '', wireLbl].filter(Boolean).join(' · ');
     if (sub) svg += `<text x="${stubX + 7}" y="${y + 11}" font-size="8.5" fill="var(--text-muted, #64748b)">${escapeHtml(sub.slice(0, 50))}</text>`;
     svg += '</g>';
@@ -12644,7 +12770,7 @@ function circuitDiagramPartsHtml(cp) {
     }).join('');
     if (!svg && !coilsHtml) return '';
     return `<div style="margin-bottom:16px;">
-      <div style="font-size:12px; font-weight:800; color:var(--text-main); margin-bottom:4px; font-family:var(--font-mono,monospace);">${rv ? '🔁' : '🔌'} ${escapeHtml(dspName)}${(ld.function || ld.desc) ? ` <span style="font-weight:500; color:var(--text-muted);">— ${escapeHtml(ld.function || ld.desc)}</span>` : ''}</div>
+      <div style="font-size:12px; font-weight:800; color:var(--text-main); margin-bottom:4px; font-family:var(--font-mono,monospace);">${rv ? '🔁' : '🔌'} ${escapeHtml(dspName)}${ld.fuse_label ? ` <span style="color:#d97706;">→ ${escapeHtml(ld.fuse_label)}</span>` : ''}${(ld.function || ld.desc) ? ` <span style="font-weight:500; color:var(--text-muted);">— ${escapeHtml(ld.function || ld.desc)}</span>` : ''}</div>
       ${svg}
       ${coilsHtml}
     </div>`;

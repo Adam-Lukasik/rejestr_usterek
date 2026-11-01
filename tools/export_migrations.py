@@ -23,7 +23,12 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MIGRATIONS_DIR = os.path.join(BASE_DIR, "migrations")
 
 # Tabele zarządzane centralnie — ich pełna zawartość jest eksportowana do paczki.
-SYSTEM_TABLES = ("zuken_conn_pinouts", "zuken_query_aliases")
+SYSTEM_TABLES = ("zuken_conn_pinouts", "zuken_query_aliases", "zuken_translations")
+
+# Wpisy dodane lokalnie w UI (source='local') przetrwają update — migracja
+# kasuje tylko wiersze paczkowe; na eksportie wszystko normalizowane do 'core'.
+TABLE_DELETE_WHERE = {"zuken_translations": " WHERE COALESCE(source, 'core') != 'local'"}
+TABLE_ROW_OVERRIDES = {"zuken_translations": {"source": "core"}}
 
 # Dane zmieniane automatycznie przy imporcie/uzupełnianiu — pomijane w porównaniu
 # (nie chcemy wymuszać migracji przez same timestampy).
@@ -52,7 +57,12 @@ def export_table(conn, table):
     ddl = (ddl[0] if ddl else f"CREATE TABLE {table} ({', '.join(cols)})")
     ddl = re.sub(r"^\s*CREATE TABLE", "CREATE TABLE IF NOT EXISTS", ddl, count=1)
     rows = conn.execute(f"SELECT {', '.join(cols)} FROM {table}").fetchall()
-    return ddl, cols, [tuple(r) for r in rows]
+    rows = [tuple(r) for r in rows]
+    over = TABLE_ROW_OVERRIDES.get(table)
+    if over:
+        rows = [tuple(over.get(cols[i], r[i]) for i in range(len(cols)))
+                for r in rows]
+    return ddl, cols, rows
 
 
 def _compare_key(cols, rows):
@@ -71,7 +81,7 @@ def generate_sql(exported):
     ]
     for table, ddl, cols, rows in exported:
         lines.append(ddl.rstrip(";") + ";")
-        lines.append(f"DELETE FROM {table};")
+        lines.append(f"DELETE FROM {table}{TABLE_DELETE_WHERE.get(table, '')};")
         for row in rows:
             vals = ", ".join(_sql_literal(v) for v in row)
             lines.append(f"INSERT OR REPLACE INTO {table} ({', '.join(cols)}) VALUES ({vals});")

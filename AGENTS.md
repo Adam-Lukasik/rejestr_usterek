@@ -188,6 +188,35 @@ Wersja wielojęzykowa: `SUPPORTED_LANGS = ("pl", "en", "de")`, tłumaczenia w
   łączy BOM-y wszystkich projektów i alfabetycznie wygrywał cudzy kod
   (=CAB+BSI-FH15 z Walii zamiast =CAB+TWR-FH15 z EoE → holder_real bez
   przewodów).
+- Oprawki -FH/-FR vs osadzony bezpiecznik: `rating` wiersza oprawki w
+  `zuken_ps_fuses` to KATALOGOWY limit gniazda sparsowany z opisu
+  ('up to 30A' w 'FUSE HOLDER ... 12/24VDC'), NIE prąd bezpiecznika.
+  Adam chce widzieć tylko faktyczny element: `_fuse_holder_fuses()`
+  daje mapę oprawka→-F (odwrotność `rails['holders']` + dokładny
+  holder_code istniejący w adj) i `ratings` clean→prąd. `trace_circuit`
+  post-procesem podmienia `internal_label` krawędzi 'fuse' na 'F19 20A',
+  dokłada `ld['fuse_label']` (frontend: etykieta scalonego pinu +
+  nagłówki karty/diagramu), tytuł zapytania o oprawkę to 'FH15 → F19 20A
+  (obwody)' i tnie 'up to xA' z opisów oprawek (`_strip_holder_rating_text`
+  na ld/e.function, e.desc, hop.to_function, conn_meta). W `get_ps_fuses`
+  wiersz oprawki dostaje `fuse_in` (odwrotność holder_real) — frontend
+  pokazuje 'F19 20A' zamiast '≤30A'; opisy oprawek i holder_description
+  też czyszczone.
+- Tłumaczenia tekstów schematu (sygnały/funkcje/arkusze/kolory): tabela
+  `zuken_translations` (forma→pl/en/de, kind=phrase/token/jargon,
+  source=core/local) — display-time `_localize_payload` dokłada pola `*_t`
+  do odpowiedzi API (wrappery nad `*_impl` na końcu zuken_service.py;
+  whitelist `_LOCALIZE_KEYS`, bez `description`/`signal`; `conn_meta` bez
+  `desc`/`label`). `translate_term`: fraza→n-gram→tokeny; kody z cyframi
+  i żargon wprost; ALL-CAPS zachowane; miss → `zuken_term_unknown`
+  (lokalna kolejka „Do tłumaczenia" w Słownikach, edycja admin:
+  `/api/zuken/terms`). Seed: `tools/author_terms_seed.py` →
+  `data/terms_seed.json` → `tools/seed_terms.py`; eksport przez
+  `SYSTEM_TABLES` + `DELETE_WHERE`/`TABLE_ROW_OVERRIDES` w
+  export_migrations (wpisy `local` przetrwają update). Frontend: `tr()`,
+  `origTitle()`. Wyszukiwanie po tłumaczonych nazwach: `_term_token_expand`
+  w `_query_token_groups`. `explain_device_code` dla `de` tłumaczy
+  `desc_en` słownikiem (glossary nie ma desc_de).
 - Nowe typy bazy wiedzy: tablica `KB_TYPES` w HTML + obsługa w backendzie.
 - Ścieżki plików KB: zawsze przez `zuken_service.resolve_kb_filepath(..., heal_db=True)`
   — naprawia ścieżki po przeniesieniu katalogu projektu.
