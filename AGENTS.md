@@ -42,9 +42,11 @@ Wersja wielojęzykowa: `SUPPORTED_LANGS = ("pl", "en", "de")`, tłumaczenia w
 - **Migracje danych:** `migrations/NNNN_*.sql` w paczce, aplikowane przez
   `_run_migrations()` w `init_db` → tabela `schema_migrations`. Skrypty idempotentne;
   `tools/export_migrations.py` eksportuje tabele systemowe (`zuken_conn_pinouts`,
-  `zuken_query_aliases` — lista `SYSTEM_TABLES`) z dev-bazy jako
+  `zuken_query_aliases`, `zuken_translations` — lista `SYSTEM_TABLES`) z dev-bazy jako
   `CREATE IF NOT EXISTS` + `DELETE`+`INSERT` — zmiany w UI u Adama lecą do
-  wszystkich baz z aktualizacją.
+  wszystkich baz z aktualizacją. Uwaga: pełny DELETE na pinoutach/aliasach
+  usuwa wiersze dopisane lokalnie w innej bazie — przed update na obcej bazie
+  zrzut przez `tools/zabezpiecz_systemowe.py dump|diff|restore`.
 - **Delta Bazy wiedzy:** `tools/kb_push.py --dest \\NAS\RejestrUsterek` wysyła
   zmiany do `<udział>/kb/` + `kb_manifest.json`; klient `POST /api/kb-sync`
   (przycisk w ustawieniach backupu) dociąga deltę (stan w `data/.kb_sync_state.json`,
