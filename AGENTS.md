@@ -201,9 +201,38 @@ Wersja wielojęzykowa: `SUPPORTED_LANGS = ("pl", "en", "de")`, tłumaczenia w
   nagłówki karty/diagramu), tytuł zapytania o oprawkę to 'FH15 → F19 20A
   (obwody)' i tnie 'up to xA' z opisów oprawek (`_strip_holder_rating_text`
   na ld/e.function, e.desc, hop.to_function, conn_meta). W `get_ps_fuses`
-  wiersz oprawki dostaje `fuse_in` (odwrotność holder_real) — frontend
-  pokazuje 'F19 20A' zamiast '≤30A'; opisy oprawek i holder_description
-  też czyszczone.
+  wiersz oprawki scala się z wierszem jej bezpiecznika NIEZALEŻNIE od
+  prądu (stary warunek 'różny rating = osobny bezpiecznik' był błędny —
+  rating oprawki to limit), więc FH15/FH1 wsiąkają w F19/F20: wiersz
+  bezpiecznika dostaje holder_article + obwody oprawki gdy miał tylko
+  generyczne 'Obwód instalacji'. Niesparowane oprawki zostają jako
+  `is_holder` (+ew. `fuse_in` z odwrotności holder_real) — frontend
+  rysuje chip 'gniazdo bezpiecznika' zamiast badge'a prądu/typu; opisy
+  oprawek i holder_description też czyszczone.
+- Pozycje bezpieczników w skrzynkach NIEWIDOCZNE w raporcie połączeń
+  (boxy COMMS IGN/PERM na str. 42 PS011871 — raport agreguje wyjścia do
+  -SP31/-SP32): `_pdf_page_text_positions` (tokeny z XY: etykiety + prądy
+  'xA' + frazy CAPS jak 'COMMS IGN' — cache `zuken_pdf_textpos`, format
+  {'v':2,'items':...}, zapis toleruje lock) + `_pdf_fuse_boxes` (pasmo
+  prądów w jednym y → split po przerwie x>40 na osobne boxy; tylko
+  standardowe prądy z `_STD_AMPS`; >=3 pozycje; out_dev = najbliższa
+  etykieta -X/-RT/-SP w kolumnie poniżej, ale NIE -FH/-FR/-U/-F — to
+  modelowane oprawki). `_populate_ps_box_fuses` (w generate_...):
+  `zuken_ps_box_fuses` z nazwą boxa z opisów przy wyjściach (out_desc
+  'COMMS IGN'/'COMMS PERM', fallback sygnał; suffiks -N przy kolizji).
+  Komórka = litera NAD kolumną + cyfra POD nią (końce gniazda siatki
+  A-F×1-6 → 'A1'..'F6'); dopasowanie POZYCYJNE i-ty znak→i-ta kolumna
+  (okno odległości pudłuje); przypisanie kolumna→etykieta wyjścia jest
+  GLOBALNE `_min_cost_pairs` (sąsiednia etykieta bywa bliższa: prąd
+  przesunięty w lewo symbolu — bez tego poz.2 łapała -X202 zamiast
+  -X203); feed/out w pionie ≤160, etykiety '-X414#1' łapane z '#'.
+  Wiersze w get_ps_fuses: `is_box_fuse`, clean 'COMMS IGN A1', wires z
+  out_dev (sufiks-match w conn_devs), circuits = sygnał wyjścia.
+  `trace_circuit` rozwiązuje 'COMMS IGN A1'/'COMMS IGN 1' → seed
+  out_dev (X206), label 'COMMS IGN A1 5A → KL 15 COMMS'. Frontend: chip
+  'bezpiecznik w skrzynce' + klik→obwód. Diagnostyka pokrycia:
+  `tools/inventory_fuses.py [PS]`. Sortowanie zestawienia: klik w
+  nagłówki (sortZukenFuses, cykl asc→desc→domyślne, prąd numerycznie).
 - Tłumaczenia tekstów schematu (sygnały/funkcje/arkusze/kolory): tabela
   `zuken_translations` (forma→pl/en/de, kind=phrase/token/jargon,
   source=core/local) — display-time `_localize_payload` dokłada pola `*_t`

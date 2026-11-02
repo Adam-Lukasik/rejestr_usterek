@@ -510,6 +510,31 @@ def init_zuken_tables():
             PRIMARY KEY (schematic_id, page_number)
         );
     """)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS zuken_pdf_textpos (
+            schematic_id INTEGER,
+            page_number INTEGER,
+            file_mtime REAL,
+            tokens_json TEXT,
+            PRIMARY KEY (schematic_id, page_number)
+        );
+    """)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS zuken_ps_box_fuses (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ps_code TEXT,
+            box_name TEXT,
+            cell TEXT,
+            rating TEXT,
+            out_dev TEXT,
+            out_signal TEXT,
+            feed_label TEXT,
+            page_number INTEGER,
+            pos_x REAL,
+            pos_y REAL,
+            confidence TEXT
+        );
+    """)
 
     # Tabele dla zestawienia materiałowego BOM (Bill of Material) i artykułów
     cur.execute("""
@@ -6182,6 +6207,99 @@ def get_available_ps_projects(lang="pl"):
     return result
 
 
+def _populate_ps_box_fuses(cur, ps_code):
+    """Pozycje bezpieczników w skrzynkach niewidoczne w raporcie połączeń
+    (np. box COMMS FUSE — raport agreguje je do splice'ów -SP). Wykrywane
+    geometrycznie na stronach aktywnego schematu; nazwa skrzynki z
+    dominującej rodziny sygnałów wyjść (COMMS IGN vs COMMS PERM)."""
+    # schematy PS faktycznie zawierajace symbole -F (nie polegamy na
+    # is_active — u Walii aktywna jest datasheet wtyczki, nie plansza)
+    _bschems = cur.execute("""
+        SELECT s.id, s.filepath, s.file_mtime FROM zuken_pdf_schematics s
+        WHERE COALESCE(s.doc_kind,'schematic')='schematic' AND s.ps_code=?
+          AND EXISTS (SELECT 1 FROM zuken_pdf_symbols y
+                      WHERE y.schematic_id=s.id
+                        AND y.symbol_name LIKE '-F%')
+        ORDER BY s.is_active DESC, s.id DESC""", (ps_code,)).fetchall()
+    if not _bschems:
+        return
+    # sygnał na urządzeniu wyjściowym (z raportów tego PS; klucz = sufiks
+    # kodu, bo etykiety na schemacie są gołe: -X206 -> 'X206')
+    _sig_of = {}
+    for fd, td, sn, s in cur.execute("""
+        SELECT c.from_device, c.to_device, c.signal_name, c.signal
+        FROM zuken_connections c JOIN zuken_projects p
+          ON c.project_id = p.id
+        WHERE p.ps_codes = ?""", (ps_code,)):
+        for dv in (fd, td):
+            if dv:
+                dk = dv.rsplit('-', 1)[-1].rstrip("'\"")
+                if dk not in _sig_of:
+                    _sig_of[dk] = sn or s or ""
+    boxes_all = []
+    for _bschem in _bschems:
+        _bpath = resolve_kb_filepath(_bschem["filepath"], heal_db=True)
+        if not _bpath or not os.path.exists(_bpath):
+            continue
+        _bpg = [r[0] for r in cur.execute("""
+            SELECT page_number FROM zuken_pdf_sheets
+            WHERE schematic_id = ? AND raw_text LIKE '%A%'""",
+            (_bschem["id"],)).fetchall()]
+        for pg in _bpg:
+            for bx in _pdf_fuse_boxes(_bschem["id"], _bpath, pg,
+                                      _bschem["file_mtime"]):
+                bx['schem_id'] = _bschem["id"]
+                boxes_all.append(bx)
+
+    def _out_sig(dev):
+        return _sig_of.get((dev or '').lstrip('-').rstrip("'\""), '')
+
+    # nazwa boxa z opisu wydrukowanego przy złączach wyjść na schemacie
+    # ('COMMS IGN' / 'COMMS PERM FEED'), fallback: sygnał z raportu;
+    # tej samej nazwie dokładamy licznik żeby nie skleić dwóch skrzynek
+    name_cnt = {}
+    for bx in boxes_all:
+        words = [w.upper() for c in bx['cells']
+                 for w in (c.get('out_desc') or '').split()]
+        if not words:
+            sigs = [_out_sig(c['out_dev']) for c in bx['cells']]
+            words = [w.upper() for s in sigs for w in (s or '').split()]
+        words = [w for w in words if w not in ('FEED', 'GN', 'GND')]
+        common = [w for w in dict.fromkeys(words) if words.count(w) >= 2]
+        nm = ' '.join(common[:2]) or 'BOX'
+        name_cnt[nm] = name_cnt.get(nm, 0) + 1
+        bx['name'] = nm + (' p{}'.format(bx['page']) if nm == 'BOX' else
+                           ('-{}'.format(name_cnt[nm])
+                            if name_cnt[nm] > 1 else ''))
+        for c in bx['cells']:
+            c['out_signal'] = _out_sig(c['out_dev'])
+    cur.execute("DELETE FROM zuken_ps_box_fuses WHERE ps_code = ?;",
+                (ps_code,))
+    seen_keys = set()
+    for bx in boxes_all:
+        seen_cells = set()
+        for i, c in enumerate(bx['cells'], 1):
+            # litera+cyfra z końców gniazda ('A1'); duplikat/brak → indeks
+            if not c['cell'] or c['cell'] in seen_cells:
+                c['cell'] = str(i)
+            seen_cells.add(c['cell'])
+            # ten sam box na kilku dokumentach PS → jeden wiersz
+            dk = (bx['name'], c['cell'], c['rating'], c['out_dev'])
+            if dk in seen_keys:
+                continue
+            seen_keys.add(dk)
+            cur.execute("""
+                INSERT INTO zuken_ps_box_fuses
+                (ps_code, box_name, cell, rating, out_dev,
+                 out_signal, feed_label, page_number, pos_x,
+                 pos_y, confidence)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                (ps_code, bx['name'], c['cell'], c['rating'],
+                 c['out_dev'], c.get('out_signal', ''),
+                 c['feed_label'], bx['page'], c['x'], c['y'],
+                 'high' if c['out_dev'] else 'low'))
+
+
 def generate_ps_technical_summaries(ps_code, lang="pl"):
     """
     Ekstrahuje i generuje do bazy SQLite zestawienia dla wybranego projektu PS:
@@ -6562,6 +6680,8 @@ def generate_ps_technical_summaries(ps_code, lang="pl"):
                 circuits, details_json
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
         """, fuse_inserts)
+
+    _populate_ps_box_fuses(cur, ps_code)
 
     # ═══════════════════════════════════════════════════════════════
     # 3. GENEROWANIE ZESTAWU PRZEKAŹNIKÓW
@@ -8348,6 +8468,37 @@ def _trace_circuit_impl(ps_code, query, lang="pl"):
                     dev_nodes.setdefault(ndev, set()).add(npin)
             if alt and dev_nodes:
                 pin_q = ""
+    # pozycja bezpiecznika w skrzynce niewidoczna w raporcie połączeń
+    # ('COMMS IGN A1' — wykryta geometrią PDF): rozwiąż na złącze
+    # wyjściowe jej toru; etykieta 'COMMS IGN A1 5A' trafia do tytułu.
+    box_fuse_label = ""
+    if dev_q and not dev_nodes:
+        try:
+            _qd = re.sub(r"\b[A-Z](\d+)\b", r"\1", dev_q)  # 'A1'->'1'
+            _bf = cur.execute("""
+                SELECT box_name, cell, rating, out_dev, out_signal
+                FROM zuken_ps_box_fuses
+                WHERE (? = '' OR ps_code = ?)
+                  AND (UPPER(box_name || ' ' || cell) IN (?, ?)
+                       OR UPPER(box_name || ' ' || cell)
+                          = UPPER(? || ' ' || ?))
+                ORDER BY CASE WHEN out_dev != '' THEN 0 ELSE 1 END, id
+                LIMIT 1""", (ps_code or "", ps_code or "", dev_q, _qd,
+                             dev_q, pin_q)).fetchone()
+        except Exception:
+            _bf = None
+        if _bf is not None:
+            box_fuse_label = "{} {} {}".format(
+                _bf["box_name"], _bf["cell"] or "?",
+                _bf["rating"] or "").strip()
+            if _bf["out_signal"]:
+                box_fuse_label += " → " + _bf["out_signal"]
+            if _bf["out_dev"]:
+                dev_q = clean_device_code(_bf["out_dev"]).upper()
+                pin_q = ""
+                for (ndev, npin) in adj.keys():
+                    if (ndev or "").split("-")[-1].upper() == dev_q:
+                        dev_nodes.setdefault(ndev, set()).add(npin)
     # przekaźnik/stycznik spoza raportu połączeń ('K1' w Walii — styki to
     # osobne zaciski RT, cewka osobne złącze): zasiej pierwszy styk
     # roboczy — tor przejdzie przez styk, a sekcja cewki dołączy się
@@ -8558,7 +8709,8 @@ def _trace_circuit_impl(ps_code, query, lang="pl"):
                     "label": func_label or (dev_q + ((":" + pin_q) if pin_q else ""))}
     elif dev_nodes:
         resolved = {"kind": "device",
-                    "label": func_label or (dev_q + ((":" + pin_q) if pin_q else ""))}
+                    "label": func_label or box_fuse_label
+                             or (dev_q + ((":" + pin_q) if pin_q else ""))}
         for ndev in sorted(dev_nodes, key=_natural_sort_key):
             pins = sorted(dev_nodes[ndev], key=_natural_sort_key)
             if pin_q:
@@ -9711,6 +9863,74 @@ def _pdf_page_label_positions(schem_id, filepath, page_num, file_mtime=None):
     return items
 
 
+_PDF_PAGE_TEXT = {}
+
+
+def _pdf_page_text_positions(schem_id, filepath, page_num, file_mtime=None):
+    """Tokeny tekstu strony z pozycjami (x, y): etykiety urządzeń jak
+    _pdf_page_label_positions + dodatkowo prądy '5A', słowa CAPS (nazwy
+    skrzynek, sygnały feedów), gołe litery/cyfry siatki. Cache: pamięć
+    procesu + tabela zuken_pdf_textpos (unieważniana po mtime)."""
+    key = (schem_id, filepath, page_num)
+    if key in _PDF_PAGE_TEXT:
+        return _PDF_PAGE_TEXT[key]
+    items = None
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT tokens_json FROM zuken_pdf_textpos
+        WHERE schematic_id = ? AND page_number = ? AND file_mtime IS ?;
+    """, (schem_id, page_num, file_mtime))
+    row = cur.fetchone()
+    if row is not None:
+        try:
+            _d = json.loads(row[0])
+            if isinstance(_d, dict) and _d.get('v') == 2:
+                items = [tuple(t) for t in _d['items']]
+        except (ValueError, TypeError):
+            items = None
+    if items is None:
+        items = []
+        if pypdf is not None:
+            try:
+                reader = _PDF_READERS.get(filepath)
+                if reader is None:
+                    reader = pypdf.PdfReader(filepath)
+                    _PDF_READERS[filepath] = reader
+                if 1 <= page_num <= len(reader.pages):
+                    _w = r'[A-Z][A-Z0-9_+#]{1,24}'
+                    tok_re = re.compile(
+                        r'-(?:FH|FR|F|RT|U|K|X|SP|RU)\d+(?:#\d+)?[A-Za-z\']*'
+                        r'|=[A-Z]+\+[A-Z]+-[A-Z]+\d+'
+                        r'|\d{1,3}(?:[.,]\d+)?A'
+                        r'|' + _w + r'(?: ' + _w + r'){0,3}'
+                        r'|[A-Z]|\d+')
+
+                    def _vis(text, cm, tm, font, size):
+                        t = (text or "").strip()
+                        if tok_re.fullmatch(t):
+                            x = tm[4] * cm[0] + tm[5] * cm[2] + cm[4]
+                            y = tm[4] * cm[1] + tm[5] * cm[3] + cm[5]
+                            items.append((x, y, t))
+
+                    reader.pages[page_num - 1].extract_text(visitor_text=_vis)
+            except Exception:
+                items = []
+        try:
+            cur.execute("""
+                INSERT OR REPLACE INTO zuken_pdf_textpos
+                    (schematic_id, page_number, file_mtime, tokens_json)
+                VALUES (?, ?, ?, ?);
+            """, (schem_id, page_num, file_mtime,
+                  json.dumps({'v': 2, 'items': items})))
+            conn.commit()
+        except sqlite3.OperationalError:
+            conn.rollback()   # zapis cache best-effort (lock przy insertach)
+    conn.close()
+    _PDF_PAGE_TEXT[key] = items
+    return items
+
+
 _PDF_PAGE_SEGS = {}
 
 
@@ -9771,6 +9991,127 @@ def _pdf_page_line_segments(filepath, page_num):
             hseg, vseg = [], []
     _PDF_PAGE_SEGS[key] = (hseg, vseg)
     return hseg, vseg
+
+
+def _pdf_fuse_boxes(schem_id, filepath, page_num, file_mtime=None):
+    """Pozycje bezpieczników w skrzynkach niewidoczne jako urządzenia
+    w raporcie połączeń — wykrywane geometrycznie: poziome pasmo tokenów
+    'xA' (prądy pod symbolami) + etykiety -X/-RT w kolumnach pod/nad.
+    Zwraca [{'cells':[{cell,rating,out_dev,feed_label,x,y}], 'page':pg}]
+    — nazwa skrzynki i sygnały dopinane później (tu tylko geometria)."""
+    toks = _pdf_page_text_positions(schem_id, filepath, page_num, file_mtime)
+    if not toks:
+        return []
+    lab_re = re.compile(r'-(?:FH|FR|F|RT|U|K|X|SP|RU)\d')
+    rate_re = re.compile(r'\d{1,3}(?:[.,]\d+)?A$')
+    # typowe wartości bezpieczników — odsiewa numery przewodów ('76A') i
+    # numery katalogowe kończące się na 'A'
+    _STD_AMPS = {1, 1.5, 2, 3, 4, 5, 6, 7.5, 8, 10, 15, 20, 25, 30, 40,
+                 50, 60, 80, 100, 125, 150, 200, 250}
+    devs, rates, marks, words = [], [], [], []
+    for x, y, t in toks:
+        if lab_re.match(t):
+            devs.append((x, y, t))
+        elif rate_re.fullmatch(t):
+            if float(t[:-1].replace(',', '.')) in _STD_AMPS:
+                rates.append((x, y, t))
+        elif re.fullmatch(r'[A-Z]', t):
+            marks.append((x, y, t))
+        elif re.fullmatch(
+                r'[A-Z][A-Z0-9_+#]{1,24}'
+                r'( [A-Z][A-Z0-9_+#]{1,15}){0,3}|\d+', t):
+            words.append((x, y, t))
+    if len(rates) < 2:
+        return []
+    # pasmo prądów: klaster po y — symbole boxa mają prądy w jednym rzędzie
+    bands = {}
+    for x, y, t in rates:
+        placed = False
+        for by in bands:
+            if abs(y - by) <= 4.0:
+                bands[by].append((x, y, t)); placed = True; break
+        if not placed:
+            bands[y] = [(x, y, t)]
+    boxes = []
+    for by, band in bands.items():
+        band.sort()
+        # dwa boxy obok siebie w tym samym rzędzie — rozdziel po przerwie x
+        groups = [[band[0]]]
+        for tok in band[1:]:
+            if tok[0] - groups[-1][-1][0] > 40:
+                groups.append([])
+            groups[-1].append(tok)
+        for grp in groups:
+            cells = []
+            last_x = None
+            for x, y, t in grp:
+                if last_x is None or abs(x - last_x) >= 6:
+                    last_x = x
+                    cells.append({'cell': '', 'rating': t, 'out_dev': '',
+                                  'out_desc': '', 'feed_label': '',
+                                  'x': x, 'y': y})
+            if not cells:
+                continue
+            y0 = cells[0]['y']
+            # przypisanie kolumna->etykieta GLOBALNE (min-cost): sąsiednia
+            # etykieta bywa bliższa niż własna (rating przesunięty w lewo
+            # symbolu) — para X202/X203 wymaga unikalnego skojarzenia
+            belows = [d for d in devs if 4 < y0 - d[1] <= 160
+                      and any(abs(d[0] - c['x']) <= 25 for c in cells)]
+            aboves = [d for d in devs if 4 < d[1] - y0 <= 160
+                      and any(abs(d[0] - c['x']) <= 25 for c in cells)]
+            for pool, dst in ((belows, 'out'), (aboves, 'feed')):
+                edges = []
+                for i, c in enumerate(cells):
+                    for j, d in enumerate(pool):
+                        dx = abs(d[0] - c['x'])
+                        if dx <= 25:
+                            edges.append((dx * 10
+                                          + abs(d[1] - y0) * 0.01, i, j))
+                for i, j in _min_cost_pairs(edges, len(cells),
+                                            len(pool)).items():
+                    c = cells[i]
+                    d = pool[j]
+                    if dst == 'out':
+                        c['out_dev'], out_y = d[2], d[1]
+                        near = [w for w in words
+                                if abs(w[0] - c['x']) <= 18
+                                and out_y - 70 < w[1] < out_y + 6
+                                and not w[2].isdigit()]
+                        c['out_desc'] = ' '.join(
+                            w[2] for w in sorted(near, key=lambda w: -w[1]))
+                    else:
+                        c['feed_label'] = d[2]
+            # komórka siatki: litera NAD kolumną + cyfra POD nią ('A1').
+            # Dopasowanie pozycyjne: i-ta litera/cyfra po x -> i-ta
+            # kolumna (okno odległości pudłuje przy przesuniętych znakach)
+            x0 = cells[0]['x'] - 30
+            x1 = cells[-1]['x'] + 30
+            y0 = cells[0]['y']
+            lm_all = sorted(m for m in marks
+                            if x0 <= m[0] <= x1 and m[1] > y0 + 4)
+            dm_all = sorted(w for w in words
+                            if w[2].isdigit() and x0 <= w[0] <= x1
+                            and 4 < y0 - w[1] <= 80)
+
+            def _mark(pool, i, x):
+                if len(pool) == len(cells):
+                    return pool[i][2]
+                near = [m for m in pool if abs(m[0] - x) <= 25]
+                return min(near, key=lambda m: abs(m[0] - x))[2] \
+                    if near else ''
+
+            for i, c in enumerate(cells):
+                c['cell'] = _mark(lm_all, i, c['x']) \
+                            + _mark(dm_all, i, c['x'])
+            # >=3 pozycje = box; gniazda -FH/-FR/-U to już modelowane
+            # oprawki (nie pozycje "niewidzialnego" boxa)
+            cells = [c for c in cells
+                     if not re.match(r'-(?:FH|FR|F|U)\d', c['out_dev'] or "")]
+            if len(cells) < 3:
+                continue
+            boxes.append({'cells': cells, 'page': page_num})
+    return boxes
 
 
 def _merge_runs_h(segs, tol):
@@ -11472,17 +11813,26 @@ def _get_ps_fuses_impl(ps_code, search="", limit=100, offset=0, lang="pl"):
     merged_codes = set()
     for d in items:
         hrow = by_code.get(d.get("holder_real") or "")
-        # wiersz oprawki z innym prądem to osobny bezpiecznik (np. =CAB+TWR-FH1
-        # 30A), nie gniazdo tego — nie scalamy
-        if hrow is not None and hrow is not d and hrow.get("rating") \
-                and d.get("rating") and hrow["rating"] != d["rating"]:
+        if hrow is None or hrow is d:
             continue
-        if hrow is not None and hrow is not d:
-            d["holder_article"] = hrow.get("article_number") or ""
-            d["holder_supplier"] = hrow.get("supplier") or ""
-            d["holder_description"] = hrow.get("description") or ""
-            d["holder_image_url"] = hrow.get("image_url")
-            merged_codes.add(hrow["device_code"])
+        # wiersz -FH/-FR to gniazdo, nie osobny bezpiecznik — jego 'rating'
+        # to katalogowy limit ('up to 30A'), więc scalamy niezależnie od
+        # prądu; przy innych wierszach różny prąd = inny aparat (nie scalamy)
+        h_is_holder = str(hrow.get("device_clean") or "").startswith(("FH", "FR"))
+        if not h_is_holder and hrow.get("rating") and d.get("rating") \
+                and hrow["rating"] != d["rating"]:
+            continue
+        d["holder_article"] = hrow.get("article_number") or ""
+        d["holder_supplier"] = hrow.get("supplier") or ""
+        d["holder_description"] = hrow.get("description") or ""
+        d["holder_image_url"] = hrow.get("image_url")
+        if h_is_holder and hrow.get("circuits") and (
+                not d.get("circuits")
+                or d["circuits"] == zsmsg("installCircuit", lang)):
+            # obwody oprawki trafiają do wiersza bezpiecznika — to ten sam
+            # tor przewodów, a generyczny 'Obwód instalacji' nic nie mówi
+            d["circuits"] = hrow["circuits"]
+        merged_codes.add(hrow["device_code"])
     if merged_codes:
         items = [d for d in items if d["device_code"] not in merged_codes]
 
@@ -11538,6 +11888,7 @@ def _get_ps_fuses_impl(ps_code, search="", limit=100, offset=0, lang="pl"):
             fuse_in[hd] = d
     for d in items:
         if str(d.get("device_clean") or "").startswith(("FH", "FR")):
+            d["is_holder"] = True   # wiersz-gniazdo, nie bezpiecznik
             f = fuse_in.get(d.get("device_code") or "")
             if f:
                 d["fuse_in"] = {"clean": f.get("device_clean") or "",
@@ -11546,6 +11897,42 @@ def _get_ps_fuses_impl(ps_code, search="", limit=100, offset=0, lang="pl"):
         elif d.get("holder_description"):
             d["holder_description"] = _strip_holder_rating_text(
                 d["holder_description"])
+
+    # Pozycje bezpieczników w skrzynkach niewidoczne w raporcie (box
+    # COMMS IGN/PERM — wykryte geometrią PDF) — syntetyczne wiersze.
+    # Dedupe: pomijamy gdy out_dev już zasilany przez wiersz z BOM.
+    box_rows = cur.execute("""
+        SELECT box_name, cell, rating, out_dev, out_signal, feed_label,
+               page_number, confidence
+        FROM zuken_ps_box_fuses WHERE ps_code = ?
+        ORDER BY box_name, pos_y DESC, pos_x;""", (ps_code,)).fetchall()
+    _bq_toks = [t for t in (search or "").lower().split() if t]
+    for br in box_rows:
+        clean = "{} {}".format(br["box_name"], br["cell"])
+        if _bq_toks and not all(t in clean.lower()
+                                or t in (br["out_signal"] or "").lower()
+                                or t in (br["feed_label"] or "").lower()
+                                for t in _bq_toks):
+            continue
+        dev = clean.replace(" ", "-")
+        wires = []
+        if br["out_dev"]:
+            bare = br["out_dev"].lstrip('-').rstrip("'\"")
+            qds = [d for d in conn_devs
+                   if (d or '').rsplit('-', 1)[-1].rstrip("'\"") == bare]
+            wires, _m = _query_fuse_wires(qds or [br["out_dev"]])
+        items.append({
+            "device_code": dev, "device_clean": clean,
+            "rating": br["rating"] or "", "fuse_type": "UNI",
+            "article_number": "", "supplier": "", "description": "",
+            "holder_real": br["box_name"], "holder_real_clean": br["box_name"],
+            "system": "", "location": "", "system_desc": "", "location_desc": "",
+            "system_desc_en": "", "location_desc_en": "",
+            "circuits": br["out_signal"] or "",
+            "wires": wires, "image_url": None,
+            "is_box_fuse": True, "box_cell": br["cell"],
+            "confidence": br["confidence"],
+        })
 
     # Sortowanie naturalne wg numeru bezpiecznika: F1, F2, ..., F12, FH36
     def _fuse_num_key(d):
