@@ -25,8 +25,15 @@ Wersja wielojęzykowa: `SUPPORTED_LANGS = ("pl", "en", "de")`, tłumaczenia w
 ## Dystrybucja dla techników (build skompilowany + updater)
 
 - **Build:** `uruchom_release.bat` → `tools/build_release.py` (venv z Nuitką w `venv/`):
-  check_i18n → eksport danych systemowych → minifikacja frontendu → kompilacja
-  Nuitka `--standalone` (gcc/MinGW pobierany 1×) → `build/release/RejestrUsterek/`
+  `pip install -r requirements.txt` + `tools/check_build_deps.py` (twarde
+  sprawdzenie zależności venv — Nuitka po cichu pomija moduły nieobecne
+  w venv; incydent 2.11: paczki ≤2.2.0 nie miały `pypdf` mimo requirements,
+  bo venv był starszy niż wpis w requirements) → check_i18n → eksport danych
+  systemowych → minifikacja frontendu → kompilacja Nuitka `--standalone`
+  (gcc/MinGW pobierany 1×) → **self-check exe** (`RejestrUsterek.exe
+  --selfcheck <plik>` importuje wszystkie wymagane moduły, kod wyjścia ≠0
+  lub `ok:false` = STOP builda; w działającej aplikacji to samo daje
+  `GET /api/selfcheck`) → `build/release/RejestrUsterek/`
   → ZIP + `latest.json` w `build/dist/`; `--deploy <udział>` kopiuje na NAS,
   `--skip-nuitka`/`--skip-tests`/`--no-minify`/`--console` do testów.
 - **Układ pakietu:** `RejestrUsterek\{app\, data\, Updater.exe}` — `app/` jest

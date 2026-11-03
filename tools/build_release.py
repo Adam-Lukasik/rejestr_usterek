@@ -122,6 +122,13 @@ def main():
     version = read_version()
     print(f"[BUILD] Wersja: {version}")
 
+    # Synchronizacja + weryfikacja zależności builda — zabezpieczenie przed
+    # „niepełnymi" paczkami: Nuitka po cichu pomija moduły nieobecne w venv
+    # (brak pypdf w paczkach ≤2.2.0 wyszedł dopiero u klienta).
+    if not args.skip_nuitka:
+        sh([PYTHON, "-m", "pip", "install", "-r", "requirements.txt"])
+        sh([PYTHON, os.path.join("tools", "check_build_deps.py")])
+
     if not args.skip_tests:
         sh(["node", "check_i18n.js"])
         sh([PYTHON, "test_multilang.py"])
@@ -148,6 +155,7 @@ def main():
             f"--windows-icon-from-ico={os.path.join(BASE_DIR, 'ikona.ico')}",
             "--include-package=clr_loader",
             "--include-package=pythonnet",
+            "--include-package=pypdf",
             "--include-package-data=webview",
             "--include-package-data=pypdfium2",
             f"--include-data-files={os.path.join(STAGE_DIR, 'rejestr_usterek.html')}=rejestr_usterek.html",
@@ -162,6 +170,21 @@ def main():
             nuitka_args.append(f"--include-data-dir={img_dir}=zdjecia_komponentow")
         nuitka_args.append(os.path.join(BASE_DIR, "desktop_web.py"))
         sh(nuitka_args)
+
+        # Self-check skompilowanej paczki: exe importuje wszystkie wymagane
+        # moduły i kończy kodem != 0, gdy czegoś brakuje w bundlu.
+        dist_exe = os.path.join(NUITKA_OUT, DIST_NAME, "RejestrUsterek.exe")
+        sc_json = os.path.join(BUILD_DIR, "selfcheck.json")
+        r = subprocess.run([dist_exe, "--selfcheck", sc_json])
+        sc = {}
+        try:
+            with open(sc_json, encoding="utf-8") as f:
+                sc = json.load(f)
+            print(f"[BUILD] selfcheck: {json.dumps(sc, ensure_ascii=False)}")
+        except Exception as e:
+            print(f"[BUILD] selfcheck: brak wyniku ({e})")
+        if r.returncode != 0 or not sc.get("ok"):
+            sys.exit("[BUILD] SELF-CHECK paczki nie przeszedł — brak modułów w bundlu!")
 
     dist_src = os.path.join(NUITKA_OUT, DIST_NAME)
     if not os.path.isdir(dist_src):

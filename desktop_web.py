@@ -275,7 +275,39 @@ def _force_activate_app():
     except Exception as e:
         logging.warning(f"Błąd _force_activate_app: {e}")
 
+def _run_selfcheck():
+    """RejestrUsterek.exe --selfcheck [plik.json] — weryfikacja kompletności paczki.
+
+    Importuje wszystkie wymagane moduły i zapisuje wynik JSON (domyślnie
+    <DATA_DIR>/selfcheck.json). Kod wyjścia: 0 = paczka kompletna, 1 = braki.
+    Używane przez build_release.py po kompilacji i do diagnostyki u klienta
+    (exe jest bez konsoli, więc wynik idzie do pliku)."""
+    out = None
+    argv = sys.argv
+    if "--selfcheck" in argv:
+        i = argv.index("--selfcheck")
+        if i + 1 < len(argv) and not argv[i + 1].startswith("--"):
+            out = argv[i + 1]
+    if not out:
+        out = str(DATA_DIR / "selfcheck.json")
+    try:
+        import app as _backend
+        res = _backend.runtime_deps_status(
+            extra_modules=("webview", "clr_loader", "pythonnet"))
+    except Exception as e:
+        res = {"ok": False, "backend_error": repr(e)}
+    try:
+        with open(out, "w", encoding="utf-8") as f:
+            json.dump(res, f, indent=1, ensure_ascii=False)
+    except Exception as e:
+        print(f"[SELFCHECK] błąd zapisu {out}: {e}")
+    print(f"[SELFCHECK] {json.dumps(res, ensure_ascii=False)}")
+    return 0 if res.get("ok") else 1
+
+
 def main():
+    if "--selfcheck" in sys.argv:
+        sys.exit(_run_selfcheck())
     splash = SplashScreen()
     try:
         logging.info("Start aplikacji desktop_web.py")

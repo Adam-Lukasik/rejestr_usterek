@@ -925,6 +925,29 @@ def api_version():
     return jsonify({"version": VERSION})
 
 
+# Moduły wymagane przez backend — ich cichy brak w paczce Nuitka (importy
+# w try/except) powodował „niepełne" aktualizacje (incydent: pypdf ≤2.2.0).
+SELF_CHECK_MODULES = ("flask", "flask_cors", "requests", "waitress",
+                      "PIL", "pypdf", "pypdfium2", "extract_msg")
+
+
+def runtime_deps_status(extra_modules=()):
+    """Stan importów wymaganych bibliotek — diagnostyka kompletności paczki."""
+    mods = {}
+    for name in SELF_CHECK_MODULES + tuple(extra_modules):
+        try:
+            __import__(name)
+            mods[name] = True
+        except Exception:
+            mods[name] = False
+    return {"version": VERSION, "ok": all(mods.values()), "modules": mods}
+
+
+@app.route("/api/selfcheck")
+def api_selfcheck():
+    return jsonify(runtime_deps_status())
+
+
 # ═══════════════════════════════════════════════════════════════════
 # AKTUALIZACJE — paczki z udziału SMB / HTTP, podmiana app/ przez Updater.exe
 # ═══════════════════════════════════════════════════════════════════
