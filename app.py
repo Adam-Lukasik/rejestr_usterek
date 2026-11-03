@@ -927,8 +927,10 @@ def api_version():
 
 # Moduły wymagane przez backend — ich cichy brak w paczce Nuitka (importy
 # w try/except) powodował „niepełne" aktualizacje (incydent: pypdf ≤2.2.0).
-SELF_CHECK_MODULES = ("flask", "flask_cors", "requests", "waitress",
-                      "PIL", "pypdf", "pypdfium2", "extract_msg")
+# Lista = biblioteki faktycznie importowane w kodzie (requests/flask_cors
+# z requirements.txt są nieużywane — HTTP idzie przez urllib).
+SELF_CHECK_MODULES = ("flask", "waitress", "PIL", "pypdf",
+                      "pypdfium2", "extract_msg")
 
 
 def runtime_deps_status(extra_modules=()):
