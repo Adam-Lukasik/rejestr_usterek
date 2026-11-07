@@ -18,7 +18,7 @@ OUT = ROOT / "build" / "server"
 PACK = OUT / "rejestr_usterek_serwer"
 
 CODE_FILES = [
-    "app.py", "zuken_service.py", "backup_service.py", "server_main.py",
+    "app.py", "zuken_service.py", "backup_service.py", "schema_audit.py", "server_main.py",
     "rejestr_usterek.html", "translations.js",
 ]
 DOCKER_FILES = [

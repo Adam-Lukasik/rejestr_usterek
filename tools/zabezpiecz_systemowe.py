@@ -7,6 +7,8 @@
 #   - zuken_conn_pinouts   : DELETE * (pełne czyszczenie)
 #   - zuken_query_aliases  : DELETE * (pełne czyszczenie)
 #   - zuken_translations   : DELETE tylko wierszy source != 'local'
+#   - zuken_data_patches, zuken_platform_terms : jw. (source != 'local')
+#   - zuken_ps_meta        : DELETE * (pełne czyszczenie)
 # Wiersze dopisane lokalnie w innej bazie (np. w pracy, gdy dev-baza była
 # nieaktualna) zniknęłyby przy pierwszym starcie nowej wersji.
 #
@@ -32,6 +34,9 @@ TABLE_KEYS = {
     "zuken_conn_pinouts": "article",
     "zuken_query_aliases": "phrase",
     "zuken_translations": "form",
+    "zuken_data_patches": "uid",
+    "zuken_ps_meta": "ps_code",
+    "zuken_platform_terms": "term",
 }
 
 

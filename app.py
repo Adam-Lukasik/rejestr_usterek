@@ -24,6 +24,7 @@ from functools import wraps
 from flask import Flask, send_from_directory, request, jsonify, Response
 import zuken_service
 import backup_service
+import schema_audit
 
 
 SUPPORTED_LANGS = ("pl", "en", "de")
@@ -887,6 +888,7 @@ def init_db():
     # Inicjalizacja bazy i słownika Zuken E3
     try:
         zuken_service.init_zuken_tables()
+        schema_audit.init_audit_tables()
     except Exception as e:
         print(f"[ZUKEN] Błąd inicjalizacji tabel Zuken: {e}")
 
@@ -2964,7 +2966,9 @@ def api_zuken_kb_process(ps_code):
     if not _valid_ps_code(ps):
         return jsonify({"error": zuken_service.zsmsg("kbBadPs", lang, v=ps_code)}), 400
     try:
-        return jsonify(zuken_service.process_ps_knowledge_base(ps, lang=lang))
+        res = zuken_service.process_ps_knowledge_base(ps, lang=lang)
+        _audit_autoscan(ps)
+        return jsonify(res)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -3442,6 +3446,7 @@ def api_zuken_summaries_generate():
         res = zuken_service.generate_ps_technical_summaries(ps_code, lang=_app_lang())
         if res.get("status") == "error":
             return jsonify(res), 400
+        _audit_autoscan(ps_code)
         return jsonify(res)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -3588,9 +3593,36 @@ def api_zuken_circuit_path():
         query = request.args.get("q", "") or request.args.get("query", "")
         if not query:
             return jsonify({"error": smsg("psQRequired")}), 400
-        return jsonify(zuken_service.trace_circuit(ps_code, query, lang=_app_lang()))
+        res = zuken_service.trace_circuit(ps_code, query, lang=_app_lang())
+        _audit_annotate_circuit(res, ps_code or res.get("ps_code") or "", query)
+        return jsonify(res)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+def _audit_annotate_circuit(res, ps, query):
+    """Znane błędy schematu (otwarte zgłoszenia) i notka terminologii
+    pojazdu bazowego dla wyniku asystenta."""
+    if not isinstance(res, dict) or not ps:
+        return
+    try:
+        devs, texts, patched = set(), [query], False
+        for ld in res.get("loads") or []:
+            devs.add(ld.get("device") or "")
+            texts += [ld.get("function") or "", ld.get("desc") or ""]
+            for p in ld.get("pins") or []:
+                for e in p.get("ends") or []:
+                    devs.add(e.get("device") or "")
+                    for h in e.get("path") or []:
+                        patched = patched or bool(h.get("patched"))
+        lang = _app_lang()
+        res["audit_issues"] = schema_audit.open_issues_for_devices(ps, [d for d in devs if d], lang)
+        res["audit_patched"] = patched
+        pn = schema_audit.platform_note(ps, texts, lang)
+        if pn:
+            res["platform_note"] = pn
+    except Exception as e:
+        print(f"[AUDIT] annotate: {e}")
 
 
 @app.route("/api/zuken/assist-list", methods=["GET"])
@@ -3701,6 +3733,307 @@ def api_zuken_summaries_export():
         return response
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+# ═══════════════════════════════════════════════════════════════════
+# KONTROLA SCHEMATÓW (schema_audit.py) — rejestr błędów projektów Zuken,
+# łatki-nakładki dla asystenta, eksport listy dla inżyniera
+# ═══════════════════════════════════════════════════════════════════
+
+def _audit_admin():
+    """Zalogowany admin albo None (endpointy modyfikujące)."""
+    u = get_current_user()
+    return u if (u and u.get("role") == "admin") else None
+
+
+def _audit_user_name(u):
+    return (u or {}).get("full_name") or (u or {}).get("username") or ""
+
+
+def _audit_autoscan(ps_code):
+    """Po przetworzeniu danych PS: skan etapu 'data' w tle (bez blokowania)."""
+    try:
+        ps = (ps_code or "").strip().upper()
+        if _valid_ps_code(ps):
+            schema_audit.start_scan(ps, ("data",))
+    except Exception as e:
+        print(f"[AUDIT] autoscan: {e}")
+
+
+def _audit_forbidden():
+    return jsonify({"error": smsg("adminRequired")}), 403
+
+
+@app.route("/api/zuken/audit/issues", methods=["GET"])
+def api_audit_issues():
+    ps = (request.args.get("ps") or "").strip().upper()
+    if not ps:
+        return jsonify({"error": smsg("psParamRequired")}), 400
+    try:
+        return jsonify(schema_audit.list_issues(
+            ps, target=request.args.get("target") or None,
+            status=request.args.get("status") or None,
+            category=request.args.get("category") or None,
+            q=request.args.get("q") or "", lang=_app_lang()))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/zuken/audit/issues", methods=["POST"])
+def api_audit_issue_create():
+    u = get_current_user()
+    if not u:
+        return jsonify({"error": smsg("adminRequired")}), 401
+    data = request.get_json(silent=True) or {}
+    ps = (data.get("ps_code") or "").strip().upper()
+    if not _valid_ps_code(ps):
+        return jsonify({"error": zuken_service.zsmsg("kbBadPs", _app_lang(), v=ps)}), 400
+    if not (data.get("title") or "").strip():
+        return jsonify({"error": "title required"}), 400
+    try:
+        return jsonify({"status": "success", "issue": schema_audit.create_manual_issue(data, user=_audit_user_name(u))})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/zuken/audit/issues/<int:iid>", methods=["GET"])
+def api_audit_issue_get(iid):
+    it = schema_audit.get_issue(iid, _app_lang())
+    if not it:
+        return jsonify({"error": schema_audit.amsg("notFound", _app_lang())}), 404
+    it["files"] = schema_audit.list_files(iid)
+    return jsonify({"issue": it})
+
+
+@app.route("/api/zuken/audit/issues/<int:iid>", methods=["PUT"])
+def api_audit_issue_update(iid):
+    if not _audit_admin():
+        return _audit_forbidden()
+    data = request.get_json(silent=True) or {}
+    try:
+        return jsonify({"status": "success", "issue": schema_audit.update_issue(iid, data)})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/zuken/audit/issues/<int:iid>", methods=["DELETE"])
+def api_audit_issue_delete(iid):
+    if not _audit_admin():
+        return _audit_forbidden()
+    schema_audit.delete_issue(iid)
+    return jsonify({"status": "success"})
+
+
+@app.route("/api/zuken/audit/issues/bulk", methods=["POST"])
+def api_audit_issue_bulk():
+    if not _audit_admin():
+        return _audit_forbidden()
+    data = request.get_json(silent=True) or {}
+    n = schema_audit.bulk_status(data.get("ids") or [], data.get("status") or "")
+    return jsonify({"status": "success", "updated": n})
+
+
+@app.route("/api/zuken/audit/issues/<int:iid>/apply", methods=["POST"])
+def api_audit_issue_apply(iid):
+    u = _audit_admin()
+    if not u:
+        return _audit_forbidden()
+    data = request.get_json(silent=True) or {}
+    try:
+        res = schema_audit.apply_suggestion(iid, user=_audit_user_name(u), override=data.get("payload"))
+        if not res.get("ok"):
+            res["error"] = schema_audit.amsg(res.get("error") or "noSuggestion", _app_lang())
+            return jsonify(res), 400
+        return jsonify(res)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/zuken/audit/issues/<int:iid>/snapshot.png", methods=["GET"])
+def api_audit_issue_snapshot(iid):
+    it = schema_audit.get_issue(iid)
+    try:
+        png = schema_audit.snapshot_png(it) if it else None
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    if not png:
+        return jsonify({"error": "no snapshot"}), 404
+    return Response(png, mimetype="image/png")
+
+
+@app.route("/api/zuken/audit/issues/<int:iid>/files", methods=["GET", "POST"])
+def api_audit_issue_files(iid):
+    if request.method == "GET":
+        return jsonify({"files": schema_audit.list_files(iid)})
+    if not get_current_user():
+        return jsonify({"error": smsg("adminRequired")}), 401
+    data = request.get_json(silent=True) or {}
+    try:
+        raw = base64.b64decode(data.get("data") or "")
+    except Exception:
+        return jsonify({"error": "bad data"}), 400
+    if not raw or len(raw) > 15 * 1024 * 1024:
+        return jsonify({"error": "bad data"}), 400
+    fid = schema_audit.add_file(iid, data.get("filename") or "zrzut.png", raw, data.get("mime") or "image/png")
+    return jsonify({"status": "success", "id": fid})
+
+
+@app.route("/api/zuken/audit/files/<fid>", methods=["GET", "DELETE"])
+def api_audit_file(fid):
+    if request.method == "DELETE":
+        if not _audit_admin():
+            return _audit_forbidden()
+        schema_audit.delete_file(fid)
+        return jsonify({"status": "success"})
+    f = schema_audit.get_file(fid)
+    if not f:
+        return jsonify({"error": "not found"}), 404
+    return Response(f["data"], mimetype=f["mime"] or "application/octet-stream")
+
+
+@app.route("/api/zuken/audit/scan", methods=["POST"])
+def api_audit_scan():
+    if not _audit_admin():
+        return _audit_forbidden()
+    data = request.get_json(silent=True) or {}
+    ps = (data.get("ps") or "").strip().upper()
+    if not _valid_ps_code(ps):
+        return jsonify({"error": zuken_service.zsmsg("kbBadPs", _app_lang(), v=ps)}), 400
+    stages = tuple(s for s in (data.get("stages") or ["data", "pdf"]) if s in ("data", "pdf")) or ("data",)
+    if not schema_audit.start_scan(ps, stages):
+        return jsonify({"status": "running", "error": schema_audit.amsg("scanRunning", _app_lang())}), 409
+    return jsonify({"status": "started"})
+
+
+@app.route("/api/zuken/audit/scan/status", methods=["GET"])
+def api_audit_scan_status():
+    return jsonify(schema_audit.scan_status())
+
+
+@app.route("/api/zuken/audit/badge", methods=["GET"])
+def api_audit_badge():
+    ps = (request.args.get("ps") or "").strip().upper()
+    try:
+        return jsonify({"count": schema_audit.badge_count(ps) if ps else 0})
+    except Exception as e:
+        return jsonify({"count": 0, "error": str(e)})
+
+
+@app.route("/api/zuken/audit/ps-meta", methods=["GET", "POST"])
+def api_audit_ps_meta():
+    ps = (request.args.get("ps") or (request.get_json(silent=True) or {}).get("ps") or "").strip().upper()
+    if not _valid_ps_code(ps):
+        return jsonify({"error": zuken_service.zsmsg("kbBadPs", _app_lang(), v=ps)}), 400
+    if request.method == "GET":
+        out = schema_audit.get_ps_meta(ps)
+        if request.args.get("detect") in ("1", "true"):
+            out["detected"] = schema_audit.detect_base_vehicle(ps)
+        return jsonify(out)
+    if not _audit_admin():
+        return _audit_forbidden()
+    return jsonify(schema_audit.set_ps_meta(ps, request.get_json(silent=True) or {}))
+
+
+@app.route("/api/zuken/audit/platform-terms", methods=["GET", "POST", "DELETE"])
+def api_audit_platform_terms():
+    if request.method == "GET":
+        return jsonify({"items": schema_audit.list_platform_terms(), "platforms": schema_audit.PLATFORMS})
+    if not _audit_admin():
+        return _audit_forbidden()
+    try:
+        if request.method == "DELETE":
+            return jsonify({"items": schema_audit.delete_platform_term(request.args.get("term") or "")})
+        return jsonify({"items": schema_audit.upsert_platform_term(request.get_json(silent=True) or {})})
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+
+
+@app.route("/api/zuken/audit/patches", methods=["GET", "POST"])
+def api_audit_patches():
+    if request.method == "GET":
+        return jsonify({"items": schema_audit.list_patches((request.args.get("ps") or "").strip().upper() or None)})
+    u = _audit_admin()
+    if not u:
+        return _audit_forbidden()
+    data = request.get_json(silent=True) or {}
+    try:
+        pid = schema_audit.save_patch(data.get("ps_code"), data.get("kind") or "connection", data.get("payload") or {},
+                                      user=_audit_user_name(u), patch_id=data.get("id"),
+                                      issue_id=data.get("issue_id"), note=data.get("note") or "",
+                                      status=data.get("status") or "active")
+        return jsonify({"status": "success", "id": pid})
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+
+
+@app.route("/api/zuken/audit/patches/<int:pid>", methods=["PUT", "DELETE"])
+def api_audit_patch(pid):
+    if not _audit_admin():
+        return _audit_forbidden()
+    if request.method == "DELETE":
+        schema_audit.delete_patch(pid)
+    else:
+        st = (request.get_json(silent=True) or {}).get("status")
+        if st not in ("active", "disabled"):
+            return jsonify({"error": "bad status"}), 400
+        schema_audit.set_patch_status(pid, st)
+    return jsonify({"status": "success"})
+
+
+@app.route("/api/zuken/audit/export", methods=["POST"])
+def api_audit_export():
+    u = _audit_admin()
+    if not u:
+        return _audit_forbidden()
+    data = request.get_json(silent=True) or {}
+    ps = (data.get("ps") or "").strip().upper()
+    if not _valid_ps_code(ps):
+        return jsonify({"error": zuken_service.zsmsg("kbBadPs", _app_lang(), v=ps)}), 400
+    try:
+        res = schema_audit.export_batch(ps, data.get("ids") or [], lang=data.get("lang") or _app_lang(),
+                                        to=data.get("to"), user=_audit_user_name(u))
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    res["opened"] = False
+    if data.get("open", True) and not _is_server_mode() and sys.platform == "win32":
+        try:
+            os.startfile(res["eml"])
+            res["opened"] = True
+        except Exception as e:
+            res["open_error"] = str(e)
+    res["download"] = f"/api/zuken/audit/export/{res['batch_id']}/download"
+    return jsonify(res)
+
+
+@app.route("/api/zuken/audit/export/<int:bid>/download", methods=["GET"])
+def api_audit_export_download(bid):
+    if not _audit_admin():
+        return _audit_forbidden()
+    kind = request.args.get("kind") or "eml"
+    if kind not in ("eml", "xlsx"):
+        kind = "eml"
+    path = schema_audit.batch_file(bid, kind)
+    if not path:
+        return jsonify({"error": "not found"}), 404
+    return send_from_directory(os.path.dirname(path), os.path.basename(path), as_attachment=True)
+
+
+@app.route("/api/zuken/audit/export/<int:bid>/open-folder", methods=["POST"])
+def api_audit_export_open_folder(bid):
+    if not _audit_admin():
+        return _audit_forbidden()
+    path = schema_audit.batch_file(bid, "eml")
+    if not path or _is_server_mode() or sys.platform != "win32":
+        return jsonify({"error": "not available"}), 400
+    os.startfile(os.path.dirname(path))
+    return jsonify({"status": "success"})
+
+
+@app.route("/api/zuken/audit/meta", methods=["GET"])
+def api_audit_meta():
+    return jsonify(schema_audit.meta(_app_lang()))
 
 
 # ═══════════════════════════════════════════════════════════════════

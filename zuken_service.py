@@ -315,6 +315,15 @@ DEFAULT_GLOSSARY = [
     ("LT PR", "Sygnał", "Głośnik w przedziale chorych (Lautsprecher Patientenraum)", "Patient saloon speaker")
 ]
 
+# Reguły terminologii pojazdu bazowego (schema_audit, wykrywacz D08):
+# (termin, platformy gdzie poprawny [JSON], odpowiedniki na innych [JSON], notka)
+DEFAULT_PLATFORM_TERMS = [
+    ("KFG", '["VW_CRAFTER", "MAN_TGE"]', '{"MB_SPRINTER": "PSM"}',
+     "Kundenspezifisches Funktionssteuergerät (VW/MAN) — w Sprinterze: PSM"),
+    ("PSM", '["MB_SPRINTER"]', '{"VW_CRAFTER": "KFG", "MAN_TGE": "KFG"}',
+     "Parameterizable Special Module (Mercedes Sprinter) — w VW/MAN: KFG"),
+]
+
 
 def get_db():
     conn = sqlite3.connect(DB_PATH)
@@ -694,6 +703,51 @@ def init_zuken_tables():
         );
     """)
     cur.execute("CREATE INDEX IF NOT EXISTS idx_zuken_rework_ph ON zuken_rework_photos (rework_id);")
+
+    # Kontrola schematów (schema_audit.py) — tabele SYSTEMOWE (eksport w
+    # migracjach; source='local' przetrwa update). Łatki-nakładki na surowe
+    # dane importu Zuken (połączenia, szyny, pary bezpiecznik-oprawka...),
+    # dane projektu (pojazd bazowy, inżynier schematu) i reguły terminologii
+    # platform (KFG = VW/MAN, PSM = Sprinter).
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS zuken_data_patches (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ps_code TEXT NOT NULL,
+            kind TEXT NOT NULL,
+            payload TEXT NOT NULL,
+            status TEXT DEFAULT 'active',
+            source TEXT DEFAULT 'core',
+            issue_id INTEGER,
+            note TEXT,
+            created_by TEXT,
+            created_at TEXT,
+            updated_at TEXT,
+            uid TEXT UNIQUE
+        );
+    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_zuken_patches_ps ON zuken_data_patches (ps_code, kind, status);")
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS zuken_ps_meta (
+            ps_code TEXT PRIMARY KEY,
+            base_vehicle TEXT DEFAULT '',
+            engineer_name TEXT DEFAULT '',
+            engineer_email TEXT DEFAULT '',
+            updated_at TEXT
+        );
+    """)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS zuken_platform_terms (
+            term TEXT PRIMARY KEY COLLATE NOCASE,
+            platforms TEXT,
+            equivalents TEXT,
+            note TEXT,
+            source TEXT DEFAULT 'core'
+        );
+    """)
+    cur.executemany("""
+        INSERT OR IGNORE INTO zuken_platform_terms (term, platforms, equivalents, note, source)
+        VALUES (?, ?, ?, ?, 'core');
+    """, DEFAULT_PLATFORM_TERMS)
 
 
     # Wypełnij / zaktualizuj domyślny słownik skrótów
@@ -6936,19 +6990,86 @@ def _ps_project_ids(cur, ps_code):
     return conn_ids, bom_ids
 
 
-def _wire_adjacency(cur, conn_proj_ids):
+_PATCH_CACHE = {}
+
+
+def _invalidate_patch_caches():
+    """Po zmianie łatek (schema_audit): zrzuć cache zależne od grafu."""
+    _PATCH_CACHE.clear()
+    _FUSE_RAILS_CACHE.clear()
+    _FUSE_LIST_CACHE.clear()
+
+
+def _active_patches(cur, ps_code, kind):
+    """Aktywne łatki danego rodzaju dla PS: [(id, payload_dict)]."""
+    key = ((ps_code or "").upper(), kind)
+    if key in _PATCH_CACHE:
+        return _PATCH_CACHE[key]
+    out = []
+    try:
+        for r in cur.execute("""SELECT id, payload FROM zuken_data_patches
+                                WHERE ps_code = ? AND kind = ? AND status = 'active'
+                                ORDER BY id;""", key):
+            try:
+                out.append((r[0], json.loads(r[1] or "{}")))
+            except (ValueError, TypeError):
+                continue
+    except sqlite3.OperationalError:
+        out = []
+    _PATCH_CACHE[key] = out
+    return out
+
+
+def _ps_codes_for_projects(cur, conn_proj_ids):
+    ph = ",".join("?" for _ in conn_proj_ids)
+    codes = set()
+    for r in cur.execute(f"SELECT ps_codes FROM zuken_projects WHERE id IN ({ph});", list(conn_proj_ids)):
+        for c in re.split(r"[\s,;]+", (r[0] or "").upper()):
+            if c:
+                codes.add(c)
+    return sorted(codes)
+
+
+def _wire_adjacency(cur, conn_proj_ids, with_patches=True):
     """Graf sąsiedztwa pinów z raportu połączeń:
-    {(device, pin): {(device, pin): wiersz_połączenia}} — nieskierowany."""
+    {(device, pin): {(device, pin): wiersz_połączenia}} — nieskierowany.
+    with_patches: dokłada aktywne łatki 'connection' (zuken_data_patches)
+    jako zwykłe wiersze (kolumna patch_id != NULL; surowe = NULL)."""
     adj = {}
     if not conn_proj_ids:
         return adj
     ph = ",".join("?" for _ in conn_proj_ids)
+    params = list(conn_proj_ids)
+    patch_sql = ""
+    if with_patches:
+        try:
+            codes = _ps_codes_for_projects(cur, conn_proj_ids)
+            has = codes and cur.execute(
+                f"SELECT 1 FROM zuken_data_patches WHERE kind='connection' AND status='active' "
+                f"AND ps_code IN ({','.join('?' for _ in codes)}) LIMIT 1;", codes).fetchone()
+        except sqlite3.OperationalError:
+            has = None
+        if has:
+            patch_sql = f"""
+        UNION ALL
+        SELECT json_extract(payload, '$.from_device'), json_extract(payload, '$.from_pin'),
+               json_extract(payload, '$.to_device'), json_extract(payload, '$.to_pin'),
+               COALESCE(json_extract(payload, '$.signal'), 'PATCH #' || id),
+               json_extract(payload, '$.signal_name'), json_extract(payload, '$.wire_number'),
+               json_extract(payload, '$.wire_color'), json_extract(payload, '$.cross_section'),
+               COALESCE(json_extract(payload, '$.wire_type'), 'PATCH'),
+               json_extract(payload, '$.length'), id
+        FROM zuken_data_patches
+        WHERE kind = 'connection' AND status = 'active'
+          AND ps_code IN ({','.join('?' for _ in codes)})"""
+            params += codes
     cur.execute(f"""
         SELECT from_device, from_pin, to_device, to_pin,
-               signal, signal_name, wire_number, wire_color, cross_section, wire_type, length
+               signal, signal_name, wire_number, wire_color, cross_section, wire_type, length,
+               NULL AS patch_id
         FROM zuken_connections
-        WHERE project_id IN ({ph});
-    """, conn_proj_ids)
+        WHERE project_id IN ({ph}){patch_sql};
+    """, params)
 
     def _richness(r):
         return sum(1 for k in ("wire_number", "signal", "signal_name", "wire_color",
@@ -7123,7 +7244,20 @@ def _wire_hop(fdev, fpin, tdev, tpin, row):
         "bar_holder": (row.get("_bar_holder") or "") if isinstance(row, dict) else "",
         "relay_dev": (row.get("_relay_dev") or "") if isinstance(row, dict) else "",
         "pin_names": (row.get("_pin_names") or {}) if isinstance(row, dict) else {},
+        "patched": _row_patch_id(row),
     }
+
+
+def _row_patch_id(row):
+    """ID łatki (zuken_data_patches) dla wiersza krawędzi z nakładki; 0 = surowy."""
+    try:
+        if isinstance(row, dict):
+            return int(row.get("patch_id") or 0)
+        if row is not None and "patch_id" in row.keys():
+            return int(row["patch_id"] or 0)
+    except (TypeError, ValueError):
+        pass
+    return 0
 
 
 def _annotate_wire_far_end(entry, dev, pin, adj, glossary, dev_funcs, lang="pl"):
@@ -10196,6 +10330,39 @@ def _net_reaches_battery(adj, start, max_nodes=600):
     return False
 
 
+def _ps_fuse_schematic_row(cur, ps_code):
+    """Schemat E3 projektu z symbolami -F (aktywny pierwszy). Samo
+    is_active nie wystarcza — u Walii aktywna bywała karta katalogowa
+    złącza (TE_C-171898...), przez co parowanie bezpieczników i szyny
+    nie działały wcale. Fallback: najnowszy aktywny schemat."""
+    row = None
+    if ps_code:
+        row = cur.execute("""
+            SELECT id, filepath, file_mtime FROM (
+                SELECT s.id, s.filepath, s.file_mtime, s.is_active,
+                       (SELECT COUNT(*) FROM zuken_pdf_symbols y
+                        WHERE y.schematic_id = s.id AND y.symbol_name LIKE '-F%') AS nf
+                FROM zuken_pdf_schematics s
+                WHERE s.ps_code = ? AND COALESCE(s.doc_kind, 'schematic') = 'schematic')
+            WHERE nf > 0
+            ORDER BY (nf >= 20) DESC, is_active DESC, nf DESC, id DESC LIMIT 1;
+        """, ((ps_code or "").upper(),)).fetchone()
+        if not row:
+            row = cur.execute("""
+                SELECT id, filepath, file_mtime FROM zuken_pdf_schematics
+                WHERE ps_code = ? AND is_active = 1
+                  AND COALESCE(doc_kind, 'schematic') = 'schematic'
+                ORDER BY id DESC LIMIT 1;
+            """, ((ps_code or "").upper(),)).fetchone()
+    if not row:
+        row = cur.execute("""
+            SELECT id, filepath, file_mtime FROM zuken_pdf_schematics
+            WHERE is_active = 1 AND COALESCE(doc_kind, 'schematic') = 'schematic'
+            ORDER BY id DESC LIMIT 1;
+        """).fetchone()
+    return row
+
+
 def _ps_fuse_rails(cur, conn_ids, ps_code, adj):
     """Elementy topikowe -F -> sloty uchwytów -U i szyny zbiorcze skrzynek.
 
@@ -10228,20 +10395,7 @@ def _ps_fuse_rails(cur, conn_ids, ps_code, adj):
             'terms': {fuse_clean: [dev,...]} — terminale -RT przy oprawce
             przezroczystej dla raportu (oprawka nie jest węzłem;
             końce jej przewodów są węzłami: F1 -> RT122+RT12).}"""
-    row = None
-    if ps_code:
-        row = cur.execute("""
-            SELECT id, filepath, file_mtime FROM zuken_pdf_schematics
-            WHERE ps_code = ? AND is_active = 1
-              AND COALESCE(doc_kind, 'schematic') = 'schematic'
-            ORDER BY id DESC LIMIT 1;
-        """, ((ps_code or "").upper(),)).fetchone()
-    if not row:
-        row = cur.execute("""
-            SELECT id, filepath, file_mtime FROM zuken_pdf_schematics
-            WHERE is_active = 1 AND COALESCE(doc_kind, 'schematic') = 'schematic'
-            ORDER BY id DESC LIMIT 1;
-        """).fetchone()
+    row = _ps_fuse_schematic_row(cur, ps_code)
     key = ((ps_code or "").upper(), tuple(conn_ids or ()),
            row["id"] if row else 0,
            row["file_mtime"] if row else 0.0, len(adj or {}))
@@ -10933,6 +11087,11 @@ def _ps_fuse_rails(cur, conn_ids, ps_code, adj):
                 rated[fc] = cands[0]
                 break
     out["rated"] = rated
+    # łatki 'fuse_holder' (schema_audit): ręczne powiązanie -F -> oprawka
+    for _pid, _p in _active_patches(cur, ps_code, "fuse_holder"):
+        _fc, _hd = (_p.get("fuse") or "").strip(), (_p.get("holder") or "").strip()
+        if _fc and _hd:
+            out["holders"][clean_device_code(_fc) or _fc] = _hd
 
     _FUSE_RAILS_CACHE[key] = out
     return out
@@ -11393,20 +11552,7 @@ def _get_ps_fuses_impl(ps_code, search="", limit=100, offset=0, lang="pl"):
     # Aktywny schemat PDF tego PS i strony, na których narysowano
     # etykiety -F<n> — parowanie geometria etykiet musi brać schemat
     # projektu, a nie najnowszy aktywny globalnie (ten może być innego PS)
-    cur.execute("""
-        SELECT id, filepath, file_mtime FROM zuken_pdf_schematics
-        WHERE is_active = 1 AND COALESCE(doc_kind, 'schematic') = 'schematic'
-          AND ps_code = ?
-        ORDER BY id DESC LIMIT 1;
-    """, (ps_code,))
-    _schem = cur.fetchone()
-    if not _schem:
-        cur.execute("""
-            SELECT id, filepath, file_mtime FROM zuken_pdf_schematics
-            WHERE is_active = 1 AND COALESCE(doc_kind, 'schematic') = 'schematic'
-            ORDER BY id DESC LIMIT 1;
-        """)
-        _schem = cur.fetchone()
+    _schem = _ps_fuse_schematic_row(cur, ps_code)
     schem_path = resolve_kb_filepath(_schem["filepath"], heal_db=True) \
         if _schem else None
     schem_mtime = _schem["file_mtime"] if _schem else None

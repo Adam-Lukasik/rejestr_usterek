@@ -23,12 +23,24 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MIGRATIONS_DIR = os.path.join(BASE_DIR, "migrations")
 
 # Tabele zarządzane centralnie — ich pełna zawartość jest eksportowana do paczki.
-SYSTEM_TABLES = ("zuken_conn_pinouts", "zuken_query_aliases", "zuken_translations")
+SYSTEM_TABLES = ("zuken_conn_pinouts", "zuken_query_aliases", "zuken_translations",
+                 "zuken_data_patches", "zuken_ps_meta", "zuken_platform_terms")
 
 # Wpisy dodane lokalnie w UI (source='local') przetrwają update — migracja
 # kasuje tylko wiersze paczkowe; na eksportie wszystko normalizowane do 'core'.
-TABLE_DELETE_WHERE = {"zuken_translations": " WHERE COALESCE(source, 'core') != 'local'"}
-TABLE_ROW_OVERRIDES = {"zuken_translations": {"source": "core"}}
+# Łatki (schema_audit) i reguły platform jak słownik tłumaczeń.
+_KEEP_LOCAL = " WHERE COALESCE(source, 'core') != 'local'"
+TABLE_DELETE_WHERE = {"zuken_translations": _KEEP_LOCAL,
+                      "zuken_data_patches": _KEEP_LOCAL,
+                      "zuken_platform_terms": _KEEP_LOCAL}
+TABLE_ROW_OVERRIDES = {"zuken_translations": {"source": "core"},
+                       "zuken_data_patches": {"source": "core"},
+                       "zuken_platform_terms": {"source": "core"}}
+# Kolumny pomijane w eksporcie: sztuczne id łatek kolidowałoby z id łatek
+# dopisanych lokalnie w bazie docelowej (INSERT OR REPLACE nadpisałby je);
+# tożsamość łatki niesie kolumna uid (UNIQUE) — wiersz 'local' z tym samym
+# uid w dev-bazie zostaje zastąpiony wersją 'core' zamiast dublowania.
+TABLE_EXCLUDE_COLS = {"zuken_data_patches": {"id"}}
 
 # Dane zmieniane automatycznie przy imporcie/uzupełnianiu — pomijane w porównaniu
 # (nie chcemy wymuszać migracji przez same timestampy).
@@ -51,6 +63,7 @@ def export_table(conn, table):
     cols = [r[1] for r in cur.fetchall()]
     if not cols:
         return None, [], []
+    cols = [c for c in cols if c not in TABLE_EXCLUDE_COLS.get(table, ())]
     ddl = conn.execute(
         "SELECT sql FROM sqlite_master WHERE type='table' AND name=?",
         (table,)).fetchone()

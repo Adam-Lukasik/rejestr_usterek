@@ -16,86 +16,86 @@
   }
 
   :root {
-    --font-sans: "Segoe UI", -apple-system, BlinkMacSystemFont, Roboto, Helvetica, Arial, sans-serif;
+    --font-sans: "Inter", "Segoe UI", -apple-system, BlinkMacSystemFont, Roboto, Helvetica, Arial, sans-serif;
     --font-mono: ui-monospace, SFMono-Regular, "Roboto Mono", Menlo, Consolas, monospace;
 
-    /* Motyw Jasny (Domyślny) */
-    --bg-app: #F8FAFC;
-    --bg-sidebar: #0F172A;
-    --bg-sidebar-hover: rgba(255, 255, 255, 0.08);
-    --bg-sidebar-active: #2563EB;
-    --text-sidebar: #94A3B8;
-    --text-sidebar-bright: #F8FAFC;
+    /* Motyw Jasny (Domyślny) — paleta shadcn/ui (zinc) */
+    --bg-app: #FAFAFA;
+    --bg-sidebar: #FAFAFA;
+    --bg-sidebar-hover: rgba(0, 0, 0, 0.045);
+    --bg-sidebar-active: #F4F4F5;
+    --text-sidebar: #71717A;
+    --text-sidebar-bright: #18181B;
 
     --bg-card: #FFFFFF;
-    --bg-card-subtle: #F1F5F9;
+    --bg-card-subtle: #F4F4F5;
     --bg-input: #FFFFFF;
-    --border: #E2E8F0;
-    --border-subtle: #CBD5E1;
-    --border-focus: #3B82F6;
+    --border: #E4E4E7;
+    --border-subtle: #D4D4D8;
+    --border-focus: #18181B;
 
-    --text-main: #0F172A;
-    --text-muted: #64748B;
-    --text-dim: #94A3B8;
+    --text-main: #18181B;
+    --text-muted: #71717A;
+    --text-dim: #A1A1AA;
 
-    --primary: #2563EB;
-    --primary-hover: #1D4ED8;
-    --primary-light: #EFF6FF;
+    --primary: #18181B;
+    --primary-hover: #27272A;
+    --primary-light: #F4F4F5;
 
-    --amber: #F59E0B;
-    --amber-bg: #FEF3C7;
-    --amber-text: #B45309;
+    --amber: #D97706;
+    --amber-bg: #FFFBEB;
+    --amber-text: #92400E;
 
-    --green: #10B981;
-    --green-bg: #D1FAE5;
-    --green-text: #065F46;
+    --green: #059669;
+    --green-bg: #ECFDF5;
+    --green-text: #047857;
 
-    --red: #EF4444;
-    --red-bg: #FEE2E2;
-    --red-text: #991B1B;
+    --red: #DC2626;
+    --red-bg: #FEF2F2;
+    --red-text: #B91C1C;
 
     --shadow-xs: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
-    --shadow-sm: 0 1px 3px 0 rgba(0, 0, 0, 0.08), 0 1px 2px 0 rgba(0, 0, 0, 0.04);
-    --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.08), 0 2px 4px -2px rgba(0, 0, 0, 0.06);
-    --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.06);
-    --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.15), 0 8px 10px -6px rgba(0, 0, 0, 0.08);
+    --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+    --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.08), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
+    --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.08), 0 4px 6px -4px rgba(0, 0, 0, 0.05);
+    --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.12), 0 8px 10px -6px rgba(0, 0, 0, 0.06);
 
-    --radius-sm: 6px;
-    --radius-md: 10px;
-    --radius-lg: 14px;
-    --radius-xl: 18px;
+    --radius-sm: 5px;
+    --radius-md: 7px;
+    --radius-lg: 10px;
+    --radius-xl: 14px;
   }
 
   [data-theme="dark"] {
-    --bg-app: #0B0F17;
-    --bg-sidebar: #06090E;
-    --bg-sidebar-hover: rgba(255, 255, 255, 0.06);
-    --bg-sidebar-active: #3B82F6;
-    --text-sidebar: #94A3B8;
-    --text-sidebar-bright: #F8FAFC;
+    --bg-app: #09090B;
+    --bg-sidebar: #0C0C0E;
+    --bg-sidebar-hover: rgba(255, 255, 255, 0.05);
+    --bg-sidebar-active: #27272A;
+    --text-sidebar: #A1A1AA;
+    --text-sidebar-bright: #FAFAFA;
 
-    --bg-card: #131B2A;
-    --bg-card-subtle: #192336;
-    --bg-input: #101726;
-    --border: #222E42;
-    --border-subtle: #2C3C56;
-    --border-focus: #60A5FA;
+    --bg-card: #131316;
+    --bg-card-subtle: #1D1D21;
+    --bg-input: #0E0E11;
+    --border: #27272A;
+    --border-subtle: #3F3F46;
+    --border-focus: #71717A;
 
-    --text-main: #F8FAFC;
-    --text-muted: #94A3B8;
-    --text-dim: #64748B;
+    --text-main: #FAFAFA;
+    --text-muted: #A1A1AA;
+    --text-dim: #71717A;
 
-    --primary: #3B82F6;
-    --primary-hover: #60A5FA;
-    --primary-light: rgba(59, 130, 246, 0.15);
+    --primary: #FAFAFA;
+    --primary-hover: #E4E4E7;
+    --primary-light: #27272A;
 
-    --amber-bg: rgba(245, 158, 11, 0.15);
+    --amber-bg: rgba(217, 119, 6, 0.15);
     --amber-text: #FBBF24;
 
-    --green-bg: rgba(16, 185, 129, 0.15);
+    --green-bg: rgba(5, 150, 105, 0.15);
     --green-text: #34D399;
 
-    --red-bg: rgba(239, 68, 68, 0.15);
+    --red-bg: rgba(220, 38, 38, 0.15);
     --red-text: #F87171;
 
     --shadow-xs: 0 1px 2px 0 rgba(0, 0, 0, 0.4);
@@ -861,6 +861,19 @@
     color: var(--primary);
   }
 
+  /* Kontrola schematów */
+  .audit-tab { padding: 6px 12px; font-size: 12.5px; font-weight: 700; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card); color: var(--text-muted); cursor: pointer; }
+  .audit-tab.active { background: var(--bg-card-subtle); color: var(--text-main); border-color: var(--border-subtle); box-shadow: inset 0 -2px 0 #ea580c; }
+  .audit-chip { padding: 3px 9px; font-size: 11.5px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-card); color: var(--text-main); cursor: pointer; }
+  .audit-chip.active { background: rgba(234,88,12,0.12); border-color: rgba(234,88,12,0.5); }
+  .audit-row { display: flex; gap: 10px; align-items: center; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 8px 12px; }
+  .audit-row:hover { background: var(--bg-card-subtle); }
+  .audit-row.closed { opacity: 0.6; }
+  .audit-pill { display: inline-block; padding: 1px 7px; border-radius: 9px; background: var(--bg-card-subtle); border: 1px solid var(--border); font-size: 10.5px; font-weight: 700; color: var(--text-muted); }
+  .audit-st-new { color: #c2410c; } .audit-st-confirmed { color: #7c3aed; } .audit-st-sent { color: #0284c7; }
+  .audit-st-fixed, .audit-st-verified, .audit-st-done { color: #15803d; } .audit-st-in_progress { color: #b45309; }
+  .audit-box { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; margin: 6px 0; font-size: 12.5px; background: var(--bg-card-subtle); }
+
   /* Prawa kolumna: Szczegóły usterki (Detail) */
   .detail-pane {
     flex: 4;
@@ -1412,6 +1425,93 @@
   .zuken-crumb-sep { color:var(--text-muted); font-size:11px; }
   .zuken-hist-item { display:block; width:100%; text-align:left; border:none; background:none; padding:7px 12px; font-size:12.5px; font-family:var(--font-mono,monospace); color:var(--text-main); cursor:pointer; border-radius:6px; }
   .zuken-hist-item:hover { background:rgba(2,132,199,0.1); }
+
+  /* ════════════ RESKIN: shadcn/ui (zinc) — korekty komponentów ════════════ */
+
+  /* Scrollbary */
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb { background: #D4D4D8; border-radius: 6px; border: 2px solid transparent; background-clip: content-box; }
+  ::-webkit-scrollbar-thumb:hover { background: #A1A1AA; border: 2px solid transparent; background-clip: content-box; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  [data-theme="dark"] ::-webkit-scrollbar-thumb { background: #3F3F46; border: 2px solid transparent; background-clip: content-box; }
+  [data-theme="dark"] ::-webkit-scrollbar-thumb:hover { background: #52525B; border: 2px solid transparent; background-clip: content-box; }
+
+  /* Neutralne ringi fokusu (zamiast niebieskich) */
+  .search-box input:focus,
+  input[type="text"]:focus, input[type="password"]:focus, select:focus, textarea:focus {
+    box-shadow: 0 0 0 3px rgba(24, 24, 27, 0.10);
+  }
+  [data-theme="dark"] .search-box input:focus,
+  [data-theme="dark"] input[type="text"]:focus,
+  [data-theme="dark"] input[type="password"]:focus,
+  [data-theme="dark"] select:focus,
+  [data-theme="dark"] textarea:focus {
+    box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.08);
+  }
+
+  /* Logo-aplikacji: neutralny blok zamiast niebieskiego gradientu */
+  .brand-icon { background: #18181B; box-shadow: var(--shadow-sm); }
+  [data-theme="dark"] .brand-icon { background: #FAFAFA; color: #09090B; }
+
+  /* Przyciski */
+  .btn-primary-action:hover { box-shadow: 0 4px 10px rgba(0, 0, 0, 0.18); }
+  .btn-primary-action { box-shadow: var(--shadow-xs); }
+  .btn-secondary-action { box-shadow: var(--shadow-xs); background: var(--bg-card); }
+  [data-theme="dark"] .btn-primary-action { color: #09090B; }
+  [data-theme="dark"] .btn-primary-action:hover { box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5); }
+  [data-theme="dark"] .lang-btn.active { color: #09090B !important; }
+  [data-theme="dark"] .tag-project { color: var(--text-main); }
+  [data-theme="dark"] .kpi-card.active { border-color: var(--border-subtle); }
+
+  /* Nagłówki modali — były zawsze ciemne (var(--bg-sidebar)); teraz neutralne */
+  .modal-header, #modal-defect-preview .modal-header {
+    background: var(--bg-card);
+    color: var(--text-main);
+    border-bottom: 1px solid var(--border);
+  }
+  .btn-close-modal { color: var(--text-dim); }
+  .btn-close-modal:hover { color: var(--text-main); background: var(--bg-card-subtle); }
+
+  /* Lightbox zostaje ciemny (podgląd zdjęć) — niezależnie od motywu */
+  .lightbox-header { background: #09090B; color: #FAFAFA; border-bottom: 1px solid #27272A; box-shadow: none; }
+
+  /* Ciemne nagłówki-hero (asystent madA): przycisk zamykania zostaje jasny */
+  #modal-zuken-diagnose .btn-close-modal { color: rgba(255,255,255,0.7); }
+  #modal-zuken-diagnose .btn-close-modal:hover { color: #FFFFFF; background: rgba(255,255,255,0.12); }
+
+  /* Toast: w jasnym motywie jasna karta, w ciemnym ciemna */
+  .toast-msg { background: #FFFFFF; color: var(--text-main); border: 1px solid var(--border); box-shadow: var(--shadow-lg); }
+  [data-theme="dark"] .toast-msg { background: #1C1C1F; color: var(--text-main); border: 1px solid var(--border-subtle); }
+
+  /* ── Sidebar w motywie jasnym (przełączenie na jasny panel) ── */
+  [data-theme="light"] .sidebar { border-right: 1px solid var(--border); }
+  [data-theme="light"] .sidebar-header { border-bottom: 1px solid var(--border); }
+  [data-theme="light"] .brand-titles h1 { color: var(--text-main); }
+  [data-theme="light"] .version-tag { background: var(--bg-card-subtle); color: var(--text-muted); }
+  [data-theme="light"] .btn-toggle-sidebar:hover { background: var(--bg-sidebar-hover); color: var(--text-sidebar-bright); }
+  [data-theme="light"] .sidebar-user-card { background: var(--bg-card); border: 1px solid var(--border); }
+  [data-theme="light"] .user-avatar-badge { background: var(--bg-card-subtle); color: var(--text-muted); border: 1px solid var(--border); }
+  [data-theme="light"] .user-name { color: var(--text-main); }
+  [data-theme="light"] .user-role { color: var(--text-muted); }
+  [data-theme="light"] .btn-switch-tech { color: var(--text-dim); }
+  [data-theme="light"] .btn-switch-tech:hover { background: var(--bg-sidebar-hover); color: var(--text-main); }
+  [data-theme="light"] .global-ps-wrap { background: var(--bg-card); border: 1px solid var(--border); }
+  [data-theme="light"] .global-ps-wrap select { background: var(--bg-card-subtle); color: var(--text-main); border: 1px solid var(--border); }
+  [data-theme="light"] .global-ps-wrap select:focus { border-color: var(--border-focus); }
+  [data-theme="light"] .nav-section-title { color: var(--text-dim); }
+  [data-theme="light"] .nav-item.active { color: var(--text-main); box-shadow: none; }
+  [data-theme="light"] .nav-badge { background: var(--bg-card-subtle); color: var(--text-muted); }
+  [data-theme="light"] .sidebar-footer { border-top: 1px solid var(--border); }
+  [data-theme="light"] .sidebar-author-card { border-top: 1px solid var(--border); }
+  [data-theme="light"] .sidebar-author-line { color: var(--text-dim); }
+  [data-theme="light"] .sidebar-author-line strong { color: var(--text-muted); }
+  [data-theme="light"] .sidebar-author-email { color: var(--text-muted); }
+  [data-theme="light"] .sidebar-author-email:hover { color: var(--text-main); }
+
+  /* Sidebar w dark: wyciszenie niebieskich akcentów */
+  [data-theme="dark"] .nav-item.active { box-shadow: none; }
+  [data-theme="dark"] .version-tag { background: var(--bg-sidebar-active); color: var(--text-muted); }
+  [data-theme="dark"] .sidebar { border-right: 1px solid var(--border); }
 </style>
 </head>
 <body>
@@ -1491,6 +1591,12 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
         <span data-i18n="nav.reworks">Reworki</span>
         <span class="nav-badge alert" id="nav-badge-reworks" style="display:none;">0</span>
+      </div>
+
+      <div class="nav-item" data-view="schema-audit" id="nav-schema-audit" title="Kontrola schematów — błędy i braki w danych projektów Zuken" data-i18n-title="nav.auditTitle">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+        <span data-i18n="nav.audit">Kontrola schematów</span>
+        <span class="nav-badge alert" id="nav-badge-audit" style="display:none;">0</span>
       </div>
 
 
@@ -2349,8 +2455,175 @@
       </div>
     </section>
 
+    <!-- ════════════ WIDOK: KONTROLA SCHEMATÓW ════════════ -->
+    <section class="view-panel" id="view-schema-audit">
+      <div style="padding:20px; flex:1; overflow-y:auto; max-width:1280px; margin:0 auto; width:100%;">
+        <div style="background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius-lg); padding:16px 20px; margin-bottom:12px; box-shadow:var(--shadow-sm); display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:14px;">
+          <div style="display:flex; align-items:center; gap:12px; min-width:280px;">
+            <div style="width:40px; height:40px; border-radius:10px; background:linear-gradient(135deg, #ea580c 0%, #c2410c 100%); display:flex; align-items:center; justify-content:center; font-size:20px; color:#fff; flex-shrink:0;">🩺</div>
+            <div>
+              <h2 style="font-size:17px; font-weight:700; margin:0 0 2px 0;" data-i18n="ui.audit.title">Kontrola schematów</h2>
+              <p style="font-size:12px; color:var(--text-muted); margin:0;" data-i18n="ui.audit.subtitle">Błędy i braki w danych Zuken (Connections, BOM, PDF) — do poprawy w Zuken lub uzupełnienia u nas</p>
+            </div>
+          </div>
+          <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+            <div style="display:flex; align-items:center; gap:6px;">
+              <label for="audit-ps-select" style="font-size:12px; font-weight:700; color:var(--text-muted);" data-i18n="zuken.selectProject">Projekt PS:</label>
+              <select id="audit-ps-select" style="padding:7px 12px; border-radius:var(--radius-md); border:1px solid var(--border); background:var(--bg-card-subtle); font-size:13px; font-weight:700; color:var(--text-main); cursor:pointer;" onchange="setCurrentPS(this.value); loadAudit(this.value)"></select>
+            </div>
+            <button type="button" class="btn-secondary-action audit-admin" style="padding:7px 12px; font-size:12.5px;" onclick="auditStartScan()" id="audit-scan-btn">🔍 <span data-i18n="ui.audit.scan">Skanuj projekt</span></button>
+            <button type="button" class="btn-secondary-action" style="padding:7px 12px; font-size:12.5px;" onclick="auditOpenReport()">＋ <span data-i18n="ui.audit.report">Zgłoś błąd</span></button>
+            <button type="button" class="btn-primary-action audit-admin" style="padding:7px 14px; font-size:12.5px; background:linear-gradient(135deg, #ea580c, #c2410c); border:none;" onclick="auditOpenExport()">✉ <span data-i18n="ui.audit.export">Eksport do inżyniera</span></button>
+          </div>
+        </div>
+
+        <div id="audit-meta-bar" style="background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius-lg); padding:10px 16px; margin-bottom:12px; display:flex; gap:14px; flex-wrap:wrap; align-items:flex-end; font-size:12px;">
+          <div class="form-group" style="margin:0; min-width:220px;">
+            <label style="font-size:11px;" data-i18n="ui.audit.baseVehicle">Pojazd bazowy</label>
+            <select id="audit-meta-vehicle" style="padding:5px 8px; font-size:12px;"></select>
+          </div>
+          <div class="form-group" style="margin:0; min-width:180px;">
+            <label style="font-size:11px;" data-i18n="ui.audit.engineer">Inżynier schematu</label>
+            <input type="text" id="audit-meta-eng" style="padding:5px 8px; font-size:12px;">
+          </div>
+          <div class="form-group" style="margin:0; min-width:220px;">
+            <label style="font-size:11px;" data-i18n="ui.audit.engineerEmail">E-mail inżyniera</label>
+            <input type="email" id="audit-meta-email" style="padding:5px 8px; font-size:12px;">
+          </div>
+          <button type="button" class="btn-secondary-action audit-admin" style="padding:5px 12px; font-size:12px;" onclick="auditSaveMeta()">💾 <span data-i18n="ui.common.save">Zapisz</span></button>
+          <span id="audit-meta-hint" style="color:var(--text-muted); font-size:11.5px;"></span>
+          <span id="audit-scan-status" style="margin-left:auto; color:var(--text-muted); font-size:11.5px;"></span>
+        </div>
+
+        <div style="display:flex; gap:6px; margin-bottom:10px; flex-wrap:wrap;" id="audit-tabs">
+          <button type="button" class="audit-tab active" data-tab="engineer" onclick="auditSetTab('engineer')">🛠 <span data-i18n="ui.audit.tabEngineer">Do poprawy w Zuken</span> <span class="audit-cnt" id="audit-cnt-engineer"></span></button>
+          <button type="button" class="audit-tab" data-tab="internal" onclick="auditSetTab('internal')">📥 <span data-i18n="ui.audit.tabInternal">Do uzupełnienia u nas</span> <span class="audit-cnt" id="audit-cnt-internal"></span></button>
+          <button type="button" class="audit-tab" data-tab="patches" onclick="auditSetTab('patches')">🩹 <span data-i18n="ui.audit.tabPatches">Łatki</span> <span class="audit-cnt" id="audit-cnt-patches"></span></button>
+        </div>
+
+        <div id="audit-filters" style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:10px;">
+          <select id="audit-f-status" onchange="renderAudit()" style="width:auto; padding:5px 8px; font-size:12px;">
+            <option value="open" data-i18n="ui.audit.fOpen">Otwarte</option>
+            <option value="closed" data-i18n="ui.audit.fClosed">Zamknięte</option>
+            <option value="" data-i18n="ui.audit.fAll">Wszystkie</option>
+          </select>
+          <select id="audit-f-sev" onchange="renderAudit()" style="width:auto; padding:5px 8px; font-size:12px;">
+            <option value="" data-i18n="ui.audit.fAllSev">Każda ważność</option>
+            <option value="error" data-i18n="ui.audit.sevError">Błędy</option>
+            <option value="warn" data-i18n="ui.audit.sevWarn">Ostrzeżenia+</option>
+          </select>
+          <input type="search" id="audit-f-q" oninput="renderAudit()" data-i18n-placeholder="ui.audit.searchPh" placeholder="Szukaj (kod, tekst)…" style="width:auto; padding:5px 8px; font-size:12px; min-width:200px;">
+          <div id="audit-cat-chips" style="display:flex; gap:5px; flex-wrap:wrap;"></div>
+          <div class="audit-admin" id="audit-bulk" style="margin-left:auto; display:flex; gap:6px; align-items:center;">
+            <span style="font-size:11.5px; color:var(--text-muted);" data-i18n="ui.audit.bulkLabel">Zaznaczone:</span>
+            <select id="audit-bulk-status" style="width:auto; padding:5px 8px; font-size:12px;"></select>
+            <button type="button" class="btn-secondary-action" style="padding:5px 10px; font-size:12px;" onclick="auditBulkApply()" data-i18n="ui.audit.bulkApply">Ustaw</button>
+          </div>
+        </div>
+
+        <div id="audit-list" style="display:flex; flex-direction:column; gap:6px;"></div>
+        <div id="audit-empty" style="display:none; text-align:center; padding:50px 20px; color:var(--text-muted);" data-i18n="ui.audit.empty">Brak zgłoszeń. Uruchom skan projektu.</div>
+      </div>
+    </section>
+
 
   </main>
+</div>
+
+<!-- ════════════ MODAL: KONTROLA SCHEMATÓW — SZCZEGÓŁY ZGŁOSZENIA ════════════ -->
+<div class="modal-backdrop" id="modal-audit-issue" style="display:none; z-index:10050;" onclick="if(event.target===this)closeModal('modal-audit-issue')">
+  <div class="modal-box" style="max-width:860px;" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <div style="display:flex; align-items:center; gap:10px; min-width:0;">
+        <span style="font-size:18px;">🩺</span>
+        <h3 id="audit-issue-title" style="margin:0; font-size:15px; font-weight:700; overflow:hidden; text-overflow:ellipsis;"></h3>
+      </div>
+      <button class="btn-icon" onclick="closeModal('modal-audit-issue')">✕</button>
+    </div>
+    <div class="modal-body" id="audit-issue-body" style="padding:14px 20px; max-height:75vh; overflow-y:auto;"></div>
+  </div>
+</div>
+
+<!-- ════════════ MODAL: KONTROLA SCHEMATÓW — ZGŁOSZENIE RĘCZNE ════════════ -->
+<div class="modal-backdrop" id="modal-audit-report" style="display:none; z-index:10050;" onclick="if(event.target===this)closeModal('modal-audit-report')">
+  <div class="modal-box" style="max-width:600px;" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <div style="display:flex; align-items:center; gap:10px;">
+        <span style="font-size:18px;">⚠</span>
+        <h3 style="margin:0; font-size:15px; font-weight:700;" data-i18n="ui.audit.reportTitle">Zgłoś błąd schematu</h3>
+      </div>
+      <button class="btn-icon" onclick="closeModal('modal-audit-report')">✕</button>
+    </div>
+    <div class="modal-body" style="padding:16px 20px;">
+      <input type="hidden" id="ar-ps">
+      <input type="hidden" id="ar-query">
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+        <div class="form-group">
+          <label data-i18n="ui.audit.fCategory">Kategoria</label>
+          <select id="ar-category"></select>
+        </div>
+        <div class="form-group">
+          <label data-i18n="ui.audit.fDevices">Oznaczenia (urządzenia)</label>
+          <input type="text" id="ar-devices" placeholder="-A359, =BOX+TWR-RT124">
+        </div>
+      </div>
+      <div class="form-group">
+        <label data-i18n="ui.audit.fTitle">Tytuł *</label>
+        <input type="text" id="ar-title" data-i18n-placeholder="ui.audit.fTitlePh" placeholder="np. Pod pinem A wyłącznika nic nie jest podpięte">
+      </div>
+      <div class="form-group">
+        <label data-i18n="ui.audit.fDesc">Opis</label>
+        <textarea id="ar-desc" rows="4" data-i18n-placeholder="ui.audit.fDescPh" placeholder="Co jest na schemacie, a jak jest w rzeczywistości…"></textarea>
+      </div>
+      <div class="form-group">
+        <label data-i18n="ui.audit.fFix">Proponowana poprawka (opcjonalnie)</label>
+        <input type="text" id="ar-fix" data-i18n-placeholder="ui.audit.fFixPh" placeholder="np. Podpiąć RT124 do pinu A">
+      </div>
+      <div class="form-group">
+        <label data-i18n="ui.audit.fShot">Zrzut ekranu (Ctrl+V w tym oknie lub plik)</label>
+        <div style="display:flex; gap:8px; align-items:center;">
+          <button type="button" class="btn-secondary-action" style="padding:5px 10px; font-size:12px;" onclick="auditPickShot()">📎 <span data-i18n="ui.audit.addFile">Dodaj plik</span></button>
+          <div id="ar-shots" style="display:flex; gap:6px; flex-wrap:wrap;"></div>
+        </div>
+      </div>
+      <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:8px;">
+        <button type="button" class="btn-secondary-action" onclick="closeModal('modal-audit-report')" data-i18n="ui.common.cancel">Anuluj</button>
+        <button type="button" class="btn-primary-action" onclick="auditSubmitReport()" data-i18n="ui.audit.submit">Zgłoś</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════ MODAL: KONTROLA SCHEMATÓW — EKSPORT DO INŻYNIERA ════════════ -->
+<div class="modal-backdrop" id="modal-audit-export" style="display:none;" onclick="if(event.target===this)closeModal('modal-audit-export')">
+  <div class="modal-box" style="max-width:720px;" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <div style="display:flex; align-items:center; gap:10px;">
+        <span style="font-size:18px;">✉</span>
+        <h3 style="margin:0; font-size:15px; font-weight:700;" data-i18n="ui.audit.exportTitle">Lista poprawek dla inżyniera Zuken</h3>
+      </div>
+      <button class="btn-icon" onclick="closeModal('modal-audit-export')">✕</button>
+    </div>
+    <div class="modal-body" style="padding:14px 20px;">
+      <div style="display:grid; grid-template-columns:1fr 140px; gap:12px;">
+        <div class="form-group">
+          <label data-i18n="ui.audit.exportTo">Adresat</label>
+          <input type="email" id="ax-to">
+        </div>
+        <div class="form-group">
+          <label data-i18n="ui.audit.exportLang">Język listy</label>
+          <select id="ax-lang"><option value="pl">Polski</option><option value="en">English</option><option value="de">Deutsch</option></select>
+        </div>
+      </div>
+      <div style="font-size:12px; color:var(--text-muted); margin-bottom:6px;" data-i18n="ui.audit.exportHint">Zaznaczone pozycje trafią do pliku XLSX z wycinkami schematu i szkicu wiadomości (.eml otwiera się w Outlooku). Status zmieni się na „Wysłane”.</div>
+      <div id="ax-list" style="max-height:45vh; overflow-y:auto; border:1px solid var(--border); border-radius:8px; padding:6px 10px;"></div>
+      <div id="ax-result" style="margin-top:8px; font-size:12px;"></div>
+      <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:10px;">
+        <button type="button" class="btn-secondary-action" onclick="closeModal('modal-audit-export')" data-i18n="ui.common.cancel">Anuluj</button>
+        <button type="button" class="btn-primary-action" id="ax-go" onclick="auditDoExport()" data-i18n="ui.audit.exportGo">Generuj szkic maila</button>
+      </div>
+    </div>
+  </div>
 </div>
 
 <!-- ════════════ MODAL: REWORK (DODAJ / EDYTUJ) ════════════ -->
@@ -2735,10 +3008,10 @@
 
 
 <!-- ════════════ EKRAN LOGOWANIA (LOGIN OVERLAY) ════════════ -->
-<div class="modal-backdrop" id="modal-login" style="display:flex; background:var(--bg-sidebar); z-index:9999;">
+<div class="modal-backdrop" id="modal-login" style="display:flex; background:#0C0C0E; z-index:9999;">
   <div class="modal-box" style="max-width:400px; box-shadow:var(--shadow-xl); border:1px solid var(--border-subtle);">
-    <div style="background:var(--bg-sidebar); padding:26px 20px 18px 20px; text-align:center; color:#FFFFFF; border-bottom:1px solid rgba(255,255,255,0.08);">
-      <div style="width:48px; height:48px; background:linear-gradient(135deg, #2563EB, #1D4ED8); border-radius:12px; display:inline-flex; align-items:center; justify-content:center; margin-bottom:12px; box-shadow:0 4px 14px rgba(37,99,235,0.4);">
+    <div style="background:#0C0C0E; padding:26px 20px 18px 20px; text-align:center; color:#FAFAFA; border-bottom:1px solid #27272A;">
+      <div style="width:48px; height:48px; background:#FAFAFA; color:#18181B; border-radius:12px; display:inline-flex; align-items:center; justify-content:center; margin-bottom:12px;">
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
       </div>
       <h2 style="font-size:18px; font-weight:700; letter-spacing:-0.2px;" data-i18n="nav.appName">Rejestr Usterek</h2>
@@ -2754,7 +3027,7 @@
           <label for="login-password" data-i18n="ui.auth.password">Hasło</label>
           <input type="password" id="login-password" required data-i18n-placeholder="ui.auth.passwordPh" placeholder="Wpisz hasło..." autocomplete="current-password">
           <div style="display:flex; justify-content:flex-end; margin-top:6px;">
-            <button type="button" onclick="openResetPasswordModal()" style="background:none; border:none; color:#2563EB; font-size:12px; font-weight:600; cursor:pointer; padding:2px 0; text-decoration:none;" onmouseover="this.style.textDecoration='underline'" onmouseout="this.style.textDecoration='none'" data-i18n="ui.auth.forgot">
+            <button type="button" onclick="openResetPasswordModal()" style="background:none; border:none; color:var(--primary); font-size:12px; font-weight:600; cursor:pointer; padding:2px 0; text-decoration:none;" onmouseover="this.style.textDecoration='underline'" onmouseout="this.style.textDecoration='none'" data-i18n="ui.auth.forgot">
               Nie pamiętasz hasła?
             </button>
           </div>
@@ -2769,7 +3042,7 @@
         <div style="margin-top:4px; display:inline-flex; align-items:center; gap:6px; flex-wrap:wrap; justify-content:center;">
           <span><span data-i18n="ui.auth.authorLabel">Autor:</span> <strong>ad.luka</strong></span>
           <span style="opacity:0.4;">•</span>
-          <a href="mailto:a.lukasik@was-vehicles.com?subject=Rejestr%20Usterek%20-%20Pomoc%20z%20logowaniem" style="color:#2563EB; text-decoration:none; font-weight:600; display:inline-flex; align-items:center; gap:4px;" onmouseover="this.style.textDecoration='underline'" onmouseout="this.style.textDecoration='none'">
+          <a href="mailto:a.lukasik@was-vehicles.com?subject=Rejestr%20Usterek%20-%20Pomoc%20z%20logowaniem" style="color:var(--primary); text-decoration:none; font-weight:600; display:inline-flex; align-items:center; gap:4px;" onmouseover="this.style.textDecoration='underline'" onmouseout="this.style.textDecoration='none'">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
             <span>a.lukasik@was-vehicles.com</span>
           </a>
@@ -2780,7 +3053,7 @@
 </div>
 
 <!-- ════════════ MODAL: SAMODZIELNY RESET HASŁA ════════════ -->
-<div class="modal-backdrop" id="modal-reset-password" style="display:none; background:var(--bg-sidebar); z-index:10000;">
+<div class="modal-backdrop" id="modal-reset-password" style="display:none; background:rgba(9,9,11,0.75); z-index:10000;">
   <div class="modal-box" style="max-width:440px; box-shadow:var(--shadow-xl); border:1px solid var(--border-subtle);">
     <div class="modal-header" style="padding:16px 20px; border-bottom:1px solid var(--border);">
       <h3 style="font-size:16px; font-weight:700; display:flex; align-items:center; gap:8px;">
@@ -3524,6 +3797,7 @@ function switchView(viewName) {
   if (viewName === 'zuken-summaries') loadZukenSummariesView();
   if (viewName === 'project-docs') loadProjectDocsView();
   if (viewName === 'reworks') loadReworksView();
+  if (viewName === 'schema-audit') loadSchemaAuditView();
   if (viewName === 'backup') { loadBackupStatus(); refreshUpdateVersion(); }
 }
 
@@ -4370,7 +4644,7 @@ function syncPsSelectors() {
     else g.value = '';
     refreshGlobalPsOptions();
   }
-  ['docs-ps-select', 'reworks-ps-select', 'zuken-summ-ps-select'].forEach(id => {
+  ['docs-ps-select', 'reworks-ps-select', 'zuken-summ-ps-select', 'audit-ps-select'].forEach(id => {
     const s = document.getElementById(id);
     if (s && s.options.length) ensureOptionAndSet(s, ps);
   });
@@ -4405,7 +4679,10 @@ function refreshActivePsView() {
   } else if (STATE.currentView === 'zuken-summaries') {
     updateZukenSummariesHeaderInfo();
     refreshZukenActiveSummaryTab();
+  } else if (STATE.currentView === 'schema-audit') {
+    loadAudit(ps);
   }
+  if (AUDIT_STATE) { AUDIT_STATE.ps = ps || AUDIT_STATE.ps; updateAuditNavBadge(); }
   const zmodal = document.getElementById('modal-zuken-diagnose');
   if (zmodal && zmodal.style.display !== 'none') {
     const inp = document.getElementById('zuken-search-input');
@@ -6160,6 +6437,530 @@ async function deleteRework(id) {
   } catch (err) {
     showToast(err.message, 'error');
   }
+}
+
+/* ══════════════ KONTROLA SCHEMATÓW (schema_audit) ══════════════
+   Rejestr błędów/braków w danych Zuken per PS: zakładki „Do poprawy
+   w Zuken” (target=engineer), „Do uzupełnienia u nas” (internal),
+   „Łatki” (nakładki na surowy import dla asystenta). Treść zgłoszeń
+   renderuje backend w języku UI (title_r/description_r/fix_r). */
+var AUDIT_STATE = { ps: '', tab: 'engineer', items: [], counts: {}, meta: null, patches: [], cat: '', sel: new Set(), shots: [], scanTimer: null };
+
+function _auditAdminVis() {
+  const adm = _isAdmin();
+  document.querySelectorAll('#view-schema-audit .audit-admin').forEach(el => { el.style.display = adm ? '' : 'none'; });
+  ['audit-meta-vehicle', 'audit-meta-eng', 'audit-meta-email'].forEach(id => { const el = document.getElementById(id); if (el) el.disabled = !adm; });
+}
+
+async function loadSchemaAuditView(preferredPs) {
+  const ps = await _fillPsSelect('audit-ps-select', preferredPs);
+  _auditAdminVis();
+  if (ps) await loadAudit(ps);
+}
+
+async function loadAudit(ps) {
+  AUDIT_STATE.ps = ps || AUDIT_STATE.ps;
+  if (!AUDIT_STATE.ps) return;
+  const p = encodeURIComponent(AUDIT_STATE.ps);
+  try {
+    const [res, meta, patches] = await Promise.all([
+      apiCall(`/api/zuken/audit/issues?ps=${p}`),
+      apiCall(`/api/zuken/audit/ps-meta?ps=${p}&detect=1`).catch(() => ({})),
+      apiCall(`/api/zuken/audit/patches?ps=${p}`).catch(() => ({ items: [] })),
+    ]);
+    AUDIT_STATE.items = res.items || [];
+    AUDIT_STATE.counts = res.counts || {};
+    AUDIT_STATE.meta = res.meta || AUDIT_STATE.meta;
+    AUDIT_STATE.patches = patches.items || [];
+    AUDIT_STATE.sel.clear();
+    _auditRenderMeta(meta || {});
+    renderAudit();
+    updateAuditNavBadge();
+  } catch (err) {
+    document.getElementById('audit-list').innerHTML = `<div style="color:var(--red); font-size:12.5px; padding:14px;">❌ ${escapeHtml(err.message)}</div>`;
+  }
+}
+
+function _auditRenderMeta(m) {
+  const sel = document.getElementById('audit-meta-vehicle');
+  const plats = (AUDIT_STATE.meta && AUDIT_STATE.meta.platforms) || {};
+  sel.innerHTML = `<option value="">${escapeHtml(t('ui.audit.vehicleNone'))}</option>` +
+    Object.entries(plats).map(([k, v]) => `<option value="${k}">${escapeHtml(v)}</option>`).join('');
+  sel.value = m.base_vehicle || '';
+  document.getElementById('audit-meta-eng').value = m.engineer_name || '';
+  document.getElementById('audit-meta-email').value = m.engineer_email || '';
+  const hint = document.getElementById('audit-meta-hint');
+  const det = (m.detected || [])[0];
+  hint.textContent = (!m.base_vehicle && det) ? t('ui.audit.vehicleDetected', { v: det.label, n: det.hits }) : '';
+}
+
+async function auditSaveMeta() {
+  if (!AUDIT_STATE.ps) return;
+  try {
+    await apiCall('/api/zuken/audit/ps-meta', 'POST', {
+      ps: AUDIT_STATE.ps,
+      base_vehicle: document.getElementById('audit-meta-vehicle').value,
+      engineer_name: document.getElementById('audit-meta-eng').value.trim(),
+      engineer_email: document.getElementById('audit-meta-email').value.trim(),
+    });
+    showToast(t('ui.audit.metaSaved'), 'success');
+  } catch (err) { showToast(err.message, 'error'); }
+}
+
+function auditSetTab(tab) {
+  AUDIT_STATE.tab = tab;
+  AUDIT_STATE.cat = '';
+  AUDIT_STATE.sel.clear();
+  document.querySelectorAll('#audit-tabs .audit-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+  renderAudit();
+}
+
+const AUDIT_SEV_STYLE = { error: ['#dc2626', '⛔'], warn: ['#d97706', '⚠'], info: ['#64748b', 'ℹ'] };
+
+function _auditOpenStatuses(target) {
+  const os = (AUDIT_STATE.meta && AUDIT_STATE.meta.open_statuses) || {};
+  return os[target] || [];
+}
+
+function renderAudit() {
+  const list = document.getElementById('audit-list');
+  const empty = document.getElementById('audit-empty');
+  const meta = AUDIT_STATE.meta || { categories: {}, statuses: {} };
+  const c = AUDIT_STATE.counts || {};
+  document.getElementById('audit-cnt-engineer').textContent = c['engineer:open'] ? `(${c['engineer:open']})` : '';
+  document.getElementById('audit-cnt-internal').textContent = c['internal:open'] ? `(${c['internal:open']})` : '';
+  const actP = AUDIT_STATE.patches.filter(p => p.status === 'active').length;
+  document.getElementById('audit-cnt-patches').textContent = actP ? `(${actP})` : '';
+  const filters = document.getElementById('audit-filters');
+  if (AUDIT_STATE.tab === 'patches') {
+    filters.style.display = 'none';
+    empty.style.display = 'none';
+    list.innerHTML = _auditPatchesHtml();
+    return;
+  }
+  filters.style.display = 'flex';
+  const tab = AUDIT_STATE.tab;
+  const st = document.getElementById('audit-f-status').value;
+  const sev = document.getElementById('audit-f-sev').value;
+  const q = document.getElementById('audit-f-q').value.trim().toLowerCase();
+  const open = new Set(_auditOpenStatuses(tab));
+  let items = AUDIT_STATE.items.filter(i => i.target === tab);
+  if (st === 'open') items = items.filter(i => open.has(i.status));
+  else if (st === 'closed') items = items.filter(i => !open.has(i.status));
+  if (sev === 'error') items = items.filter(i => i.severity === 'error');
+  else if (sev === 'warn') items = items.filter(i => i.severity !== 'info');
+  if (q) items = items.filter(i => [i.title_r, i.description_r, (i.devices || []).join(' '), i.note].join(' ').toLowerCase().includes(q));
+  // chipy kategorii (liczone po pozostałych filtrach)
+  const byCat = {};
+  items.forEach(i => { byCat[i.category] = (byCat[i.category] || 0) + 1; });
+  document.getElementById('audit-cat-chips').innerHTML = Object.entries(byCat).sort((a, b) => b[1] - a[1]).map(([k, n]) =>
+    `<button type="button" class="audit-chip${AUDIT_STATE.cat === k ? ' active' : ''}" onclick="AUDIT_STATE.cat = AUDIT_STATE.cat === '${k}' ? '' : '${k}'; renderAudit()">${escapeHtml((meta.categories[k] || {}).label || k)} <b>${n}</b></button>`).join('');
+  if (AUDIT_STATE.cat) items = items.filter(i => i.category === AUDIT_STATE.cat);
+  // status masowy: tylko statusy właściwe dla zakładki
+  const bs = document.getElementById('audit-bulk-status');
+  const stList = tab === 'engineer' ? ['confirmed', 'sent', 'fixed', 'verified', 'rejected', 'wontfix', 'new'] : ['in_progress', 'done', 'rejected', 'new'];
+  bs.innerHTML = stList.map(s => `<option value="${s}">${escapeHtml(meta.statuses[s] || s)}</option>`).join('');
+  if (!items.length) { list.innerHTML = ''; empty.style.display = 'block'; return; }
+  empty.style.display = 'none';
+  const adm = _isAdmin();
+  list.innerHTML = items.map(i => {
+    const [col, ico] = AUDIT_SEV_STYLE[i.severity] || AUDIT_SEV_STYLE.info;
+    const loc = i.location || {};
+    const locTxt = loc.page ? `${t('ui.audit.sheetShort')} ${escapeHtml(loc.sheet_number || loc.page)}${loc.grid ? ' · ' + escapeHtml(loc.grid) : ''}` : '';
+    const closed = !open.has(i.status);
+    const sug = i.suggestion && i.suggestion.kind && i.suggestion.kind !== 'text' ? `<span class="audit-pill" style="background:rgba(22,163,74,0.12); color:#15803d;">💡 ${escapeHtml(t('ui.audit.hasSuggestion'))}</span>` : '';
+    const patched = i.patch_id ? `<span class="audit-pill" style="background:rgba(234,88,12,0.12); color:#c2410c;">🩹 #${i.patch_id}</span>` : '';
+    const wa = i.workaround ? `<span class="audit-pill" title="${escapeHtml(t('ui.audit.workaroundTitle'))}">↺ ${escapeHtml(t('ui.audit.workaround'))}</span>` : '';
+    return `<div class="audit-row${closed ? ' closed' : ''}" style="border-left:4px solid ${col};">
+      ${adm ? `<input type="checkbox" ${AUDIT_STATE.sel.has(i.id) ? 'checked' : ''} onclick="event.stopPropagation(); auditToggleSel(${i.id}, this.checked)">` : ''}
+      <div style="flex:1; min-width:0; cursor:pointer;" onclick="auditOpenIssue(${i.id})">
+        <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
+          <span style="color:${col}; font-weight:800;">${ico}</span>
+          <span class="audit-pill">${escapeHtml(i.category_r || i.category)}</span>
+          <span style="font-weight:700; font-size:13px;">${entText(i.title_r)}</span>
+          ${sug}${patched}${wa}
+        </div>
+        <div style="font-size:11.5px; color:var(--text-muted); margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(i.description_r || '')}</div>
+      </div>
+      <div style="display:flex; flex-direction:column; align-items:flex-end; gap:3px; flex-shrink:0; font-size:11px;">
+        <span class="audit-pill audit-st-${i.status}">${escapeHtml(i.status_r || i.status)}</span>
+        ${locTxt ? `<a href="#" onclick="event.preventDefault(); openPdfSheet(${loc.schematic_id}, ${loc.page}, null, 'pdf')" title="${escapeHtml(loc.sheet_title || '')}">📄 ${locTxt}</a>` : ''}
+        ${i.created_by && i.created_by !== 'auto' ? `<span style="color:var(--text-muted);">👤 ${escapeHtml(i.created_by)}</span>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function auditToggleSel(id, on) { if (on) AUDIT_STATE.sel.add(id); else AUDIT_STATE.sel.delete(id); }
+
+async function auditBulkApply() {
+  const ids = [...AUDIT_STATE.sel];
+  if (!ids.length) { showToast(t('ui.audit.selectFirst'), 'warning'); return; }
+  try {
+    await apiCall('/api/zuken/audit/issues/bulk', 'POST', { ids, status: document.getElementById('audit-bulk-status').value });
+    await loadAudit();
+  } catch (err) { showToast(err.message, 'error'); }
+}
+
+async function updateAuditNavBadge() {
+  const badge = document.getElementById('nav-badge-audit');
+  const ps = AUDIT_STATE.ps || STATE.lastSelectedPS;
+  if (!badge || !ps) return;
+  try {
+    const n = (await apiCall(`/api/zuken/audit/badge?ps=${encodeURIComponent(ps)}`)).count || 0;
+    badge.style.display = n > 0 ? '' : 'none';
+    badge.textContent = n;
+  } catch (e) { /* ignore */ }
+}
+
+/* ── skan ── */
+async function auditStartScan() {
+  if (!AUDIT_STATE.ps) return;
+  try {
+    await apiCall('/api/zuken/audit/scan', 'POST', { ps: AUDIT_STATE.ps, stages: ['data', 'pdf'] });
+  } catch (err) { showToast(err.message, 'warning'); }
+  _auditPollScan();
+}
+
+function _auditPollScan() {
+  clearTimeout(AUDIT_STATE.scanTimer);
+  const el = document.getElementById('audit-scan-status');
+  const btn = document.getElementById('audit-scan-btn');
+  const tick = async () => {
+    let s;
+    try { s = await apiCall('/api/zuken/audit/scan/status'); } catch (e) { return; }
+    if (s.running) {
+      if (btn) btn.disabled = true;
+      el.textContent = `⏳ ${t('ui.audit.scanning')} ${s.current || ''} (${(s.progress || 0) + 1}/${s.total || '?'})`;
+      AUDIT_STATE.scanTimer = setTimeout(tick, 1200);
+      return;
+    }
+    if (btn) btn.disabled = false;
+    const errs = Object.entries(s.detectors || {}).filter(([, d]) => !d.ok).map(([k]) => k);
+    el.textContent = s.error ? `❌ ${s.error}` : t('ui.audit.scanDone', { n: s.new || 0, c: s.closed || 0 }) + (errs.length ? ` · ⚠ ${errs.join(', ')}` : '');
+    if (s.ps === AUDIT_STATE.ps) loadAudit();
+  };
+  tick();
+}
+
+/* ── szczegóły zgłoszenia ── */
+async function auditOpenIssue(id) {
+  let it;
+  try { it = (await apiCall(`/api/zuken/audit/issues/${id}`)).issue; }
+  catch (err) { showToast(err.message, 'error'); return; }
+  AUDIT_STATE.current = it;
+  const meta = AUDIT_STATE.meta || { statuses: {}, severities: {} };
+  const adm = _isAdmin();
+  const loc = it.location || {};
+  document.getElementById('audit-issue-title').innerHTML = `#${it.id} · ${escapeHtml(it.title_r || '')}`;
+  const sug = it.suggestion || {};
+  let sugHtml = '';
+  if (sug.kind && sug.kind !== 'text') {
+    const conf = sug.confidence ? `<span class="audit-pill">${escapeHtml(t('ui.audit.confidence'))}: ${escapeHtml(t('ui.audit.conf_' + sug.confidence))}</span>` : '';
+    sugHtml = `<div class="audit-box" style="border-color:rgba(22,163,74,0.4);">
+      <div style="font-weight:700; margin-bottom:4px;">💡 ${escapeHtml(t('ui.audit.suggestion_' + sug.kind))} ${conf}</div>
+      ${_auditSuggestionEditor(sug)}
+      ${adm && ['translation','alias','patch'].includes(sug.kind) ? `<div style="display:flex; gap:6px; margin-top:6px;"><button type="button" class="btn-primary-action" style="padding:5px 12px; font-size:12px;" onclick="auditApply(${it.id})">✓ ${escapeHtml(t(it.patch_id ? 'ui.audit.applyUpdate' : 'ui.audit.apply'))}</button></div>` : ''}
+      ${sug.kind === 'pinout' ? `<div style="display:flex; gap:6px; margin-top:6px;"><button type="button" class="btn-primary-action" style="padding:5px 12px; font-size:12px;" onclick="auditPinoutEdit()">✏️ ${escapeHtml(t('js.zuken.connPinoutDefine'))}</button></div>` : ''}
+    </div>`;
+  }
+  const statusOpts = (it.target === 'engineer' ? ['new', 'confirmed', 'sent', 'fixed', 'verified', 'rejected', 'wontfix'] : ['new', 'in_progress', 'done', 'rejected'])
+    .map(s => `<option value="${s}" ${s === it.status ? 'selected' : ''}>${escapeHtml(meta.statuses[s] || s)}</option>`).join('');
+  const sevOpts = ['info', 'warn', 'error'].map(s => `<option value="${s}" ${s === it.severity ? 'selected' : ''}>${escapeHtml(meta.severities[s] || s)}</option>`).join('');
+  const files = (it.files || []).map(f => `<img src="/api/zuken/audit/files/${f.id}" onclick="openLightboxGallery(['/api/zuken/audit/files/${f.id}'], 0, '${escapeHtml(f.filename || '')}')" style="width:70px; height:70px; object-fit:cover; border-radius:6px; border:1px solid var(--border); cursor:pointer;">`).join('');
+  const ev = it.evidence ? `<details style="margin-top:6px;"><summary style="cursor:pointer; font-size:11.5px; color:var(--text-muted);">${escapeHtml(t('ui.audit.evidence'))}</summary><pre style="font-size:10.5px; white-space:pre-wrap; max-height:200px; overflow:auto;">${escapeHtml(JSON.stringify(it.evidence, null, 1))}</pre></details>` : '';
+  document.getElementById('audit-issue-body').innerHTML = `
+    <div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:8px; font-size:11.5px;">
+      <span class="audit-pill">${escapeHtml(it.category_r)}</span>
+      <span class="audit-pill audit-st-${it.status}">${escapeHtml(it.status_r)}</span>
+      ${it.created_by ? `<span class="audit-pill">👤 ${escapeHtml(it.created_by === 'auto' ? t('ui.audit.autoDetected') : it.created_by)}</span>` : ''}
+      ${it.source_revision ? `<span class="audit-pill" title="${escapeHtml(it.source_revision)}">📅 ${escapeHtml((it.created_at || '').slice(0, 10))}</span>` : ''}
+      ${it.resolved_revision ? `<span class="audit-pill" style="color:#15803d;">✓ ${escapeHtml(t('ui.audit.resolvedIn'))} ${escapeHtml((it.resolved_revision || '').split('|')[0].slice(0, 10))}</span>` : ''}
+    </div>
+    <div style="font-size:13px; line-height:1.5; margin-bottom:8px; white-space:pre-wrap;">${entText(it.description_r || '')}</div>
+    ${it.fix_r ? `<div class="audit-box"><b>${escapeHtml(t('ui.audit.fixInE3'))}:</b> ${entText(it.fix_r)}</div>` : ''}
+    ${(it.devices || []).length ? `<div style="font-size:12px; margin:6px 0;">${escapeHtml(t('ui.audit.devices'))}: ${(it.devices || []).map(d => entLink(d.split('-').pop() || d, d)).join(', ')}</div>` : ''}
+    ${it.query ? `<div style="font-size:12px; margin:6px 0;">${escapeHtml(t('ui.audit.query'))}: ${entLink(it.query, it.query)}</div>` : ''}
+    ${loc.page ? `<div style="margin:8px 0;">
+        <div style="font-size:12px; margin-bottom:4px;">📄 ${escapeHtml(t('ui.audit.sheetShort'))} ${escapeHtml(loc.sheet_number || loc.page)} ${escapeHtml(loc.sheet_title || '')} ${loc.grid ? '· ' + escapeHtml(t('ui.audit.grid')) + ' ' + escapeHtml(loc.grid) : ''}
+          <a href="#" onclick="event.preventDefault(); openPdfSheet(${loc.schematic_id}, ${loc.page}, null, 'pdf')">${escapeHtml(t('ui.audit.openPdf'))}</a></div>
+        <img src="/api/zuken/audit/issues/${it.id}/snapshot.png" onerror="this.style.display='none'" onclick="openLightboxGallery(['/api/zuken/audit/issues/${it.id}/snapshot.png'], 0, '')" style="max-width:100%; max-height:340px; border:1px solid var(--border); border-radius:6px; cursor:zoom-in;">
+      </div>` : ''}
+    ${sugHtml}
+    ${files ? `<div style="display:flex; gap:6px; flex-wrap:wrap; margin:6px 0;">${files}</div>` : ''}
+    <div style="margin-top:6px;"><button type="button" class="btn-secondary-action" style="padding:4px 10px; font-size:11.5px;" onclick="auditAddFileTo(${it.id})">📎 ${escapeHtml(t('ui.audit.addFile'))}</button></div>
+    ${ev}
+    ${adm ? `<div class="audit-box" style="margin-top:10px; display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+      <div class="form-group" style="margin:0;"><label>${escapeHtml(t('ui.audit.fStatus'))}</label><select id="ai-status">${statusOpts}</select></div>
+      <div class="form-group" style="margin:0;"><label>${escapeHtml(t('ui.audit.fSeverity'))}</label><select id="ai-sev">${sevOpts}</select></div>
+      <div class="form-group" style="margin:0; grid-column:1/3;"><label>${escapeHtml(t('ui.audit.fNote'))}</label><textarea id="ai-note" rows="2">${escapeHtml(it.note || '')}</textarea></div>
+      <div style="grid-column:1/3; display:flex; gap:6px; justify-content:space-between;">
+        ${it.detector ? '<span></span>' : `<button type="button" class="btn-secondary-action" style="color:var(--red); padding:5px 10px; font-size:12px;" onclick="auditDeleteIssue(${it.id})">🗑 ${escapeHtml(t('ui.common.delete'))}</button>`}
+        <button type="button" class="btn-primary-action" style="padding:5px 14px; font-size:12px;" onclick="auditSaveIssue(${it.id})">${escapeHtml(t('ui.common.save'))}</button>
+      </div>
+    </div>` : ''}`;
+  openModal('modal-audit-issue');
+}
+
+function _auditSuggestionEditor(sug) {
+  const p = sug.payload || {};
+  const inp = (k, v, w) => `<input type="text" class="ai-sug" data-k="${k}" value="${escapeHtml(v == null ? '' : String(v))}" style="width:${w || 120}px; padding:4px 6px; font-size:12px; font-family:var(--font-mono,monospace);">`;
+  if (sug.kind === 'patch' && (p.kind || 'connection') === 'connection') {
+    return `<div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap; font-size:12px;">
+      ${inp('from_device', p.from_device, 160)}:${inp('from_pin', p.from_pin, 40)}
+      <span style="color:#ea580c; font-weight:800;">⟷</span>
+      ${inp('to_device', p.to_device, 160)}:${inp('to_pin', p.to_pin, 40)}
+      <span style="color:var(--text-muted);">${escapeHtml(t('ui.audit.patchHint'))}</span></div>`;
+  }
+  if (sug.kind === 'patch' && p.kind === 'fuse_holder') {
+    return `<div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap; font-size:12px;">
+      ${inp('fuse', p.fuse, 90)} <span style="color:#ea580c; font-weight:800;">→</span> ${inp('holder', p.holder, 180)}
+      <span style="color:var(--text-muted);">${escapeHtml(t('ui.audit.patchHint'))}</span></div>`;
+  }
+  if (sug.kind === 'translation') {
+    return `<div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap; font-size:12px;">${inp('form', p.form, 120)} → PL ${inp('pl', p.pl)} EN ${inp('en', p.en)} DE ${inp('de', p.de)}</div>`;
+  }
+  if (sug.kind === 'alias') {
+    return `<div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap; font-size:12px;">${inp('phrase', p.phrase, 100)} → ${inp('terms', p.terms, 320)}</div><div style="font-size:11px; color:var(--text-muted);">${escapeHtml(t('ui.audit.aliasHint'))}</div>`;
+  }
+  if (sug.kind === 'photos') {
+    return `<div style="font-size:12px;">${escapeHtml(t('ui.audit.photosHint'))}</div>`;
+  }
+  if (sug.kind === 'pinout') {
+    return `<div style="font-size:12px; font-family:var(--font-mono,monospace);">${escapeHtml(p.article || '—')} · ${escapeHtml(t('ui.zuken.pinCount', { n: p.pins || 0 }))}${p.desc ? ` — <span style="color:var(--text-muted);">${escapeHtml(String(p.desc))}</span>` : ''}</div>`;
+  }
+  return `<pre style="font-size:11px; white-space:pre-wrap;">${escapeHtml(JSON.stringify(p, null, 1))}</pre>`;
+}
+
+function auditPinoutEdit() {
+  const it = AUDIT_STATE.current;
+  const p = (it && it.suggestion && it.suggestion.payload) || {};
+  if (!p.article) return;
+  closeModal('modal-audit-issue');
+  openConnPinoutEditor({ article: p.article, pins: p.pins || 0, desc: p.desc || '' });
+}
+
+async function auditApply(id) {
+  const it = AUDIT_STATE.current;
+  if (!it || !it.suggestion) return;
+  const payload = Object.assign({}, it.suggestion.payload || {});
+  document.querySelectorAll('#audit-issue-body .ai-sug').forEach(el => { payload[el.dataset.k] = el.value.trim(); });
+  if (it.suggestion.kind === 'patch' && (payload.kind || 'connection') === 'connection' && (!payload.to_pin || !payload.from_device || !payload.to_device)) {
+    showToast(t('ui.audit.pinRequired'), 'warning'); return;
+  }
+  try {
+    const r = await apiCall(`/api/zuken/audit/issues/${id}/apply`, 'POST', { payload });
+    showToast(r.patch_id ? t('ui.audit.patchSaved', { v: r.patch_id }) : t('ui.audit.applied'), 'success');
+    await loadAudit();
+    auditOpenIssue(id);
+  } catch (err) { showToast(err.message, 'error'); }
+}
+
+async function auditSaveIssue(id) {
+  try {
+    await apiCall(`/api/zuken/audit/issues/${id}`, 'PUT', {
+      status: document.getElementById('ai-status').value,
+      severity: document.getElementById('ai-sev').value,
+      note: document.getElementById('ai-note').value,
+    });
+    closeModal('modal-audit-issue');
+    await loadAudit();
+  } catch (err) { showToast(err.message, 'error'); }
+}
+
+async function auditDeleteIssue(id) {
+  if (!confirm(t('ui.audit.confirmDelete'))) return;
+  try {
+    await apiCall(`/api/zuken/audit/issues/${id}`, 'DELETE');
+    closeModal('modal-audit-issue');
+    await loadAudit();
+  } catch (err) { showToast(err.message, 'error'); }
+}
+
+function _auditReadFile(file) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve({ filename: file.name || 'zrzut.png', mime: file.type || 'image/png', data: String(r.result).split(',')[1] });
+    r.onerror = reject;
+    r.readAsDataURL(file);
+  });
+}
+
+function auditAddFileTo(id) {
+  const input = document.createElement('input');
+  input.type = 'file'; input.accept = 'image/*';
+  input.onchange = async e => {
+    const f = e.target.files[0];
+    if (!f) return;
+    try {
+      await apiCall(`/api/zuken/audit/issues/${id}/files`, 'POST', await _auditReadFile(f));
+      auditOpenIssue(id);
+    } catch (err) { showToast(err.message, 'error'); }
+  };
+  input.click();
+}
+
+/* ── łatki ── */
+function _auditPatchesHtml() {
+  const ps = AUDIT_STATE.patches;
+  if (!ps.length) return `<div style="text-align:center; padding:40px; color:var(--text-muted);">${escapeHtml(t('ui.audit.noPatches'))}</div>`;
+  const adm = _isAdmin();
+  return `<div style="font-size:12px; color:var(--text-muted); margin-bottom:6px;">${escapeHtml(t('ui.audit.patchesHint'))}</div>` + ps.map(p => {
+    const pl = p.payload || {};
+    const body = p.kind === 'connection'
+      ? `${entText(pl.from_device || '')}:${escapeHtml(pl.from_pin || '')} <b style="color:#ea580c;">⟷</b> ${entText(pl.to_device || '')}:${escapeHtml(pl.to_pin || '')}`
+      : p.kind === 'fuse_holder' ? `${entText(pl.fuse || '')} <b style="color:#ea580c;">→</b> ${entText(pl.holder || '')}`
+      : `<code>${escapeHtml(JSON.stringify(pl))}</code>`;
+    const stCol = p.status === 'active' ? '#15803d' : p.status === 'redundant' ? '#0284c7' : '#64748b';
+    return `<div class="audit-row" style="border-left:4px solid ${stCol};">
+      <div style="flex:1;"><div style="font-size:12.5px;"><b>#${p.id}</b> · ${escapeHtml(t('ui.audit.patchKind_' + p.kind))} · ${body}</div>
+        <div style="font-size:11px; color:var(--text-muted);">${escapeHtml(t('ui.audit.patchSt_' + p.status))}${p.issue_id ? ` · <a href="#" onclick="event.preventDefault(); auditOpenIssue(${p.issue_id})">#${p.issue_id}</a>` : ''} · ${escapeHtml(p.created_by || '')} · ${escapeHtml((p.created_at || '').slice(0, 10))}</div></div>
+      ${adm ? `<div style="display:flex; gap:6px;">
+        ${p.status === 'active' ? `<button type="button" class="btn-secondary-action" style="padding:4px 10px; font-size:11.5px;" onclick="auditPatchStatus(${p.id}, 'disabled')">⏸ ${escapeHtml(t('ui.audit.disable'))}</button>`
+          : `<button type="button" class="btn-secondary-action" style="padding:4px 10px; font-size:11.5px;" onclick="auditPatchStatus(${p.id}, 'active')">▶ ${escapeHtml(t('ui.audit.enable'))}</button>`}
+        <button type="button" class="btn-secondary-action" style="padding:4px 10px; font-size:11.5px; color:var(--red);" onclick="auditPatchDelete(${p.id})">🗑</button></div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+async function auditPatchStatus(id, status) {
+  try { await apiCall(`/api/zuken/audit/patches/${id}`, 'PUT', { status }); await loadAudit(); }
+  catch (err) { showToast(err.message, 'error'); }
+}
+
+async function auditPatchDelete(id) {
+  if (!confirm(t('ui.audit.confirmDeletePatch'))) return;
+  try { await apiCall(`/api/zuken/audit/patches/${id}`, 'DELETE'); await loadAudit(); }
+  catch (err) { showToast(err.message, 'error'); }
+}
+
+/* ── zgłoszenie ręczne (także z asystenta) ── */
+async function auditOpenReport(prefill = {}) {
+  if (!AUDIT_STATE.meta) {
+    try { AUDIT_STATE.meta = await apiCall('/api/zuken/audit/meta'); } catch (e) { /* bez meta */ }
+  }
+  const cats = (AUDIT_STATE.meta && AUDIT_STATE.meta.categories) || { manual: { label: 'manual' } };
+  const sel = document.getElementById('ar-category');
+  sel.innerHTML = Object.entries(cats).map(([k, v]) => `<option value="${k}">${escapeHtml(v.label)}</option>`).join('');
+  sel.value = prefill.category || 'manual';
+  document.getElementById('ar-ps').value = prefill.ps || AUDIT_STATE.ps || STATE.lastSelectedPS || '';
+  document.getElementById('ar-query').value = prefill.query || '';
+  document.getElementById('ar-devices').value = (prefill.devices || []).join(', ');
+  document.getElementById('ar-title').value = prefill.title || '';
+  document.getElementById('ar-desc').value = prefill.description || '';
+  document.getElementById('ar-fix').value = '';
+  AUDIT_STATE.shots = [];
+  _auditRenderShots();
+  openModal('modal-audit-report');
+}
+
+function auditReportFromCircuit() {
+  const cp = ZUKEN_STATE.lastCircuit || {};
+  const ld = (cp.loads || [])[0] || {};
+  auditOpenReport({
+    ps: cp.ps_code || ZUKEN_STATE.currentContext.projekt || STATE.lastSelectedPS,
+    query: cp.query || '',
+    devices: (cp.loads || []).map(l => l.device).filter(Boolean).slice(0, 4),
+    title: ld.clean ? `${ld.clean}: ` : '',
+  });
+}
+
+function _auditRenderShots() {
+  document.getElementById('ar-shots').innerHTML = AUDIT_STATE.shots.map((s, i) =>
+    `<span style="position:relative;"><img src="data:${s.mime};base64,${s.data}" style="width:52px; height:52px; object-fit:cover; border-radius:6px; border:1px solid var(--border);">
+     <button type="button" onclick="AUDIT_STATE.shots.splice(${i},1); _auditRenderShots()" style="position:absolute; top:-6px; right:-6px; width:18px; height:18px; border-radius:50%; border:none; background:var(--red,#dc2626); color:#fff; font-size:10px; cursor:pointer;">✕</button></span>`).join('');
+}
+
+function auditPickShot() {
+  const input = document.createElement('input');
+  input.type = 'file'; input.accept = 'image/*';
+  input.onchange = async e => {
+    const f = e.target.files[0];
+    if (f) { AUDIT_STATE.shots.push(await _auditReadFile(f)); _auditRenderShots(); }
+  };
+  input.click();
+}
+
+document.addEventListener('paste', async ev => {
+  const m = document.getElementById('modal-audit-report');
+  if (!m || m.style.display === 'none') return;
+  const item = [...(ev.clipboardData || {}).items || []].find(x => x.type && x.type.startsWith('image/'));
+  if (!item) return;
+  ev.preventDefault();
+  AUDIT_STATE.shots.push(await _auditReadFile(item.getAsFile()));
+  _auditRenderShots();
+});
+
+async function auditSubmitReport() {
+  const payload = {
+    ps_code: document.getElementById('ar-ps').value,
+    category: document.getElementById('ar-category').value,
+    devices: document.getElementById('ar-devices').value,
+    title: document.getElementById('ar-title').value.trim(),
+    description: document.getElementById('ar-desc').value.trim(),
+    fix: document.getElementById('ar-fix').value.trim(),
+    query: document.getElementById('ar-query').value,
+  };
+  if (!payload.ps_code) { showToast(t('ui.audit.psRequired'), 'warning'); return; }
+  if (!payload.title) { showToast(t('ui.audit.titleRequired'), 'warning'); return; }
+  try {
+    const r = await apiCall('/api/zuken/audit/issues', 'POST', payload);
+    const iid = r.issue && r.issue.id;
+    for (const s of AUDIT_STATE.shots) {
+      await apiCall(`/api/zuken/audit/issues/${iid}/files`, 'POST', s);
+    }
+    closeModal('modal-audit-report');
+    showToast(t('ui.audit.reported'), 'success');
+    if (STATE.currentView === 'schema-audit') loadAudit();
+    updateAuditNavBadge();
+  } catch (err) { showToast(err.message, 'error'); }
+}
+
+/* ── eksport do inżyniera ── */
+function auditOpenExport() {
+  const items = AUDIT_STATE.items.filter(i => i.target === 'engineer' && ['new', 'confirmed'].includes(i.status));
+  const pre = new Set(AUDIT_STATE.sel.size ? [...AUDIT_STATE.sel] : items.filter(i => i.status === 'confirmed').map(i => i.id));
+  document.getElementById('ax-to').value = document.getElementById('audit-meta-email').value || '';
+  document.getElementById('ax-lang').value = (typeof CURRENT_LANG !== 'undefined') ? CURRENT_LANG : 'pl';
+  document.getElementById('ax-result').innerHTML = '';
+  document.getElementById('ax-list').innerHTML = items.length ? items.map(i =>
+    `<label style="display:flex; gap:6px; align-items:flex-start; font-size:12px; padding:3px 0;"><input type="checkbox" class="ax-chk" value="${i.id}" ${pre.has(i.id) ? 'checked' : ''}>
+      <span><b>#${i.id}</b> ${escapeHtml(i.title_r)} <span style="color:var(--text-muted);">(${escapeHtml(i.status_r)})</span></span></label>`).join('')
+    : `<div style="padding:12px; color:var(--text-muted);">${escapeHtml(t('ui.audit.exportNone'))}</div>`;
+  openModal('modal-audit-export');
+}
+
+async function auditDoExport() {
+  const ids = [...document.querySelectorAll('#ax-list .ax-chk:checked')].map(c => +c.value);
+  if (!ids.length) { showToast(t('ui.audit.selectFirst'), 'warning'); return; }
+  const btn = document.getElementById('ax-go');
+  btn.disabled = true;
+  try {
+    const r = await apiCall('/api/zuken/audit/export', 'POST', {
+      ps: AUDIT_STATE.ps, ids, lang: document.getElementById('ax-lang').value,
+      to: document.getElementById('ax-to').value.trim(), open: !isRemoteServer(),
+    });
+    const dl = (k) => `${r.download}?kind=${k}&token=${encodeURIComponent(STATE.authToken || '')}`;
+    document.getElementById('ax-result').innerHTML = `✅ ${escapeHtml(t('ui.audit.exportDone', { n: r.count }))}
+      ${r.opened ? escapeHtml(t('ui.audit.exportOpened')) : ''}
+      <a href="${dl('eml')}">.eml</a> · <a href="${dl('xlsx')}">.xlsx</a>
+      ${isRemoteServer() ? '' : ` · <a href="#" onclick="event.preventDefault(); apiCall('/api/zuken/audit/export/${r.batch_id}/open-folder', 'POST', {})">${escapeHtml(t('ui.audit.openFolder'))}</a>`}`;
+    loadAudit();
+  } catch (err) { showToast(err.message, 'error'); }
+  finally { btn.disabled = false; }
+}
+
+/* ── podpowiedzi w karcie obwodu asystenta ── */
+function auditCircuitHintsHtml(cp) {
+  const parts = [];
+  if (cp.audit_patched) parts.push(`<div style="font-size:11.5px; color:#c2410c;">🩹 ${escapeHtml(t('js.audit.circuitPatched'))}</div>`);
+  if (cp.platform_note) {
+    const pn = cp.platform_note;
+    parts.push(`<div style="font-size:11.5px; color:#7c2d12;">🚐 ${escapeHtml(t('js.audit.platformNote', { term: pn.term, equiv: pn.equiv, vehicle: pn.vehicle }))}</div>`);
+  }
+  (cp.audit_issues || []).forEach(i => parts.push(
+    `<div style="font-size:11.5px; color:#b45309;">⚠ ${escapeHtml(t('js.audit.knownIssue'))}: <a href="#" onclick="event.preventDefault(); auditOpenIssue(${i.id})">${escapeHtml(i.title)}</a></div>`));
+  return parts.length ? `<div style="margin:0 0 8px; padding:6px 10px; background:rgba(234,88,12,0.06); border:1px dashed rgba(234,88,12,0.4); border-radius:8px;">${parts.join('')}</div>` : '';
 }
 
 /* Standalone widok obudowy złącza dla reworka — bez kontekstu obwodu. */
@@ -10904,6 +11705,7 @@ function circuitHopInline(h, mateMark) {
     const lbl = h.internal === 'fuse' ? t('js.zuken.viaFuse') : t('js.zuken.viaRelay');
     return `${nodeA} <span style="color:#d97706;">—[⚡ ${escapeHtml(lbl)} ${escapeHtml(h.internal_label || '')}]→</span>`;
   }
+  if (h.patched) return `${nodeA} <span style="color:#ea580c;" title="${escapeHtml(t('js.audit.patchedEdge', { v: h.patched }))}">—[🩹 ${escapeHtml(t('js.audit.patchedEdgeShort'))}]→</span>`;
   const attrs = wireLabelAttrs(h).join(' · ');
   return `${nodeA} <span style="color:var(--text-muted);">—[${escapeHtml(attrs)}]→</span>`;
 }
@@ -10912,6 +11714,7 @@ function circuitSegDesc(h) {
   if (!h) return '';
   if (h.internal === 'fuse') return `⚠️ ${escapeHtml(h.internal_label || '')} — ${escapeHtml(t('js.zuken.checkFuseHere'))}`;
   if (h.internal === 'relay') return `⚠️ ${escapeHtml(h.internal_label || '')} — ${escapeHtml(t('js.zuken.relayContactNote'))}`;
+  if (h.patched) return `🩹 ${escapeHtml(t('js.audit.patchedEdge', { v: h.patched }))}`;
   return escapeHtml(wireLabelAttrs(h).join(' · '));
 }
 
@@ -10993,8 +11796,10 @@ function circuitCardHtml(cp, query) {
       <div style="display:flex; gap:6px;">
         <button type="button" onclick="showCircuitChecklist()" style="padding:5px 11px; font-size:11.5px; font-weight:700; border:1px solid var(--border); border-radius:8px; background:var(--bg-card); color:var(--text-main); cursor:pointer;">📋 ${escapeHtml(t('js.zuken.checklistBtn'))}</button>
         <button type="button" onclick="showCircuitDiagram()" style="padding:5px 11px; font-size:11.5px; font-weight:700; border:1px solid var(--border); border-radius:8px; background:var(--bg-card); color:var(--text-main); cursor:pointer;">⤢ ${escapeHtml(t('js.zuken.diagramEnlarge'))}</button>
+        <button type="button" onclick="auditReportFromCircuit()" title="${escapeHtml(t('ui.audit.reportBtnTitle'))}" style="padding:5px 11px; font-size:11.5px; font-weight:700; border:1px solid rgba(234,88,12,0.45); border-radius:8px; background:var(--bg-card); color:#c2410c; cursor:pointer;">⚠ ${escapeHtml(t('ui.audit.reportBtn'))}</button>
       </div>
     </div>
+    ${auditCircuitHintsHtml(cp)}
     ${moreHtml ? `<div style="margin-bottom:6px; font-size:11px; color:var(--text-muted);">${escapeHtml(t('js.zuken.moreSignals'))}:${moreHtml}</div>` : ''}
     ${diagramHtml ? `<div style="background:var(--bg-card, #fff); border:1px solid var(--border); border-radius:8px; padding:10px 12px; margin-bottom:8px;">${diagramHtml}</div>` : ''}
     ${diagramHtml
@@ -12355,7 +13160,8 @@ function circuitSvgForLoad(ld, connMeta, opts) {
   if (downPin) (downPin.ends || []).forEach(e => { if (e !== downEnd) addStub(e); });
   if (g) (gndPin.ends || []).forEach(e => { if (e !== g) addStub(e); });
 
-  const edgeLabel = h => (h.internal === 'fuse' || h.internal === 'relay')
+  const edgeLabel = h => h.patched ? `🩹 ${t('js.audit.patchedEdgeShort')}`
+    : (h.internal === 'fuse' || h.internal === 'relay')
     ? `⚡ ${h.internal_label || h.internal}`
     : h.internal === 'mate' ? `⇄ ${h.internal_label || 'wtyk'}`
     : h.internal === 'busbar' ? `▭ ${t('js.zuken.busbar')}${h.internal_label ? ' ' + h.internal_label : ''}`
@@ -12488,9 +13294,9 @@ function circuitSvgForLoad(ld, connMeta, opts) {
       // oś toru wchodząca w symbol przekaźnika / wychodząca z niego —
       // zwykła linia, bez oznaczenia styku (symbol ma własne etykiety)
       const axis = h.internal === 'relay' && (nd._relay || (allNodes[i - 1] || {})._relay);
-      const stroke = axis ? '#0891b2' : (h.internal === 'mate' ? '#7c3aed' : internal ? '#d97706' : circuitWireStroke(h.wire_color));
-      const dash = (internal && !axis) ? ' stroke-dasharray="5 3"' : '';
-      svg += `<line x1="${cx + boxW / 2}" y1="${yPrev}" x2="${cx + boxW / 2}" y2="${yCur}" stroke="${stroke}" stroke-width="${(internal && !axis) ? 1.6 : 2.4}"${dash}/>`;
+      const stroke = h.patched ? '#ea580c' : axis ? '#0891b2' : (h.internal === 'mate' ? '#7c3aed' : internal ? '#d97706' : circuitWireStroke(h.wire_color));
+      const dash = h.patched ? ' stroke-dasharray="2 3"' : (internal && !axis) ? ' stroke-dasharray="5 3"' : '';
+      svg += `<line x1="${cx + boxW / 2}" y1="${yPrev}" x2="${cx + boxW / 2}" y2="${yCur}" stroke="${stroke}" stroke-width="${(internal && !axis) ? 1.6 : 2.4}"${dash}>${h.patched ? `<title>${escapeHtml(t('js.audit.patchedEdge', { v: h.patched }))}</title>` : ''}</line>`;
       const lbl = axis ? '' : edgeLabel(h);
       // etykiety rysowane na końcu (nad odnogami), z obwódką w kolorze tła.
       // Etykieta przewodu/aparatu jest klikalna — prowadzi do jego obwodu
