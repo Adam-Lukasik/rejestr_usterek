@@ -343,6 +343,52 @@ Wersja wielojęzykowa: `SUPPORTED_LANGS = ("pl", "en", "de")`, tłumaczenia w
 - Test UI bez klikania: headless Edge + CDP (node 22 ma globalny WebSocket),
   `openAiDiagnosisModal({projekt, default_query})`, zrzut `Page.captureScreenshot`.
 
+## Kontrola schematów (schema_audit.py)
+
+Rejestr błędów/braków w danych Zuken + łatki-nakładki dla asystenta + eksport
+listy poprawek dla inżyniera E3. Nowy widok „Kontrola schematów"
+(`data-view="schema-audit"`), API pod `/api/zuken/audit/*`.
+
+- **Rejestr**: `zuken_issues` (lokalna, NIE tabela systemowa) —
+  `fingerprint` = `D<nn>|<klucz>` stabilny między skanami (dedupe/upsert).
+  `target` = 'engineer' (do E3) | 'internal' (do uzupełnienia u nas);
+  statusy i ważność w `CATEGORIES`/`OPEN_STATUSES`. Komunikaty PL/EN/DE jako
+  `msg_key`+`msg_params` w `AUDIT_MSG`, render przez `amsg()`/`render_issue()`
+  (nie trzymać gotowych tekstów w bazie). Lokalizacja = `location` JSON
+  (schematic_id/page/bbox/grid → `device_location()`, `grid_ref()` siatka
+  ramki '2.B'); wycinek PNG `snapshot_png()` (pypdfium2 + PIL, oba w
+  SELF_CHECK_MODULES).
+- **Skan**: `run_scan(ps, stages)`; DETECTORS D01–D15, etap 'data' (tylko
+  baza — leci też w `_audit_autoscan` po generate summaries/import) i 'pdf'
+  (geometria schematu — tylko przycisk Skanuj). Nieodtworzone zgłoszenia
+  zamykane: internal→'done', engineer→'verified' gdy zmieniła się rewizja
+  (`ps_revision_key` = max(imported_at)+mtime schematu). Regresja
+  (verified/done → zgłoszenie wróciło) otwiera jako 'new'.
+- **D14 pinout_missing**: `_conn_face_family()` to PORT predykatu
+  `connFaceLayout()` z frontendu (rodziny złączy) — przy dodawaniu rodziny
+  w JS trzeba zaktualizować tutaj, inaczej fałszywe 'missing'. Grupuje po
+  artykuł+opis jak raport rysunków (`get_ps_connector_types`: artykuł z BOM
+  halves ma pierwszeństwo); missing→warn, unverified→info; suggestion
+  kind 'pinout' → frontend otwiera `openConnPinoutEditor`.
+- **D15 pdf_report_label**: etykiety z `zuken_pdf_symbols` nieznane raportowi
+  ani BOM. `symbol_clean` trzyma segment +lokalizacji (+BL1-X186) — zawsze
+  przez `zs.clean_device_code` przed porównaniem. Pomija RT/SP/W/U/FH/FR/ZW,
+  numery przewodów kolorowych (OG193A, P13RD), AWG*, i dopisuje `near`
+  (ten sam rdzeń litera+cyfry albo prefiks ≥4 znaki).
+- **Łatki**: `zuken_data_patches` (TABELA SYSTEMOWA — w migracjach,
+  `uid` UUID stabilny między bazami; eksport nie polega na id). Rodzaje:
+  'connection' (szpilka/pin), 'fuse_holder'; nakładane w zuken_service
+  (`_wire_adjacency(with_patches)`), `_mark_redundant_patches` przy skanie.
+  apply_suggestion obsługuje kind translation/alias/patch; kind 'pinout'/
+  'photos'/'text' nie mają apply — UI pokazuje własny przycisk.
+- **Eksport**: `export_batch` → `DATA_DIR/exports/audit/<PS>_<stamp>_<bid>/`:
+  XLSX (własny writer sharedStrings — openpyxl NIE jest zależnością),
+  PNG wycinki, szkic .eml (X-Unsent:1). Status→'sent', `zuken_issue_batches`.
+- Admin = `_audit_admin()`; wykrywacze liczą zawsze na SUROWYCH danych
+  (bez łatek) — łatki to osobna warstwa naprawcza.
+- Testy na KOPII bazy: `RU_DATA_DIR` na katalog z kopią db (uwaga: `/tmp`
+  w Git Bash ≠ `C:\tmp` — WinPython widzi `C:\tmp`, Git Bash AppData\Temp).
+
 ## Serwer centralny (Docker)
 
 - `server_main.py` — headless entrypoint (bez webview/tkinter), env `RU_HOST`/`RU_PORT`/`RU_DATA_DIR`.
