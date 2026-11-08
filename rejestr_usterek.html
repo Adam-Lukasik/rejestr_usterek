@@ -1612,6 +1612,11 @@
         <span data-i18n="nav.dictionaries">Słowniki</span>
       </div>
 
+      <div class="nav-item" data-view="developer" id="nav-developer" style="display:none;" title="Narzędzia deweloperskie" data-i18n-title="nav.devTitle">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+        <span data-i18n="nav.developer">Deweloper</span>
+      </div>
+
       <div class="nav-item" data-view="users" id="nav-users" title="Użytkownicy" data-i18n-title="nav.users">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
         <span data-i18n="nav.users">Użytkownicy</span>
@@ -2526,6 +2531,34 @@
       </div>
     </section>
 
+    <section class="view-panel" id="view-developer">
+      <div class="view-header">
+        <h2 data-i18n="ui.dev.title">Narzędzia deweloperskie</h2>
+        <p class="view-sub" data-i18n="ui.dev.sub">Operacje potencjalnie destrukcyjne — tylko dla kont z flagą dewelopera.</p>
+      </div>
+      <div class="card" style="margin-bottom:14px;">
+        <div class="card-body" style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+          <div>
+            <div style="font-weight:700; font-size:13.5px;" data-i18n="ui.dev.auditRescan">Kontrola schematów — skan od zera</div>
+            <div style="font-size:11.5px; color:var(--text-muted); max-width:520px;" data-i18n="ui.dev.auditRescanHint">Usuwa wszystkie auto-zgłoszenia projektu (także odrzucone i ich fingerprinty) i skanuje od nowa. Zgłoszenia ręczne i łatki zostają.</div>
+          </div>
+          <select id="dev-ps-select" style="margin-left:auto; padding:7px 12px; border-radius:var(--radius-md); border:1px solid var(--border); background:var(--bg-card-subtle); font-size:13px; font-weight:700; color:var(--text-main);"></select>
+          <button type="button" class="btn-secondary-action" style="padding:7px 14px; font-size:12.5px; color:#b91c1c; border-color:rgba(185,28,28,0.4);" onclick="devAuditRescan()">↺ <span data-i18n="ui.audit.scanReset">Skan od zera</span></button>
+          <span id="dev-scan-status" style="font-size:11.5px; color:var(--text-muted);"></span>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-body" style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+          <div>
+            <div style="font-weight:700; font-size:13.5px;" data-i18n="ui.dev.selfcheck">Selfcheck modułów</div>
+            <div style="font-size:11.5px; color:var(--text-muted); max-width:520px;" data-i18n="ui.dev.selfcheckHint">Importuje wszystkie wymagane moduły — to samo co --selfcheck w paczce.</div>
+          </div>
+          <button type="button" class="btn-secondary-action" style="margin-left:auto; padding:7px 14px; font-size:12.5px;" onclick="devSelfcheck()">▶ <span data-i18n="ui.dev.selfcheckBtn">Uruchom</span></button>
+          <span id="dev-selfcheck-status" style="font-size:11.5px; color:var(--text-muted);"></span>
+        </div>
+      </div>
+    </section>
+
 
   </main>
 </div>
@@ -2906,6 +2939,12 @@
           <label style="display:flex; align-items:center; gap:8px; font-weight:500; cursor:pointer; font-size:13px;">
             <input type="checkbox" id="ue-must-change" checked style="width:16px; height:16px; cursor:pointer;">
             <span data-i18n="ui.users.mustChange">Wymuś zmianę hasła przy pierwszym logowaniu</span>
+          </label>
+        </div>
+        <div class="form-group" id="ue-dev-row" style="display:none; margin-bottom:12px;">
+          <label style="display:flex; align-items:center; gap:8px; font-weight:500; cursor:pointer; font-size:13px;">
+            <input type="checkbox" id="ue-dev" style="width:16px; height:16px; cursor:pointer;">
+            <span data-i18n="ui.users.isDev">Deweloper (narzędzia deweloperskie; nadaje tylko deweloper)</span>
           </label>
         </div>
         <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:16px;">
@@ -3751,10 +3790,13 @@ function updateUserBadge() {
 
   if (nameEl) nameEl.textContent = u.full_name || u.username || t('js.common.technician');
   if (roleEl) {
-    if (u.role === 'admin') roleEl.textContent = t('nav.roleAdmin');
+    if (u.role === 'admin' && u.is_dev) roleEl.textContent = t('nav.roleDev');
+    else if (u.role === 'admin') roleEl.textContent = t('nav.roleAdmin');
     else if (u.role === 'podglad') roleEl.textContent = t('js.common.viewer');
     else roleEl.textContent = t('nav.roleTech');
   }
+  const navDev = document.getElementById('nav-developer');
+  if (navDev) navDev.style.display = (u.role === 'admin' && u.is_dev) ? 'flex' : 'none';
   if (avEl) avEl.textContent = (u.full_name || u.username || 'T').charAt(0).toUpperCase();
 
   if (navUsers) {
@@ -3798,6 +3840,7 @@ function switchView(viewName) {
   if (viewName === 'project-docs') loadProjectDocsView();
   if (viewName === 'reworks') loadReworksView();
   if (viewName === 'schema-audit') loadSchemaAuditView();
+  if (viewName === 'developer') loadDeveloperView();
   if (viewName === 'backup') { loadBackupStatus(); refreshUpdateVersion(); }
 }
 
@@ -6444,7 +6487,7 @@ async function deleteRework(id) {
    w Zuken” (target=engineer), „Do uzupełnienia u nas” (internal),
    „Łatki” (nakładki na surowy import dla asystenta). Treść zgłoszeń
    renderuje backend w języku UI (title_r/description_r/fix_r). */
-var AUDIT_STATE = { ps: '', tab: 'engineer', items: [], counts: {}, meta: null, patches: [], cat: '', sel: new Set(), shots: [], scanTimer: null };
+var AUDIT_STATE = { ps: '', tab: 'engineer', items: [], counts: {}, meta: null, patches: [], cat: '', sel: new Set(), shots: [], scanTimer: null, patchForm: null };
 
 function _auditAdminVis() {
   const adm = _isAdmin();
@@ -6614,10 +6657,11 @@ async function updateAuditNavBadge() {
 }
 
 /* ── skan ── */
-async function auditStartScan() {
+async function auditStartScan(reset) {
   if (!AUDIT_STATE.ps) return;
+  if (reset && !confirm(t('ui.audit.scanResetConfirm'))) return;
   try {
-    await apiCall('/api/zuken/audit/scan', 'POST', { ps: AUDIT_STATE.ps, stages: ['data', 'pdf'] });
+    await apiCall('/api/zuken/audit/scan', 'POST', { ps: AUDIT_STATE.ps, stages: ['data', 'pdf'], reset: !!reset });
   } catch (err) { showToast(err.message, 'warning'); }
   _auditPollScan();
 }
@@ -6717,6 +6761,22 @@ function _auditSuggestionEditor(sug) {
       ${inp('fuse', p.fuse, 90)} <span style="color:#ea580c; font-weight:800;">→</span> ${inp('holder', p.holder, 180)}
       <span style="color:var(--text-muted);">${escapeHtml(t('ui.audit.patchHint'))}</span></div>`;
   }
+  if (sug.kind === 'patch' && p.kind === 'busbar') {
+    const mt = (p.members || []).map(m => [m.fuse, m.pin, m.term, m.dev].filter(x => x).join(':')).join('\n');
+    return `<div style="font-size:12px;"><div style="margin-bottom:4px; color:var(--text-muted);">${escapeHtml(t('ui.audit.busbarFormHint'))}</div>
+      <textarea class="ai-sug" data-k="members_text" rows="${Math.max(2, (p.members || []).length)}" style="width:100%; padding:4px 6px; font-size:11.5px; font-family:var(--font-mono,monospace);">${escapeHtml(mt)}</textarea>
+      <div style="display:flex; gap:6px; align-items:center; margin-top:4px;">${escapeHtml(t('ui.audit.busbarHolder'))}: ${inp('holder', p.holder, 180)} ${escapeHtml(t('ui.audit.busbarNode'))}: ${inp('node', p.node, 160)}</div></div>`;
+  }
+  if (sug.kind === 'patch' && p.kind === 'box_fuse') {
+    return `<div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap; font-size:12px;">
+      ${inp('box_name', p.box_name, 130)} ${inp('cell', p.cell, 40)} ${inp('rating', p.rating, 50)} → ${inp('out_dev', p.out_dev, 170)}
+      <span style="color:var(--text-muted);">${escapeHtml(t('ui.audit.boxFuseFormHint'))}</span></div>`;
+  }
+  if (sug.kind === 'patch' && p.kind === 'device_location') {
+    return `<div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap; font-size:12px;">
+      ${inp('device', p.device, 100)} <span style="color:#ea580c; font-weight:800;">→</span> ${inp('full_code', p.full_code, 200)}
+      <span style="color:var(--text-muted);">${escapeHtml(t('ui.audit.devLocFormHint'))}</span></div>`;
+  }
   if (sug.kind === 'translation') {
     return `<div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap; font-size:12px;">${inp('form', p.form, 120)} → PL ${inp('pl', p.pl)} EN ${inp('en', p.en)} DE ${inp('de', p.de)}</div>`;
   }
@@ -6745,6 +6805,11 @@ async function auditApply(id) {
   if (!it || !it.suggestion) return;
   const payload = Object.assign({}, it.suggestion.payload || {});
   document.querySelectorAll('#audit-issue-body .ai-sug').forEach(el => { payload[el.dataset.k] = el.value.trim(); });
+  if (it.suggestion.kind === 'patch' && payload.kind === 'busbar' && payload.members_text != null) {
+    payload.members = String(payload.members_text).split(/\n+/).map(l => l.trim()).filter(Boolean)
+      .map(l => { const c = l.split(':'); return { fuse: c[0], pin: c[1], term: c[2], dev: c[3] }; });
+    delete payload.members_text;
+  }
   if (it.suggestion.kind === 'patch' && (payload.kind || 'connection') === 'connection' && (!payload.to_pin || !payload.from_device || !payload.to_device)) {
     showToast(t('ui.audit.pinRequired'), 'warning'); return;
   }
@@ -6803,13 +6868,22 @@ function auditAddFileTo(id) {
 /* ── łatki ── */
 function _auditPatchesHtml() {
   const ps = AUDIT_STATE.patches;
-  if (!ps.length) return `<div style="text-align:center; padding:40px; color:var(--text-muted);">${escapeHtml(t('ui.audit.noPatches'))}</div>`;
   const adm = _isAdmin();
-  return `<div style="font-size:12px; color:var(--text-muted); margin-bottom:6px;">${escapeHtml(t('ui.audit.patchesHint'))}</div>` + ps.map(p => {
+  const head = `<div style="font-size:12px; color:var(--text-muted); margin-bottom:6px; display:flex; gap:8px; align-items:center;">
+    <span style="flex:1;">${escapeHtml(t('ui.audit.patchesHint'))}</span>
+    ${adm ? `<button type="button" class="btn-secondary-action" style="padding:4px 10px; font-size:11.5px; white-space:nowrap;" onclick="auditPatchNew()">＋ ${escapeHtml(t('ui.audit.addPatch'))}</button>` : ''}</div>`
+    + _auditPatchFormHtml();
+  if (!ps.length) return head + `<div style="text-align:center; padding:40px; color:var(--text-muted);">${escapeHtml(t('ui.audit.noPatches'))}</div>`;
+  return head + ps.map(p => {
     const pl = p.payload || {};
     const body = p.kind === 'connection'
       ? `${entText(pl.from_device || '')}:${escapeHtml(pl.from_pin || '')} <b style="color:#ea580c;">⟷</b> ${entText(pl.to_device || '')}:${escapeHtml(pl.to_pin || '')}`
       : p.kind === 'fuse_holder' ? `${entText(pl.fuse || '')} <b style="color:#ea580c;">→</b> ${entText(pl.holder || '')}`
+      : p.kind === 'busbar' ? escapeHtml((pl.members || []).map(m => `${m.fuse}:${m.pin}`).join(' ↔ ')) + (pl.holder ? ` · ${entText(pl.holder)}` : '')
+      : p.kind === 'box_fuse' ? `${escapeHtml(pl.box_name || '')} ${escapeHtml(pl.cell || '')}${pl.rating ? ` ${escapeHtml(pl.rating)}` : ''}${pl.out_dev ? ` → ${entText(pl.out_dev)}` : ''}`
+      : p.kind === 'device_location' ? `${entText(pl.device || '')} <b style="color:#ea580c;">→</b> ${entText(pl.full_code || '')}`
+      : p.kind === 'device_link' ? `${entText(pl.device || '')} ${escapeHtml(pl.pin_a || '')} <b style="color:#ea580c;">⟷</b> ${escapeHtml(pl.pin_b || '')}${pl.label ? ` · ${escapeHtml(pl.label)}` : ''}`
+      : p.kind === 'power_rail' ? escapeHtml((pl.members || []).map(m => `${m.dev}:${m.pin}`).join(' ↔ ')) + (pl.label ? ` · ${escapeHtml(pl.label)}` : '')
       : `<code>${escapeHtml(JSON.stringify(pl))}</code>`;
     const stCol = p.status === 'active' ? '#15803d' : p.status === 'redundant' ? '#0284c7' : '#64748b';
     return `<div class="audit-row" style="border-left:4px solid ${stCol};">
@@ -6821,6 +6895,122 @@ function _auditPatchesHtml() {
         <button type="button" class="btn-secondary-action" style="padding:4px 10px; font-size:11.5px; color:var(--red);" onclick="auditPatchDelete(${p.id})">🗑</button></div>` : ''}
     </div>`;
   }).join('');
+}
+
+function auditPatchNew() {
+  AUDIT_STATE.patchForm = AUDIT_STATE.patchForm ? null : { kind: 'connection' };
+  renderAudit();
+}
+
+function _auditPatchFormHtml() {
+  const f = AUDIT_STATE.patchForm;
+  if (!f) return '';
+  const k = f.kind || 'connection';
+  const i2 = (id, w, ph2) => `<input type="text" id="apf-${id}" placeholder="${escapeHtml(ph2 || '')}" style="width:${w || 120}px; padding:4px 6px; font-size:12px; font-family:var(--font-mono,monospace); border:1px solid var(--border); border-radius:6px; background:var(--bg-card); color:var(--text-main);">`;
+  const kinds = ['connection', 'fuse_holder', 'busbar', 'box_fuse', 'device_location', 'device_link', 'power_rail']
+    .map(kk => `<option value="${kk}"${kk === k ? ' selected' : ''}>${escapeHtml(t('ui.audit.patchKind_' + kk))}</option>`).join('');
+  let fields = '';
+  if (k === 'connection') {
+    fields = `${i2('from_device', 160, t('ui.audit.apfFrom'))}:${i2('from_pin', 42, 'pin')} <b style="color:#ea580c;">⟷</b> ${i2('to_device', 160, t('ui.audit.apfTo'))}:${i2('to_pin', 42, 'pin')}`;
+  } else if (k === 'fuse_holder') {
+    fields = `${i2('fuse', 90, 'F19')} <b style="color:#ea580c;">→</b> ${i2('holder', 180, '=CAB+TWR-FH15')}`;
+  } else if (k === 'busbar') {
+    fields = `<div style="flex:1; min-width:280px;">
+      <div style="font-size:11px; color:var(--text-muted); margin-bottom:3px;">${escapeHtml(t('ui.audit.busbarFormHint'))}</div>
+      <textarea id="apf-members" rows="3" style="width:100%; padding:4px 6px; font-size:11.5px; font-family:var(--font-mono,monospace); border:1px solid var(--border); border-radius:6px; background:var(--bg-card); color:var(--text-main);" placeholder="F9:1:=CAB+MOR-RT167:=CAB+MOR-F9"></textarea>
+      <div style="display:flex; gap:6px; margin-top:4px;">${i2('holder', 170, t('ui.audit.busbarHolder') + ' =CAB+MOR-U147')} ${i2('node', 150, t('ui.audit.busbarNode'))}</div></div>`;
+  } else if (k === 'box_fuse') {
+    fields = `${i2('box_name', 130, 'COMMS IGN')} ${i2('cell', 42, 'A1')} ${i2('rating', 52, '5A')} <b style="color:#ea580c;">→</b> ${i2('out_dev', 170, '=CAB+TWR-X206')} <span style="font-size:11px; color:var(--text-muted);">${escapeHtml(t('ui.audit.boxFuseFormHint'))}</span>`;
+  } else if (k === 'device_location') {
+    fields = `${i2('device', 100, '-A359')} <b style="color:#ea580c;">→</b> ${i2('full_code', 200, '=BOX+TWR-A359')} <span style="font-size:11px; color:var(--text-muted);">${escapeHtml(t('ui.audit.devLocFormHint'))}</span>`;
+  } else if (k === 'device_link') {
+    fields = `${i2('device', 150, '-A359')} ${i2('pin_a', 42, 'A')} <b style="color:#ea580c;">⟷</b> ${i2('pin_b', 42, 'B')} ${i2('label', 130, t('ui.audit.apfLabel'))} <span style="font-size:11px; color:var(--text-muted);">${escapeHtml(t('ui.audit.devLinkFormHint'))}</span>`;
+  } else if (k === 'power_rail') {
+    fields = `<div style="flex:1; min-width:280px;">
+      <div style="font-size:11px; color:var(--text-muted); margin-bottom:3px;">${escapeHtml(t('ui.audit.powerRailFormHint'))}</div>
+      <textarea id="apf-members" rows="3" style="width:100%; padding:4px 6px; font-size:11.5px; font-family:var(--font-mono,monospace); border:1px solid var(--border); border-radius:6px; background:var(--bg-card); color:var(--text-main);" placeholder="=BOX+TWR-RT123:1&#10;=BOX+TWR-RT132:1"></textarea>
+      <div style="display:flex; gap:6px; margin-top:4px;">${i2('label', 170, t('ui.audit.apfLabel'))}</div></div>`;
+  }
+  return `<div class="audit-box" style="margin-bottom:8px; display:flex; gap:8px; align-items:flex-end; flex-wrap:wrap;">
+    <div class="form-group" style="margin:0;"><label style="font-size:11px;">${escapeHtml(t('ui.audit.fKind'))}</label>
+      <select id="apf-kind" onchange="AUDIT_STATE.patchForm.kind=this.value; renderAudit();" style="padding:5px 8px; font-size:12px;">${kinds}</select></div>
+    <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap; flex:1; font-size:12px;">${fields}</div>
+    <div style="display:flex; gap:6px;">
+      <button type="button" class="btn-secondary-action" style="padding:5px 10px; font-size:12px;" onclick="AUDIT_STATE.patchForm=null; renderAudit();">${escapeHtml(t('ui.common.cancel'))}</button>
+      <button type="button" class="btn-primary-action" style="padding:5px 12px; font-size:12px;" onclick="auditPatchSaveNew()">${escapeHtml(t('ui.common.save'))}</button>
+    </div></div>`;
+}
+
+async function auditPatchSaveNew() {
+  const f = AUDIT_STATE.patchForm;
+  if (!f) return;
+  const g = id => { const el = document.getElementById('apf-' + id); return el ? el.value.trim() : ''; };
+  const k = f.kind || 'connection';
+  const payload = {};
+  try {
+    if (k === 'connection') {
+      Object.assign(payload, { from_device: g('from_device'), from_pin: g('from_pin'), to_device: g('to_device'), to_pin: g('to_pin') });
+    } else if (k === 'fuse_holder') {
+      Object.assign(payload, { fuse: g('fuse'), holder: g('holder') });
+    } else if (k === 'busbar') {
+      payload.members = String(document.getElementById('apf-members').value || '').split(/\n+/).map(l => l.trim()).filter(Boolean)
+        .map(l => { const c = l.split(':'); return { fuse: c[0], pin: c[1], term: c[2], dev: c[3] }; });
+      if (g('holder')) payload.holder = g('holder');
+      if (g('node')) payload.node = g('node');
+    } else if (k === 'box_fuse') {
+      Object.assign(payload, { box_name: g('box_name'), cell: g('cell'), rating: g('rating'), out_dev: g('out_dev') });
+    } else if (k === 'device_location') {
+      Object.assign(payload, { device: g('device'), full_code: g('full_code') });
+    } else if (k === 'device_link') {
+      Object.assign(payload, { device: g('device'), pin_a: g('pin_a'), pin_b: g('pin_b') });
+      if (g('label')) payload.label = g('label');
+    } else if (k === 'power_rail') {
+      payload.members = String(document.getElementById('apf-members').value || '').split(/\n+/).map(l => l.trim()).filter(Boolean)
+        .map(l => { const c = l.split(':'); return { dev: c[0], pin: c[1] || '1' }; });
+      if (g('label')) payload.label = g('label');
+    }
+    const r = await apiCall('/api/zuken/audit/patches', 'POST', { ps_code: AUDIT_STATE.ps, kind: k, payload });
+    showToast(t('ui.audit.patchSaved', { v: r.id }), 'success');
+    AUDIT_STATE.patchForm = null;
+    await loadAudit();
+  } catch (err) { showToast(err.message, 'error'); }
+}
+
+/* ── widok dewelopera ── */
+async function loadDeveloperView() {
+  const sel = document.getElementById('dev-ps-select');
+  if (sel && !sel.options.length) {
+    await _fillPsSelect('dev-ps-select', AUDIT_STATE.ps || STATE.lastSelectedPS);
+  }
+}
+
+async function devAuditRescan() {
+  const ps = document.getElementById('dev-ps-select').value;
+  if (!ps) { showToast(t('ui.audit.psRequired'), 'warning'); return; }
+  if (!confirm(t('ui.audit.scanResetConfirm'))) return;
+  const el = document.getElementById('dev-scan-status');
+  try {
+    await apiCall('/api/zuken/audit/scan', 'POST', { ps, stages: ['data', 'pdf'], reset: true });
+    el.textContent = `↺ ${ps}`;
+    const tick = async () => {
+      let s;
+      try { s = await apiCall('/api/zuken/audit/scan/status'); } catch (e) { return; }
+      if (s.running) { el.textContent = `⏳ ${t('ui.audit.scanning')} ${s.current || ''}`; setTimeout(tick, 1500); return; }
+      el.textContent = s.error ? `❌ ${s.error}` : t('ui.audit.scanDone', { n: s.new || 0, c: s.closed || 0 });
+      loadAuditBadge();
+    };
+    tick();
+  } catch (err) { showToast(err.message, 'error'); }
+}
+
+async function devSelfcheck() {
+  const el = document.getElementById('dev-selfcheck-status');
+  el.textContent = '…';
+  try {
+    const r = await apiCall('/api/selfcheck');
+    el.textContent = r.ok ? `✓ ${(r.modules || []).length} mod.` : `❌ ${(r.missing || []).join(', ') || 'fail'}`;
+    el.style.color = r.ok ? 'var(--green)' : 'var(--red)';
+  } catch (e) { el.textContent = `❌ ${e.message}`; el.style.color = 'var(--red)'; }
 }
 
 async function auditPatchStatus(id, status) {
@@ -7254,6 +7444,7 @@ async function deleteAliasItem(phrase) {
 // Tłumaczenia tekstów schematów (zuken_translations) — edycja tylko admin
 const TERMS_STATE = { missing: true };
 function _isAdmin() { return STATE.activeUser && STATE.activeUser.role === 'admin'; }
+function _isDev() { return _isAdmin() && !!STATE.activeUser.is_dev; }
 
 function termsShowMissing(missing) {
   TERMS_STATE.missing = missing;
@@ -7482,7 +7673,7 @@ async function renderUsersTable() {
           <div style="font-size:12px; color:var(--text);">${escapeHtml(u.email || '—')}</div>
           ${u.phone ? `<div style="font-size:11px; color:var(--text-muted);">${escapeHtml(u.phone)}</div>` : ''}
         </td>
-        <td><span class="tag-project">${escapeHtml(u.role)}</span></td>
+        <td><span class="tag-project">${escapeHtml(u.role)}</span>${u.is_dev ? ` <span class="tag-project" style="background:rgba(234,88,12,0.15); color:#c2410c;">DEV</span>` : ''}</td>
         <td>${u.is_active ? `<span style="color:var(--green); font-weight:600;">${t('ui.users.active')}</span>` : `<span style="color:var(--red); font-weight:600;">${t('ui.users.inactive')}</span>`}</td>
         <td style="text-align:right;">
           <button class="btn-secondary-action" style="padding:3px 8px; font-size:11.5px;" onclick="editUserDialog('${u.id}')">${t('ui.common.edit')}</button>
@@ -7508,6 +7699,8 @@ function openNewUserDialog() {
   document.getElementById('ue-password').required = true;
   document.getElementById('ue-pw-hint').textContent = t('ui.users.pwHintNew');
   document.getElementById('ue-must-change').checked = true;
+  document.getElementById('ue-dev-row').style.display = _isDev() ? '' : 'none';
+  document.getElementById('ue-dev').checked = false;
   openModal('modal-user-edit');
 }
 
@@ -7526,6 +7719,8 @@ function editUserDialog(id) {
   document.getElementById('ue-password').required = false;
   document.getElementById('ue-pw-hint').textContent = t('ui.users.pwHintEdit');
   document.getElementById('ue-must-change').checked = Boolean(u.must_change_password);
+  document.getElementById('ue-dev-row').style.display = _isDev() ? '' : 'none';
+  document.getElementById('ue-dev').checked = Boolean(u.is_dev);
   openModal('modal-user-edit');
 }
 
@@ -7542,13 +7737,17 @@ document.getElementById('form-user-edit').addEventListener('submit', async (e) =
 
   try {
     if (id) {
-      await apiCall(`/api/users/${id}`, 'PUT', { username, full_name, email, phone, role, is_active: 1, must_change_password });
+      const payload = { username, full_name, email, phone, role, is_active: 1, must_change_password };
+      if (_isDev()) payload.is_dev = document.getElementById('ue-dev').checked ? 1 : 0;
+      await apiCall(`/api/users/${id}`, 'PUT', payload);
       if (password) {
         await apiCall(`/api/users/${id}/reset-password`, 'POST', { new_password: password, must_change_password });
       }
       showToast(t('js.users.updated'), 'success');
     } else {
-      await apiCall('/api/users', 'POST', { username, full_name, email, phone, role, password, must_change_password });
+      const body = { username, full_name, email, phone, role, password, must_change_password };
+      if (_isDev()) body.is_dev = document.getElementById('ue-dev').checked ? 1 : 0;
+      await apiCall('/api/users', 'POST', body);
       showToast(t('js.users.created'), 'success');
     }
     closeModal('modal-user-edit');
@@ -11701,9 +11900,13 @@ function wireLabelAttrs(h) {
 function circuitHopInline(h, mateMark) {
   const nodeA = entText(h.from_clean) + (h.from_pin ? ':' + escapeHtml(h.from_pin) : '')
     + (mateMark ? ` <span style="color:#7c3aed;" title="${escapeHtml(t('js.zuken.matePair'))}">⇄${escapeHtml(mateMark)}</span>` : '');
-  if (h.internal === 'fuse' || h.internal === 'relay') {
-    const lbl = h.internal === 'fuse' ? t('js.zuken.viaFuse') : t('js.zuken.viaRelay');
+  if (h.internal === 'fuse' || h.internal === 'relay' || h.internal === 'switch') {
+    const lbl = h.internal === 'fuse' ? t('js.zuken.viaFuse')
+      : h.internal === 'relay' ? t('js.zuken.viaRelay') : t('js.zuken.viaSwitch');
     return `${nodeA} <span style="color:#d97706;">—[⚡ ${escapeHtml(lbl)} ${escapeHtml(h.internal_label || '')}]→</span>`;
+  }
+  if (h.internal === 'busbar') {
+    return `${nodeA} <span style="color:#d97706;">—[▭ ${escapeHtml(t('js.zuken.busbar'))}${h.internal_label ? ' ' + escapeHtml(h.internal_label) : ''}]→</span>`;
   }
   if (h.patched) return `${nodeA} <span style="color:#ea580c;" title="${escapeHtml(t('js.audit.patchedEdge', { v: h.patched }))}">—[🩹 ${escapeHtml(t('js.audit.patchedEdgeShort'))}]→</span>`;
   const attrs = wireLabelAttrs(h).join(' · ');
@@ -11714,6 +11917,8 @@ function circuitSegDesc(h) {
   if (!h) return '';
   if (h.internal === 'fuse') return `⚠️ ${escapeHtml(h.internal_label || '')} — ${escapeHtml(t('js.zuken.checkFuseHere'))}`;
   if (h.internal === 'relay') return `⚠️ ${escapeHtml(h.internal_label || '')} — ${escapeHtml(t('js.zuken.relayContactNote'))}`;
+  if (h.internal === 'switch') return `⏻ ${escapeHtml(h.internal_label || '')} — ${escapeHtml(t('js.zuken.viaSwitch'))}`;
+  if (h.internal === 'busbar') return `▭ ${escapeHtml(t('js.zuken.busbar'))}${h.internal_label ? ' ' + escapeHtml(h.internal_label) : ''}`;
   if (h.patched) return `🩹 ${escapeHtml(t('js.audit.patchedEdge', { v: h.patched }))}`;
   return escapeHtml(wireLabelAttrs(h).join(' · '));
 }
@@ -12134,16 +12339,42 @@ function connFaceLayout(info) {
   } else if (/relay\s*socket\s*9/i.test(desc) || /^8JA\s*003\s*526/i.test(art)) {
     // gniazdo przekaźnika mini ISO 5/9 (Hella): siatka 3x3, pozycje 1-3 w dolnym rzędzie
     fam = 'RELAY9'; rows = 3; cols = 3; n = 9; gender = 'F';
+  } else if (/micro.{0,15}(relay|przeka)|(relay|przeka\w*).{0,15}micro/i.test(blob)
+             || /^241\s?500\s?006/.test(art)) {
+    // podstawa przekaźnika Micro ISO / Micro 280 (5 pin, np. 241 500 006):
+    // 3 pionowe gniazda 4,8 mm (1=86, 4=87a, 2=85) + 2 poziome 6,3 mm
+    // wyśrodkowane pod nimi (5=87, 3=30); ucho montażowe u góry.
+    // Układ wg standardowej karty ISO Micro (widok od strony nóżek
+    // przekaźnika = strona przewodów gniazda) — do weryfikacji na obudowie.
+    return { fam: 'RELAYM5', gender: 'F', cols: 3, rows: 3, n: 5, tee: false, unverified: true };
   } else if (/\bRCA\b/i.test(desc) || /^ACPR-/i.test(art)) {
     // wtyk/gniazdo RCA (cinch): pin 1 = styk środkowy, COL = kołnierz (masa/ekran)
     fam = 'RCA'; rows = 1; cols = 2; n = 2;
     gender = /męsk|\bmale\b|wtyk|\bplug\b/i.test(desc) ? 'M' : 'F';
   }
-  if (!fam || !gender || !cols || !rows || cols !== Math.floor(cols) || rows !== Math.floor(rows)) return null;
+  if (!fam || !gender || !cols || !rows || cols !== Math.floor(cols) || rows !== Math.floor(rows)) {
+    _auditObservePinout(art, desc);
+    return null;
+  }
   // seria lance: kształt zweryfikowany z katalogu TE 1654369-1, ale kolejność
   // komór znana tylko dla obsługiwanych rekordów USER → wbudowana numeracja
   // niezweryfikowana
   return { fam, gender, cols, rows, n, tee, lance, was: was || undefined, unverified: lance || undefined };
+}
+
+// D14a: artykuł bez rysunku złącza → auto-zgłoszenie do Kontroli schematów
+// (idempotentne po fingerprincie; raz na sesję per artykuł).
+const _AUDIT_OBS_SEEN = new Set();
+function _auditObservePinout(art, desc) {
+  art = (art || '').trim();
+  if (!art || _AUDIT_OBS_SEEN.has(art.toUpperCase())) return;
+  _AUDIT_OBS_SEEN.add(art.toUpperCase());
+  try {
+    apiCall('/api/zuken/audit/observe', 'POST', {
+      kind: 'pinout_missing', article: art, desc: desc || '',
+      ps: STATE.lastSelectedPS || ''
+    }).catch(() => {});
+  } catch (e) { /* zgłoszenie best-effort */ }
 }
 
 // Numer gniazda w komórce (r=0 góra, c=0 lewa) patrząc OD STRONY PRZEWODÓW.
@@ -12368,6 +12599,38 @@ function connFaceSvg(L, pin, opt) {
       }
     }));
     return s9 + '</svg>';
+  }
+
+  // podstawa przekaźnika Micro ISO / Micro 280 (5 pin) od strony przewodów:
+  // 3 pionowe gniazda 4,8 mm (1=86, 4=87a, 2=85), pod nimi dwa poziome
+  // gniazda 6,3 mm wyśrodkowane (5=87, 3=30); ucho montażowe u góry.
+  if (L.fam === 'RELAYM5') {
+    const term = { 1: '86', 2: '85', 3: '30', 4: '87a', 5: '87' };
+    const u = mini ? 14 : 44, p5 = mini ? 3 : 8, earH = mini ? 6 : 14;
+    const W5 = p5 * 2 + u * 3, H5 = earH + p5 * 2 + u * 3;
+    const nest5 = opt.nested ? `x="${opt.x || 0}" y="${opt.y || 0}" width="${opt.width || W5}" height="${opt.height || H5}"` : '';
+    let s5 = `<svg ${nest5} viewBox="0 0 ${W5} ${H5}" style="${mini ? '' : 'width:100%; max-width:180px; margin:0 auto; '}display:block;" xmlns="http://www.w3.org/2000/svg">`;
+    // ucho montażowe z otworem (orientacja jak na rysunku/zdjęciu)
+    s5 += `<rect x="${W5 / 2 - u * 0.45}" y="1" width="${u * 0.9}" height="${earH + 2}" rx="${mini ? 1.5 : 3}" fill="var(--bg-card-subtle,#e2e8f0)" stroke="var(--border,#94a3b8)" stroke-width="${mini ? 0.8 : 1.2}"/>`;
+    s5 += `<circle cx="${W5 / 2}" cy="${earH / 2 + 1.5}" r="${mini ? 1.4 : 3}" fill="var(--bg-card,#fff)" stroke="var(--border,#94a3b8)" stroke-width="1"/>`;
+    // korpus
+    s5 += `<rect x="1" y="${earH}" width="${W5 - 2}" height="${H5 - earH - 1}" rx="${mini ? 2 : 6}" fill="var(--bg-card-subtle,#e2e8f0)" stroke="var(--border,#94a3b8)" stroke-width="${mini ? 0.8 : 1.4}"/>`;
+    const sock = (cx, cy, w, h, p) => {
+      const hot = pinSet.has(String(p)) || pinSet.has(term[p]);
+      const pc = primOf(p) || primOf(term[p]);
+      let g = `<rect x="${cx - w / 2}" y="${cy - h / 2}" width="${w}" height="${h}" rx="${mini ? 0.6 : 1.5}" fill="${pc || 'var(--text-muted,#64748b)'}" stroke="${hot ? '#0284c7' : 'none'}" stroke-width="${hot ? 3 : 0}"/>`;
+      if (!mini) g += `<text x="${cx}" y="${cy + u * 0.42}" text-anchor="middle" font-size="9.5" font-weight="${hot ? 800 : 600}" fill="${hot ? '#0284c7' : 'var(--text-muted,#475569)'}" font-family="monospace">${p} · ${term[p]}</text>`;
+      return g;
+    };
+    // 3 pionowe 4,8 mm: 1(86), 4(87a), 2(85)
+    [[1, 0], [4, 1], [2, 2]].forEach(([p, c]) => {
+      s5 += sock(p5 + c * u + u / 2, earH + p5 + u * 0.35, u * 0.15, u * 0.55, p);
+    });
+    // 2 poziome 6,3 mm wyśrodkowane: 5(87), 3(30)
+    [[5, 1], [3, 2]].forEach(([p, r]) => {
+      s5 += sock(W5 / 2, earH + p5 + r * u + u * 0.38, u * 0.78, u * 0.2, p);
+    });
+    return s5 + '</svg>';
   }
 
   // RCA: koncentrycznie — kołnierz (COL) jako pierścień, pin 1 jako styk środkowy
@@ -13163,6 +13426,7 @@ function circuitSvgForLoad(ld, connMeta, opts) {
   const edgeLabel = h => h.patched ? `🩹 ${t('js.audit.patchedEdgeShort')}`
     : (h.internal === 'fuse' || h.internal === 'relay')
     ? `⚡ ${h.internal_label || h.internal}`
+    : h.internal === 'switch' ? `⏻ ${h.internal_label || 'switch'}`
     : h.internal === 'mate' ? `⇄ ${h.internal_label || 'wtyk'}`
     : h.internal === 'busbar' ? `▭ ${t('js.zuken.busbar')}${h.internal_label ? ' ' + h.internal_label : ''}`
     : wireLabelAttrs(h).join(' · ');
@@ -13290,7 +13554,7 @@ function circuitSvgForLoad(ld, connMeta, opts) {
     if (nd.edge) {
       const h = nd.edge;
       const yPrev = yOf[i - 1] + nodeH[i - 1], yCur = y;
-      const internal = h.internal === 'fuse' || h.internal === 'relay' || h.internal === 'mate' || h.internal === 'busbar';
+      const internal = h.internal === 'fuse' || h.internal === 'relay' || h.internal === 'mate' || h.internal === 'busbar' || h.internal === 'switch';
       // oś toru wchodząca w symbol przekaźnika / wychodząca z niego —
       // zwykła linia, bez oznaczenia styku (symbol ma własne etykiety)
       const axis = h.internal === 'relay' && (nd._relay || (allNodes[i - 1] || {})._relay);

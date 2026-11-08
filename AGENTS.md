@@ -364,6 +364,11 @@ listy poprawek dla inżyniera E3. Nowy widok „Kontrola schematów"
   zamykane: internal→'done', engineer→'verified' gdy zmieniła się rewizja
   (`ps_revision_key` = max(imported_at)+mtime schematu). Regresja
   (verified/done → zgłoszenie wróciło) otwiera jako 'new'.
+- **D02 dangling_terminal**: końcówka -RT z jednym przewodem PE/GND to
+  poprawny punkt masowy w nadwoziu (oczko przykręcane do karoserii) —
+  pomijana przez `_is_pe_gnd_wire` (kolor GNYE/YE-GN albo słowo
+  PE/GND/GROUND/EARTH/MASSE/MASA w sygnale/funkcji; `wire_color` jest w
+  `Ctx.connections` właśnie dla tego).
 - **D14 pinout_missing**: `_conn_face_family()` to PORT predykatu
   `connFaceLayout()` z frontendu (rodziny złączy) — przy dodawaniu rodziny
   w JS trzeba zaktualizować tutaj, inaczej fałszywe 'missing'. Grupuje po
@@ -376,11 +381,54 @@ listy poprawek dla inżyniera E3. Nowy widok „Kontrola schematów"
   numery przewodów kolorowych (OG193A, P13RD), AWG*, i dopisuje `near`
   (ten sam rdzeń litera+cyfry albo prefiks ≥4 znaki).
 - **Łatki**: `zuken_data_patches` (TABELA SYSTEMOWA — w migracjach,
-  `uid` UUID stabilny między bazami; eksport nie polega na id). Rodzaje:
-  'connection' (szpilka/pin), 'fuse_holder'; nakładane w zuken_service
-  (`_wire_adjacency(with_patches)`), `_mark_redundant_patches` przy skanie.
+  `uid` UUID stabilny między bazami; eksport nie polega na id). Rodzaje
+  (`PATCH_KINDS`, walidacja w `_clean_patch_payload`):
+  'connection' (szpilka/pin → `_wire_adjacency(with_patches)`, hop `patched`),
+  'fuse_holder' (-F→-FH → `holders`), 'busbar' (members fuse:pin:term →
+  syntetyczny `bars` z węzłem -ZW/sibs, hop 'busbar' z 🩹), 'box_fuse'
+  (box_name+cell → nakładka READ-TIME w `get_ps_fuses`, NIE do
+  `_populate_ps_box_fuses` — ta regeneruje tabelę przy imporcie),
+  'device_location' (device→full_code =SYS+LOC-… → alias przy rozwiązywaniu
+  zapytania w `_trace_circuit_impl`), 'device_link' (device + pin_a/pin_b →
+  wewnętrzna krawędź `_internal='switch'` w `_circuit_extend_adjacency` —
+  przejście przez aparat spoza raportu: hebel/stycznik/blok, np. A359
+  ML-RBS A↔B; rysunek ⏻, `js.zuken.viaSwitch`), 'power_rail' (members
+  dev:pin ≥2 → pełna siatka krawędzi `_internal='busbar'` między zaciskami
+  wspólnej szyny śrubowej — Carnation: RT123+RT132 / RT133+…; członkowie
+  nie-RT dostają pass przez `internal_devs`). Uwaga: tor przechodzi przez
+  aparat dopiero po `device_link` — same łatki 'connection' do jego pinów
+  kończą ścieżkę (BFS staje na urządzeniu nie-'pass'). Szynę można
+  przybliżyć samymi 'connection' między -RT (RT są przechodnie), ale bez
+  węzła szyny w diagramie. `_diagnose_defect_impl` czyta SUROWE
+  `zuken_connections` — łatki nie wchodzą do grupowania obwodów w
+  diagnozie (znany limit). `_ps_fuse_rails` to WRAPPER:
+  `_ps_fuse_rails_raw` (geometria, cache) + nakładki łatek — wykrywacze
+  wołają `_ps_fuse_rails_raw` (surowe!). `_mark_redundant_patches` przy
+  skanie sprawdza wszystkie rodzaje (connection: wiersz w raporcie;
+  fuse_holder/busbar: urządzenia połączone w surowym grafie; box_fuse:
+  wiersz w `zuken_ps_box_fuses`; device_location: BOM ma już pełny kod).
   apply_suggestion obsługuje kind translation/alias/patch; kind 'pinout'/
-  'photos'/'text' nie mają apply — UI pokazuje własny przycisk.
+  'photos'/'text' nie mają apply — UI pokazuje własny przycisk. Zakładka
+  Łatki ma formularz ręcznego dodania (admin, `auditPatchNew`).
+- **Role i flaga dewelopera**: role to `admin`/`technik`/`podglad` (bez
+  zmian — wszystkie checki `role=='admin'` nietknięte). `users.is_dev` =
+  flaga nad rolą admina: dev dostaje osobne menu „Deweloper"
+  (`data-view="developer"`, nav gated przez `_isDev()`) z narzędziami
+  destrukcyjnymi (dziś: Skan od zera, selfcheck). Nadanie: `DEV_USERS`
+  w config.json (bootstrap przy init_db, po username) albo checkbox w
+  edycji użytkownika — tylko dev widzi pole i może zapisać (403 inaczej);
+  dev nie może zdjąć flagi sam z siebie. Backend: `_is_dev(u)`, kom.
+  `devRequired`; scan z `reset:true` wymaga deva.
+- **Dev-reset**: `reset_issues(ps, detectors=None)` usuwa auto-zgłoszenia
+  PS (detector IS NOT NULL, wraz z `rejected`/fingerprintami) + ich pliki;
+  ręczne zgłoszenia i łatki zostają. `run_scan`/`start_scan` z `reset=True`
+  → skan „jak pierwszy raz". Z UI: menu „Deweloper" (is_dev) → „Skan od
+  zera". Z API: `POST /api/zuken/audit/scan` z `{"reset": true}` (dev).
+  Z terminala: `python -c "import schema_audit;
+  print(schema_audit.reset_issues('PS011871'))"`.
+- **Observe**: `POST /api/zuken/audit/observe` (zalogowany) → D14a:
+  `connFaceLayout()==null` i brak USER pinoutu → `report_pinout_missing`
+  (fingerprint `D14|OBS|<art>`, raz na sesję per artykuł, pusty ps pomija).
 - **Eksport**: `export_batch` → `DATA_DIR/exports/audit/<PS>_<stamp>_<bid>/`:
   XLSX (własny writer sharedStrings — openpyxl NIE jest zależnością),
   PNG wycinki, szkic .eml (X-Unsent:1). Status→'sent', `zuken_issue_batches`.

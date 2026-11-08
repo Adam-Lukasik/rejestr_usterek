@@ -569,7 +569,7 @@ class Ctx:
                 return []
             ph = ",".join("?" * len(self.conn_ids))
             return [dict(r) for r in self.cur.execute(f"""
-                SELECT from_device, from_pin, to_device, to_pin, wire_number, signal, signal_name
+                SELECT from_device, from_pin, to_device, to_pin, wire_number, signal, signal_name, wire_color
                 FROM zuken_connections WHERE project_id IN ({ph});""", self.conn_ids)]
         return self._memo("conns", f)
 
@@ -670,6 +670,22 @@ def det_device_unconnected(ctx):
     return out
 
 
+_PE_GND_COLOR_RE = re.compile(
+    r"(?i)\b(GN\s*[-/]?\s*YE|YE\s*[-/]?\s*GN|GNYE|YEGN|GN/YE|YE/GN)\b")
+_PE_GND_WORD_RE = re.compile(r"(?i)\b(PE|GND|GROUND|EARTH|MASSE|MASA)\b")
+
+
+def _is_pe_gnd_wire(row, bom):
+    """Przewód ochronny/masowy (PE/GND): kolor żółto-zielony albo nazwa
+    sygnału/funkcji PE, GND, EARTH, MASSE, MASA."""
+    if _PE_GND_COLOR_RE.search(row.get("wire_color") or ""):
+        return True
+    txt = " ".join([row.get("signal_name") or "", row.get("signal") or "",
+                    (bom or {}).get("function") or "",
+                    (bom or {}).get("description") or ""])
+    return bool(_PE_GND_WORD_RE.search(txt))
+
+
 def _floating_terminals(ctx):
     """Końcówki -RT o stopniu 1 w surowym grafie: [(node, peer, row)]."""
     res = []
@@ -714,6 +730,11 @@ def det_dangling_terminal(ctx):
         code = node[0]
         cl = zs.clean_device_code(code)
         bom = (ctx.bom_by_clean.get(cl) or [{}])[0]
+        # przewód PE/GND: końcówka z jednym przewodem to poprawny punkt
+        # masowy — oczko jest przykręcane do elementu nadwozia, więc brak
+        # drugiego końca w raporcie to cecha konstrukcji, nie błąd danych
+        if _is_pe_gnd_wire(row, bom):
+            continue
         cand, conf, cpin = None, None, ""
         if sch:
             for p in ctx.symbol_pages.get(cl) or []:
@@ -1023,7 +1044,7 @@ def det_kb_document(ctx):
 def _rails(ctx):
     def f():
         adj = zs._wire_adjacency(ctx.cur, ctx.conn_ids, with_patches=False)
-        return zs._ps_fuse_rails(ctx.cur, ctx.conn_ids, ctx.ps, adj) or {}
+        return zs._ps_fuse_rails_raw(ctx.cur, ctx.conn_ids, ctx.ps, adj) or {}
     return ctx._memo("rails", f)
 
 
@@ -1071,12 +1092,20 @@ def det_busbar_unmodeled(ctx):
             full = [term.rsplit("-", 1)[0] + "-" + m if "-" in term else m for m in members]
             devs = [s[0] for s in (b.get("sibs") or [])]
             loc_devs = [d for d in ([next((x["device_code"] for x in ctx.bom_by_clean.get(fc) or []), None)] + devs) if d]
+            sugg = {"kind": "patch", "confidence": "medium",
+                    "payload": {"kind": "busbar",
+                                "members": [{"fuse": m, "pin": pin or "1",
+                                             "term": term if i == 0 else ""}
+                                            for i, m in enumerate(members)],
+                                "holder": b.get("holder") or "",
+                                "node": node}}
             out.append(_f(f"D10|{node}", "busbar_unmodeled", "busbar_unmodeled",
                           {"members": " ↔ ".join(f"{m}:{pin}" for m in members), "holder": b.get("holder") or "",
                            "taps": ", ".join(b.get("taps") or [])},
                           devices=loc_devs + ([b["holder"]] if b.get("holder") else []),
                           location=_loc_for_devices(ctx, loc_devs or full),
-                          evidence={"bar": b, "fuse": fc}, workaround="heuristic"))
+                          evidence={"bar": b, "fuse": fc}, workaround="heuristic",
+                          suggestion=sugg))
     return out
 
 
@@ -1385,6 +1414,47 @@ def det_pinout_missing(ctx):
     return out
 
 
+def report_pinout_missing(article, desc="", ps="", user=""):
+    """D14a: frontend zgłasza artykuł bez rysunku złącza (connFaceLayout
+    zwróciło null i brak USER pinoutu). Idempotentne po fingerprincie —
+    istniejące zgłoszenie dostaje tylko last_seen_at."""
+    init_audit_tables()
+    art = (article or "").strip()
+    if not art:
+        return {"ok": False}
+    ps = (ps or "").strip().upper()
+    if not ps:
+        return {"ok": True, "skipped": True}
+    fp = f"D14|OBS|{art.upper()}"
+    now = _now()
+    conn = zs.get_db()
+    cur = conn.cursor()
+    row = cur.execute("SELECT id, status FROM zuken_issues WHERE ps_code = ? AND fingerprint = ?",
+                      (ps, fp)).fetchone()
+    if row:
+        if row["status"] not in ("rejected", "wontfix"):
+            cur.execute("UPDATE zuken_issues SET last_seen_at = ? WHERE id = ?", (now, row["id"]))
+        conn.commit()
+        conn.close()
+        return {"ok": True, "id": row["id"], "existed": True}
+    rev = ps_revision_key(cur, ps)
+    cur.execute("""INSERT INTO zuken_issues (ps_code, category, target, severity, status, msg_key,
+        msg_params, detector, fingerprint, suggestion, source_revision,
+        created_by, created_at, updated_at, last_seen_at)
+        VALUES (?, 'pinout_missing', 'internal', 'warn', 'new', 'pinout_missing', ?, 'D14', ?, ?, ?, ?, ?, ?, ?)""",
+                (ps, _j({"art": art, "n": 1, "pins": "?", "sup": "",
+                         "desc": _short_desc(desc or ""), "devs": ""}),
+                 fp,
+                 _j({"kind": "pinout", "confidence": "high",
+                     "payload": {"article": art, "pins": 0,
+                                 "desc": _short_desc(desc or "", 120)}}),
+                 rev, user or "auto", now, now, now))
+    iid = cur.lastrowid
+    conn.commit()
+    conn.close()
+    return {"ok": True, "id": iid, "existed": False}
+
+
 def det_pdf_report_label(ctx):
     """D15: etykieta -DEV narysowana na schemacie, nieobecna w raporcie
     połączeń, w BOM ani w tabelach pomocniczych (bezpieczniki, skrzynki).
@@ -1508,10 +1578,43 @@ def _upsert_finding(cur, ps, det_id, f, rev, now, ctx):
     return "updated"
 
 
-def run_scan(ps, stages=("data",), progress=None):
-    """Uruchamia wykrywacze dla PS i aktualizuje rejestr. Zwraca podsumowanie."""
+def reset_issues(ps, detectors=None):
+    """DEV-reset rejestru: usuwa AUTO-wykryte zgłoszenia PS (detector IS NOT
+    NULL) wraz z fingerprintami — również 'rejected'/'wontfix'. Po resecie
+    skan zachowuje się jak pierwsze uruchomienie (łatwe testowanie zmian
+    wykrywacza). detectors=[...] ogranicza do wskazanych wykrywaczy.
+    Zgłoszenia ręczne (detector NULL) i łatki zostają. Zwraca liczbę usuniętych."""
     init_audit_tables()
     ps = (ps or "").strip().upper()
+    conn = zs.get_db()
+    cur = conn.cursor()
+    if detectors:
+        ph = ",".join("?" * len(detectors))
+        ids = [r[0] for r in cur.execute(
+            f"SELECT id FROM zuken_issues WHERE ps_code=? AND detector IN ({ph})",
+            (ps, *detectors)).fetchall()]
+    else:
+        ids = [r[0] for r in cur.execute(
+            "SELECT id FROM zuken_issues WHERE ps_code=? AND detector IS NOT NULL",
+            (ps,)).fetchall()]
+    if ids:
+        ph = ",".join("?" * len(ids))
+        cur.execute(f"DELETE FROM zuken_issue_files WHERE issue_id IN ({ph})", ids)
+        cur.execute(f"UPDATE zuken_data_patches SET issue_id=NULL WHERE issue_id IN ({ph})", ids)
+        cur.execute(f"DELETE FROM zuken_issues WHERE id IN ({ph})", ids)
+    conn.commit()
+    conn.close()
+    return len(ids)
+
+
+def run_scan(ps, stages=("data",), progress=None, reset=False):
+    """Uruchamia wykrywacze dla PS i aktualizuje rejestr. Zwraca podsumowanie.
+    reset=True (dev): najpierw czyści auto-zgłoszenia PS → efekt pierwszego
+    uruchomienia wykrywaczy."""
+    init_audit_tables()
+    ps = (ps or "").strip().upper()
+    if reset:
+        reset_issues(ps, detectors=[d[0] for d in DETECTORS if d[1] in stages])
     conn = zs.get_db()
     cur = conn.cursor()
     now = _now()
@@ -1565,7 +1668,7 @@ def run_scan(ps, stages=("data",), progress=None):
     return summary
 
 
-def start_scan(ps, stages=("data",)):
+def start_scan(ps, stages=("data",), reset=False):
     """Skan w tle (stan w SCAN_STATE). False gdy już trwa."""
     with _scan_lock:
         if SCAN_STATE["running"]:
@@ -1579,7 +1682,7 @@ def start_scan(ps, stages=("data",)):
 
     def _run():
         try:
-            res = run_scan(ps, stages, progress=_prog)
+            res = run_scan(ps, stages, progress=_prog, reset=reset)
             SCAN_STATE.update(detectors=res["detectors"], new=res["new"], updated=res["updated"],
                               closed=res["closed"], progress=SCAN_STATE.get("total", 0))
         except Exception as e:
@@ -1597,7 +1700,8 @@ def scan_status():
 # ═══════════════════════════════════════════════════════════════════
 # ŁATKI (zuken_data_patches) — CRUD; nakładanie w zuken_service
 # ═══════════════════════════════════════════════════════════════════
-PATCH_KINDS = ("connection", "fuse_holder")
+PATCH_KINDS = ("connection", "fuse_holder", "busbar", "box_fuse",
+               "device_location", "device_link", "power_rail")
 
 
 def _patch_dict(r):
@@ -1628,6 +1732,73 @@ def _clean_patch_payload(kind, payload):
         if not p["from_device"] or not p["to_device"]:
             raise ValueError("from_device/to_device required")
         p.setdefault("link", "stud")
+    elif kind == "fuse_holder":
+        for k in ("fuse", "holder"):
+            p[k] = str(p.get(k) or "").strip()
+        if not p["fuse"] or not p["holder"]:
+            raise ValueError("fuse/holder required")
+    elif kind == "busbar":
+        members = []
+        for m in (p.get("members") or []):
+            if isinstance(m, dict):
+                members.append({"fuse": str(m.get("fuse") or "").strip(),
+                                "pin": str(m.get("pin") or "").strip(),
+                                "term": str(m.get("term") or "").strip(),
+                                "dev": str(m.get("dev") or "").strip()})
+            elif isinstance(m, (list, tuple)) and len(m) >= 2:
+                members.append({"fuse": str(m[0]).strip(),
+                                "pin": str(m[1]).strip(),
+                                "term": str(m[2]).strip() if len(m) > 2 else "",
+                                "dev": str(m[3]).strip() if len(m) > 3 else ""})
+        members = [m for m in members if m["fuse"]]
+        if len(members) < 2:
+            raise ValueError("busbar needs >= 2 members")
+        for m in members:
+            m["pin"] = m["pin"] or "1"
+        p["members"] = members
+        for k in ("node", "holder", "label"):
+            p[k] = str(p.get(k) or "").strip()
+    elif kind == "box_fuse":
+        for k in ("box_name", "cell", "rating", "out_dev"):
+            p[k] = str(p.get(k) or "").strip()
+        if not p["box_name"] or not p["cell"]:
+            raise ValueError("box_name/cell required")
+        p["box_name"] = p["box_name"].upper()
+        p["cell"] = p["cell"].upper()
+    elif kind == "device_location":
+        for k in ("device", "full_code"):
+            p[k] = str(p.get(k) or "").strip()
+        if not p["device"] or not p["full_code"]:
+            raise ValueError("device/full_code required")
+        if "=" not in p["full_code"] or "+" not in p["full_code"]:
+            raise ValueError("full_code must be a full =SYS+LOC-CODE")
+    elif kind == "device_link":
+        for k in ("device", "pin_a", "pin_b"):
+            p[k] = str(p.get(k) or "").strip()
+        if not p["device"] or not p["pin_a"] or not p["pin_b"]:
+            raise ValueError("device/pin_a/pin_b required")
+        if p["pin_a"] == p["pin_b"]:
+            raise ValueError("pin_a must differ from pin_b")
+        p["label"] = str(p.get("label") or "").strip()
+    elif kind == "power_rail":
+        members = []
+        for m in (p.get("members") or []):
+            if isinstance(m, dict):
+                members.append({"dev": str(m.get("dev") or "").strip(),
+                                "pin": str(m.get("pin") or "1").strip() or "1"})
+            elif isinstance(m, (list, tuple)) and m:
+                members.append({"dev": str(m[0]).strip(),
+                                "pin": str(m[1]).strip() if len(m) > 1 and str(m[1]).strip() else "1"})
+            elif isinstance(m, str) and m.strip():
+                c = m.strip().rsplit(":", 1)
+                members.append({"dev": c[0].strip(),
+                                "pin": c[1].strip() if len(c) > 1 and c[1].strip() else "1"})
+        members = [m for m in members if m["dev"]]
+        if len(members) < 2:
+            raise ValueError("power_rail needs >= 2 members")
+        p["members"] = members
+        for k in ("label", "node"):
+            p[k] = str(p.get(k) or "").strip()
     return p
 
 
@@ -1679,19 +1850,106 @@ def _mark_redundant_patches(cur, ps, ctx):
     (inżynier poprawił w Zuken) -> redundant; urządzenia nieistniejące ->
     disabled."""
     known = set(ctx.conn_cleans) | set(ctx.bom_by_clean)
+    nb = ctx.neighbours
+
+    def _dev_nodes(dev):
+        """Węzły surowego grafu dla urządzenia (dopasowanie po sufiksie)."""
+        want = (dev or "").split("-")[-1].upper()
+        clean = (zs.clean_device_code(dev) or "").upper()
+        return [nd for nd in nb
+                if (nd[0] or "").split("-")[-1].upper() == want
+                or (clean and (zs.clean_device_code(nd[0]) or "").upper()
+                    == clean)]
+
+    def _linked(dev_a, dev_b):
+        """Urządzenia mają wspólny węzeł-sąsiad w surowym raporcie."""
+        ns_a = {x for nd in _dev_nodes(dev_a) for x in nb.get(nd, ())}
+        return any(d == dev_b or (d or "").split("-")[-1].upper()
+                   == (dev_b or "").split("-")[-1].upper()
+                   for d, _p in ns_a)
+
+    box_rows = {}
+    try:
+        for br in cur.execute(
+                "SELECT UPPER(box_name) bn, UPPER(cell) cl, out_dev "
+                "FROM zuken_ps_box_fuses WHERE ps_code = ?", (ps,)):
+            box_rows[(br[0], br[1])] = br[2] or ""
+    except Exception:
+        pass
+
     for r in cur.execute("SELECT id, kind, payload, status FROM zuken_data_patches WHERE ps_code=? AND status IN ('active','redundant')", (ps,)).fetchall():
-        if r["kind"] != "connection":
-            continue
         p = _uj(r["payload"], {})
-        a = (p.get("from_device", ""), p.get("from_pin", ""))
-        b = (p.get("to_device", ""), p.get("to_pin", ""))
-        if b in ctx.neighbours.get(a, {}):
-            new = "redundant"
-        elif zs.clean_device_code(a[0]) not in known or zs.clean_device_code(b[0]) not in known:
-            new = "disabled"
-        else:
-            new = "active"
-        if new != r["status"]:
+        kind = r["kind"]
+        new = None
+        if kind == "connection":
+            a = (p.get("from_device", ""), p.get("from_pin", ""))
+            b = (p.get("to_device", ""), p.get("to_pin", ""))
+            if b in nb.get(a, {}):
+                new = "redundant"
+            elif zs.clean_device_code(a[0]) not in known or zs.clean_device_code(b[0]) not in known:
+                new = "disabled"
+            else:
+                new = "active"
+        elif kind == "fuse_holder":
+            fc, hd = (p.get("fuse") or ""), (p.get("holder") or "")
+            if zs.clean_device_code(hd) not in known and (hd or "").split("-")[-1].upper() not in {c.upper() for c in known}:
+                new = "disabled"
+            elif fc and _linked(hd, "-" + fc.lstrip("-")):
+                new = "redundant"
+            else:
+                new = "active"
+        elif kind == "busbar":
+            mems = p.get("members") or []
+            devs = [(m.get("dev") or m.get("term") or "-" + (m.get("fuse") or "").lstrip("-"))
+                    for m in mems]
+            missing = [d for d in devs
+                       if zs.clean_device_code(d) not in known
+                       and (d or "").split("-")[-1].upper() not in {c.upper() for c in known}]
+            if len(missing) == len(devs):
+                new = "disabled"
+            elif all(_linked(devs[i], devs[j])
+                     for i in range(len(devs)) for j in range(i + 1, len(devs))):
+                new = "redundant"
+            else:
+                new = "active"
+        elif kind == "box_fuse":
+            k = ((p.get("box_name") or "").upper(), (p.get("cell") or "").upper())
+            if k in box_rows and (not p.get("out_dev") or box_rows[k] == p["out_dev"]):
+                new = "redundant"
+            else:
+                new = "active"
+        elif kind == "device_location":
+            dev_clean = zs.clean_device_code(p.get("device") or "")
+            if dev_clean and any(
+                    zs.clean_device_code(d.get("device_code")) == dev_clean
+                    and "=" in (d.get("device_code") or "")
+                    for d in ctx.bom_devices):
+                new = "redundant"
+            else:
+                new = "active"
+        elif kind == "device_link":
+            dev = p.get("device") or ""
+            if not _dev_nodes(dev) and zs.clean_device_code(dev) not in known:
+                new = "disabled"
+            else:
+                new = "active"
+        elif kind == "power_rail":
+            mems = [m for m in (p.get("members") or []) if isinstance(m, dict)]
+            nodes = []
+            for m in mems:
+                mp = str(m.get("pin") or "1")
+                nd = [n for n in _dev_nodes(m.get("dev") or "")
+                      if str(n[1] or "1") == mp]
+                nodes.append(nd[0] if nd else None)
+            if all(n is None for n in nodes):
+                new = "disabled"
+            elif all(n is not None for n in nodes) and all(
+                    nodes[j] in (nb.get(nodes[i]) or {})
+                    for i in range(len(nodes)) for j in range(i + 1, len(nodes))):
+                new = "redundant"
+            else:
+                new = "active"
+        if new and new != r["status"]:
             cur.execute("UPDATE zuken_data_patches SET status=?, updated_at=? WHERE id=?", (new, _now(), r["id"]))
     zs._invalidate_patch_caches()
 

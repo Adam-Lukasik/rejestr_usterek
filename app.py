@@ -145,7 +145,7 @@ app = Flask(__name__)
 # Limit uploadu dla paczek synchronizacyjnych / backupów (baza + Baza wiedzy)
 app.config["MAX_CONTENT_LENGTH"] = 2 * 1024 * 1024 * 1024
 
-VERSION = "2.3.1"
+VERSION = "2.3.2"
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # STATIC_DIR — zasoby kodu (UI, migracje, narzędzia); DATA_DIR — dane użytkownika
@@ -165,6 +165,7 @@ def load_config():
         "AUTO_BACKUP_ENABLED": True,
         "AUTO_BACKUP_KEEP": 15,
         "AUTO_BACKUP_INCLUDE_KB": False,
+        "DEV_USERS": [],
         "SMTP": {
             "ENABLED": False,
             "SERVER": "smtp.twojafirma.pl",
@@ -311,7 +312,7 @@ def get_user_from_token(token: str):
     try:
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT u.id, u.username, u.full_name, u.email, u.phone, u.role, u.is_active, u.must_change_password, t.expires_at
+            SELECT u.id, u.username, u.full_name, u.email, u.phone, u.role, u.is_active, u.must_change_password, u.is_dev, t.expires_at
             FROM auth_tokens t
             JOIN users u ON t.user_id = u.id
             WHERE t.token = ? AND u.is_active = 1
@@ -371,6 +372,7 @@ SRV_MSG = {
     "pwReset": {"pl": "Hasło zostało pomyślnie zresetowane. Możesz się zalogować.", "en": "Password reset successfully. You can now sign in.", "de": "Passwort erfolgreich zurückgesetzt. Sie können sich jetzt anmelden."},
     "userFieldsRequired": {"pl": "Pola 'Login' oraz 'Imię i Nazwisko' są wymagane.", "en": "'Login' and 'Full name' fields are required.", "de": "Die Felder 'Login' und 'Vor- und Nachname' sind erforderlich."},
     "badRole": {"pl": "Nieprawidłowa rola użytkownika.", "en": "Invalid user role.", "de": "Ungültige Benutzerrolle."},
+    "devRequired": {"pl": "Wymagane uprawnienia dewelopera.", "en": "Developer privileges required.", "de": "Entwicklerrechte erforderlich."},
     "badRole2": {"pl": "Nieprawidłowa rola.", "en": "Invalid role.", "de": "Ungültige Rolle."},
     "userExists": {"pl": "Użytkownik o loginie '{v}' już istnieje.", "en": "User with login '{v}' already exists.", "de": "Benutzer mit Login '{v}' existiert bereits."},
     "fullNameRequired": {"pl": "Pole 'Imię i Nazwisko' jest wymagane.", "en": "'Full name' field is required.", "de": "Das Feld 'Vor- und Nachname' ist erforderlich."},
@@ -641,6 +643,7 @@ def init_db():
             role TEXT NOT NULL DEFAULT 'technik',
             is_active INTEGER NOT NULL DEFAULT 1,
             must_change_password INTEGER NOT NULL DEFAULT 0,
+            is_dev INTEGER NOT NULL DEFAULT 0,
             created_at TEXT NOT NULL
         )
     """)
@@ -860,6 +863,16 @@ def init_db():
         cursor.execute("ALTER TABLE users ADD COLUMN phone TEXT")
     if "must_change_password" not in u_cols:
         cursor.execute("ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0")
+    if "is_dev" not in u_cols:
+        cursor.execute("ALTER TABLE users ADD COLUMN is_dev INTEGER NOT NULL DEFAULT 0")
+
+    # Flagi deweloperskie z config.json (DEV_USERS: [login,...]) — jedyny
+    # sposób nadania is_dev poza UI deva; admin nie może nadać sobie deva.
+    dev_users = [str(x).strip().lower() for x in (CFG.get("DEV_USERS") or []) if str(x).strip()]
+    if dev_users:
+        cursor.execute(
+            f"UPDATE users SET is_dev = 1 WHERE LOWER(username) IN ({','.join('?' * len(dev_users))})",
+            dev_users)
 
     # Bootstrap domyślnego administratora jeśli brak użytkowników
     cursor.execute("SELECT COUNT(*) as count FROM users")
@@ -1343,7 +1356,7 @@ def auth_login():
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute("""
-        SELECT id, username, password_hash, salt, full_name, email, phone, role, is_active, must_change_password
+        SELECT id, username, password_hash, salt, full_name, email, phone, role, is_active, must_change_password, is_dev
         FROM users
         WHERE LOWER(username) = ?
     """, (username,))
@@ -1382,6 +1395,7 @@ def auth_login():
             "email": user["email"] or "",
             "phone": user["phone"] or "",
             "role": user["role"],
+            "is_dev": bool(user["is_dev"]),
             "must_change_password": bool(user["must_change_password"])
         }
     })
@@ -1399,6 +1413,7 @@ def auth_me():
             "email": user["email"] or "",
             "phone": user.get("phone") or "",
             "role": user["role"],
+            "is_dev": bool(user.get("is_dev", 0)),
             "must_change_password": bool(user.get("must_change_password", 0))
         }
     })
@@ -1565,7 +1580,7 @@ def get_users():
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute("""
-        SELECT id, username, full_name, email, phone, role, is_active, must_change_password, created_at
+        SELECT id, username, full_name, email, phone, role, is_active, must_change_password, is_dev, created_at
         FROM users
         ORDER BY role ASC, username ASC
     """)
@@ -1595,6 +1610,9 @@ def create_user():
     if role not in ("admin", "technik", "podglad"):
         return jsonify({"error": smsg("badRole")}), 400
 
+    # is_dev może nadać tylko istniejący deweloper (albo DEV_USERS w config)
+    is_dev = 1 if (data.get("is_dev") and current_user.get("is_dev")) else 0
+
     new_id = str(_uuid.uuid4())
     pw_hash, salt = hash_password(password)
 
@@ -1602,8 +1620,8 @@ def create_user():
     try:
         cursor = conn.cursor()
         cursor.execute("""
-            INSERT INTO users (id, username, password_hash, salt, full_name, email, phone, role, is_active, must_change_password, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO users (id, username, password_hash, salt, full_name, email, phone, role, is_active, must_change_password, is_dev, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             new_id,
             username,
@@ -1615,6 +1633,7 @@ def create_user():
             role,
             1,
             must_change,
+            is_dev,
             _dt.now().isoformat(timespec="seconds")
         ))
         conn.commit()
@@ -1655,17 +1674,30 @@ def update_user(user_id):
         conn.close()
         return jsonify({"error": smsg("cantSelfDemote")}), 400
 
+    # is_dev zmienia tylko deweloper; deweloper nie może zdjąć flagi sam z siebie
+    is_dev_field = ""
+    dev_params = ()
+    if "is_dev" in data:
+        if not current_user.get("is_dev"):
+            conn.close()
+            return jsonify({"error": smsg("devRequired")}), 403
+        if current_user["id"] == user_id and not data.get("is_dev"):
+            conn.close()
+            return jsonify({"error": smsg("cantSelfDemote")}), 400
+        is_dev_field = ", is_dev = ?"
+        dev_params = (1 if data.get("is_dev") else 0,)
+
     # Sprawdzenie czy nowy login nie jest już zajęty przez inne konto
     cursor.execute("SELECT id FROM users WHERE username = ? AND id != ?", (username, user_id))
     if cursor.fetchone():
         conn.close()
         return jsonify({"error": smsg("loginTaken", v=username)}), 409
 
-    cursor.execute("""
+    cursor.execute(f"""
         UPDATE users
-        SET username = ?, full_name = ?, email = ?, phone = ?, role = ?, is_active = ?, must_change_password = ?
+        SET username = ?, full_name = ?, email = ?, phone = ?, role = ?, is_active = ?, must_change_password = ?{is_dev_field}
         WHERE id = ?
-    """, (username, full_name, email, phone, role, is_active, must_change, user_id))
+    """, (username, full_name, email, phone, role, is_active, must_change, *dev_params, user_id))
     conn.commit()
     conn.close()
 
@@ -3746,6 +3778,12 @@ def _audit_admin():
     return u if (u and u.get("role") == "admin") else None
 
 
+def _is_dev(u):
+    """Deweloper = admin z flagą is_dev (nadawaną przez DEV_USERS w config
+    albo istniejącego dewelopera; admin nie może nadać sobie deva)."""
+    return bool(u and u.get("role") == "admin" and u.get("is_dev"))
+
+
 def _audit_user_name(u):
     return (u or {}).get("full_name") or (u or {}).get("username") or ""
 
@@ -3792,6 +3830,25 @@ def api_audit_issue_create():
         return jsonify({"error": "title required"}), 400
     try:
         return jsonify({"status": "success", "issue": schema_audit.create_manual_issue(data, user=_audit_user_name(u))})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/zuken/audit/observe", methods=["POST"])
+def api_audit_observe():
+    """Auto-zgłoszenia z frontendu (D14a: artykuł bez rysunku złącza).
+    Idempotentne po fingerprincie — każdy zalogowany może wołać."""
+    u = get_current_user()
+    if not u:
+        return jsonify({"error": smsg("adminRequired")}), 401
+    data = request.get_json(silent=True) or {}
+    kind = (data.get("kind") or "pinout_missing").strip()
+    if kind != "pinout_missing":
+        return jsonify({"error": "bad kind"}), 400
+    try:
+        return jsonify(schema_audit.report_pinout_missing(
+            data.get("article") or "", desc=data.get("desc") or "",
+            ps=data.get("ps") or "", user=_audit_user_name(u)))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -3893,14 +3950,17 @@ def api_audit_file(fid):
 
 @app.route("/api/zuken/audit/scan", methods=["POST"])
 def api_audit_scan():
-    if not _audit_admin():
+    u = _audit_admin()
+    if not u:
         return _audit_forbidden()
     data = request.get_json(silent=True) or {}
+    if data.get("reset") and not _is_dev(u):
+        return jsonify({"error": smsg("devRequired")}), 403
     ps = (data.get("ps") or "").strip().upper()
     if not _valid_ps_code(ps):
         return jsonify({"error": zuken_service.zsmsg("kbBadPs", _app_lang(), v=ps)}), 400
     stages = tuple(s for s in (data.get("stages") or ["data", "pdf"]) if s in ("data", "pdf")) or ("data",)
-    if not schema_audit.start_scan(ps, stages):
+    if not schema_audit.start_scan(ps, stages, reset=bool(data.get("reset"))):
         return jsonify({"status": "running", "error": schema_audit.amsg("scanRunning", _app_lang())}), 409
     return jsonify({"status": "started"})
 

@@ -8269,6 +8269,48 @@ def _circuit_extend_adjacency(cur, adj, ps_code, dev_funcs=None, bom_names=None)
                 adj[elem_node][rail_node] = rrow
                 adj[rail_node][elem_node] = rrow
             internal_devs.add(m["elem"])
+
+    # ── łatki ręczne 'device_link' / 'power_rail' (zuken_data_patches):
+    # przejście wewnętrzne aparatu spoza raportu (hebel/stycznik/blok —
+    # np. A359 ML-RBS: szpilka A <-> B) oraz szyny zasilające z N
+    # zaciskami (końcówki oczkowe na wspólnym pręcie — Carnation:
+    # RT123+RT132 na jednej szynie, RT133+… na drugiej).
+    def _patch_dev(code):
+        code = (code or "").strip()
+        if not code:
+            return ""
+        if code in dev_pins:
+            return code
+        cl = clean_device_code(code) or code
+        cands = [d for d in dev_pins
+                 if (clean_device_code(d) or d) == cl]
+        return cands[0] if len(cands) == 1 else ""
+
+    for _pid, _p in _active_patches(cur, ps_code, "device_link"):
+        _dev = _patch_dev(_p.get("device"))
+        _pa = str(_p.get("pin_a") or "").strip()
+        _pb = str(_p.get("pin_b") or "").strip()
+        if _dev and _pa and _pb:
+            _link(_dev, _pa, _pb, "switch",
+                  (_p.get("label") or "").strip()
+                  or clean_device_code(_dev) or _dev)
+    for _pid, _p in _active_patches(cur, ps_code, "power_rail"):
+        _lbl = (_p.get("label") or "").strip() or "rail"
+        _mems = []
+        for _m in (_p.get("members") or []):
+            if not isinstance(_m, dict):
+                continue
+            _md = _patch_dev(_m.get("dev"))
+            _mp = str(_m.get("pin") or "1").strip() or "1"
+            if _md and (_md, _mp) in adj:
+                _mems.append((_md, _mp))
+        for _i in range(len(_mems)):
+            for _j in range(_i + 1, len(_mems)):
+                _link_nodes(_mems[_i], _mems[_j], "busbar", _lbl)
+        for _md, _mp in _mems:
+            _mc = clean_device_code(_md) or ""
+            if not _CIRCUIT_PASS_RE.match(_mc) and not _CIRCUIT_RT_RE.match(_mc):
+                internal_devs.add(_md)
     return adj, internal_devs, relay_coils
 
 
@@ -8570,6 +8612,22 @@ def _trace_circuit_impl(ps_code, query, lang="pl"):
     if "-" in dev_q:
         dev_q = dev_q.rsplit("-", 1)[-1]
     dev_q = dev_q.strip().upper()
+
+    # łatki 'device_location' (schema_audit): urządzenie z BOM bez oznaczenia
+    # lokalizacji rozwiązujemy na pełny kod z łatki (np. -A359 -> =BOX+TWR-A359)
+    if dev_q:
+        try:
+            for _pid, _p in _active_patches(cur, ps_code, "device_location"):
+                _fc = (_p.get("full_code") or "").strip()
+                _dv = (_p.get("device") or "").strip()
+                if not _fc or not _dv:
+                    continue
+                if dev_q in ((clean_device_code(_dv) or "").upper(),
+                             _dv.split("-")[-1].upper()):
+                    dev_q = _fc.split("-")[-1].upper()
+                    break
+        except sqlite3.OperationalError:
+            pass
 
     dev_nodes = {}
     if dev_q:
@@ -9189,7 +9247,8 @@ def _trace_circuit_impl(ps_code, query, lang="pl"):
                 lbl = bar.get("label") or ""
                 bh = bar.get("holder") or ""
                 h_pin = _wire_hop(fdev, fpn, bdev, "",
-                                  {"_bar_holder": bh})
+                                  {"_bar_holder": bh,
+                                   "patch_id": bar.get("patch_id") or 0})
                 for tap in bar.get("taps") or ():
                     tl = tloads.get(tap)
                     if not tl:
@@ -9199,7 +9258,8 @@ def _trace_circuit_impl(ps_code, query, lang="pl"):
                             bdev, "", tap, p["pin"],
                             {"_internal": "busbar",
                              "_internal_label": lbl,
-                             "_bar_holder": bh})
+                             "_bar_holder": bh,
+                             "patch_id": bar.get("patch_id") or 0})
                         for e in p["ends"]:
                             e2 = dict(e)
                             e2["path"] = [h_pin, h_bar] \
@@ -9214,7 +9274,8 @@ def _trace_circuit_impl(ps_code, query, lang="pl"):
                         "function": "", "desc": "",
                         "path": [h_pin,
                                  _wire_hop(bdev, "", sib_dev,
-                                           sib_pin, {})],
+                                           sib_pin,
+                                           {"patch_id": bar.get("patch_id") or 0})],
                         "via_fuse": False, "via_relay": False,
                         "shared": 0})
             else:
@@ -10363,7 +10424,7 @@ def _ps_fuse_schematic_row(cur, ps_code):
     return row
 
 
-def _ps_fuse_rails(cur, conn_ids, ps_code, adj):
+def _ps_fuse_rails_raw(cur, conn_ids, ps_code, adj):
     """Elementy topikowe -F -> sloty uchwytów -U i szyny zbiorcze skrzynek.
 
     Raport okablowania wskazuje uchwyty Mega/MIDI jako jednopinowe
@@ -10402,7 +10463,7 @@ def _ps_fuse_rails(cur, conn_ids, ps_code, adj):
     if key in _FUSE_RAILS_CACHE:
         return _FUSE_RAILS_CACHE[key]
     out = {"slots": {}, "groups": [], "holders": {},
-           "box_pins": {}, "rated": {}, "terms": {}}
+           "box_pins": {}, "rated": {}, "terms": {}, "bars": {}}
     if not (row and conn_ids):
         _FUSE_RAILS_CACHE[key] = out
         return out
@@ -11087,13 +11148,78 @@ def _ps_fuse_rails(cur, conn_ids, ps_code, adj):
                 rated[fc] = cands[0]
                 break
     out["rated"] = rated
-    # łatki 'fuse_holder' (schema_audit): ręczne powiązanie -F -> oprawka
+    _FUSE_RAILS_CACHE[key] = out
+    return out
+
+
+def _ps_fuse_rails(cur, conn_ids, ps_code, adj):
+    """_ps_fuse_rails_raw + nakładka łatek (schema_audit).
+
+    Łatki nakładane poza cache geometrii — działają też na projektach,
+    dla których surowe rails nie powstają (brak stron z -F w schemacie)."""
+    raw = _ps_fuse_rails_raw(cur, conn_ids, ps_code, adj)
+    out = dict(raw)
+    out["holders"] = dict(raw.get("holders") or {})
+    out["bars"] = {fc: dict(b) for fc, b in (raw.get("bars") or {}).items()}
+
+    fuse_info = {}
+    try:
+        for fr in cur.execute(
+                "SELECT device_clean, device_code, rating"
+                "  FROM zuken_ps_fuses WHERE ps_code = ?",
+                ((ps_code or "").upper(),)):
+            fuse_info.setdefault(fr[0], []).append(
+                (fr[1] or "", (fr[2] or "").strip()))
+    except sqlite3.OperationalError:
+        pass
+
+    # łatki 'fuse_holder': ręczne powiązanie -F -> oprawka
     for _pid, _p in _active_patches(cur, ps_code, "fuse_holder"):
         _fc, _hd = (_p.get("fuse") or "").strip(), (_p.get("holder") or "").strip()
         if _fc and _hd:
             out["holders"][clean_device_code(_fc) or _fc] = _hd
 
-    _FUSE_RAILS_CACHE[key] = out
+    # łatki 'busbar': ręcznie zamodelowana zwora/szyna — syntetyczny węzeł
+    # -ZW + odczepy na terminalach z łatki (fallback: wykryte 'terms')
+    terms = raw.get("terms") or {}
+    for _pid, _p in _active_patches(cur, ps_code, "busbar"):
+        _mems = [m for m in (_p.get("members") or []) if isinstance(m, dict)]
+        if len(_mems) < 2:
+            continue
+        _codes = [(clean_device_code(m.get("fuse") or "")
+                   or (m.get("fuse") or "").strip()) for m in _mems]
+        _pref = next(((m.get("dev") or m.get("term") or "").rsplit("-", 1)[0]
+                      for m in _mems if (m.get("dev") or m.get("term") or "")
+                      and "-" in (m.get("dev") or m.get("term"))), "")
+        _node = _p.get("node") or f"{_pref}-ZW{'_'.join(_codes)}"
+        _label = _p.get("label") or "\u2194".join(_codes)
+        _holder = _p.get("holder") or ""
+
+        def _mem_dev(_m2, _fc2):
+            d = (_m2.get("dev") or "").strip()
+            if not d:
+                d = (fuse_info.get(_fc2) or [("", "")])[0][0]
+            return d or (f"{_pref}-{_fc2}" if _pref else f"-{_fc2}")
+
+        for _i, _m in enumerate(_mems):
+            _fc = _codes[_i]
+            if not _fc:
+                continue
+            _pin = str(_m.get("pin") or "1")
+            _term = (_m.get("term") or "").strip() \
+                or (terms.get(_fc) or [""])[0]
+            if not _term:
+                continue
+            _taps = [_term] + [t for t in
+                               ((m2.get("term") or "").strip() for m2 in _mems)
+                               if t and t != _term]
+            _sibs = [(_mem_dev(_m2, _codes[_j]),
+                      str(_m2.get("pin") or "1"))
+                     for _j, _m2 in enumerate(_mems) if _j != _i]
+            out["bars"].setdefault(_fc, {})[_term] = {
+                "side": "dn" if _pin == "1" else "up", "pin": _pin,
+                "node": _node, "label": _label, "holder": _holder,
+                "taps": _taps, "sibs": _sibs, "patch_id": _pid}
     return out
 
 
@@ -12079,6 +12205,50 @@ def _get_ps_fuses_impl(ps_code, search="", limit=100, offset=0, lang="pl"):
             "is_box_fuse": True, "box_cell": br["cell"],
             "confidence": br["confidence"],
         })
+
+    # Łatki 'box_fuse' (schema_audit): korekta/dopisanie pozycji skrzynki —
+    # nakładane przy odczycie, żeby przetrwały regenerację zuken_ps_box_fuses.
+    def _box_item(clean, rating, out_dev, out_sig, feed, pid, conf="patch"):
+        dev = clean.replace(" ", "-")
+        wires = []
+        if out_dev:
+            bare = out_dev.lstrip('-').rstrip("'\"")
+            qds = [d for d in conn_devs
+                   if (d or '').rsplit('-', 1)[-1].rstrip("'\"") == bare]
+            wires, _m = _query_fuse_wires(qds or [out_dev])
+        return {
+            "device_code": dev, "device_clean": clean,
+            "rating": rating or "", "fuse_type": "UNI",
+            "article_number": "", "supplier": "", "description": "",
+            "holder_real": clean.rsplit(" ", 1)[0],
+            "holder_real_clean": clean.rsplit(" ", 1)[0],
+            "system": "", "location": "", "system_desc": "", "location_desc": "",
+            "system_desc_en": "", "location_desc_en": "",
+            "circuits": out_sig or "", "wires": wires, "image_url": None,
+            "is_box_fuse": True, "box_cell": clean.rsplit(" ", 1)[-1],
+            "confidence": conf, "patched": pid,
+        }
+    for _pid, _p in _active_patches(cur, ps_code, "box_fuse"):
+        _bn = (_p.get("box_name") or "").strip().upper()
+        _cl = (_p.get("cell") or "").strip().upper()
+        if not _bn or not _cl:
+            continue
+        _it = next((d for d in items if d.get("is_box_fuse")
+                    and (d.get("holder_real_clean") or "").upper() == _bn
+                    and (d.get("box_cell") or "").upper() == _cl), None)
+        if _it:
+            if _p.get("rating"):
+                _it["rating"] = _p["rating"]
+            if _p.get("out_dev"):
+                _bare = _p["out_dev"].lstrip('-').rstrip("'\"")
+                _qds = [d for d in conn_devs
+                        if (d or '').rsplit('-', 1)[-1].rstrip("'\"") == _bare]
+                _it["wires"], _ = _query_fuse_wires(_qds or [_p["out_dev"]])
+            _it["patched"] = _pid
+        else:
+            items.append(_box_item(f"{_bn} {_cl}", _p.get("rating") or "",
+                                   _p.get("out_dev") or "", "",
+                                   _p.get("box_name") or "", _pid))
 
     # Sortowanie naturalne wg numeru bezpiecznika: F1, F2, ..., F12, FH36
     def _fuse_num_key(d):

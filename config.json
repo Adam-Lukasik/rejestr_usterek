@@ -15,5 +15,9 @@
     "USER": "rejestr.usterek.was@gmail.com",
     "PASSWORD": "",
     "SENDER_NAME": "Rejestr Usterek"
-  }
+  },
+  "DEV_USERS": [
+    "admin",
+    "ALuk"
+  ]
 }
