@@ -240,6 +240,22 @@ Wersja wielojęzykowa: `SUPPORTED_LANGS = ("pl", "en", "de")`, tłumaczenia w
   'bezpiecznik w skrzynce' + klik→obwód. Diagnostyka pokrycia:
   `tools/inventory_fuses.py [PS]`. Sortowanie zestawienia: klik w
   nagłówki (sortZukenFuses, cykl asc→desc→domyślne, prąd numerycznie).
+- Bieguny akumulatorów: raport E3 nie wiąże oczka -RT ze szpilką baterii
+  (wiersz z pustym kodem urządzenia, pin '{4}'/'{5}') — końcówka wygląda
+  na wiszącą (D02). `_ps_battery_studs` odtwarza połączenie z geometrii
+  schematu: para znaków '+/−' w stałym rozstawie poziomym (8..100 pt,
+  EoE ~56, Walia ~14) na stronie z symbolem `-G<n>`; etykieta -G
+  przypisywana 1:1 `_min_cost_pairs` (bateria KFZ bez etykiety
+  „pożyczała" -G3 sąsiada); bateria bez -G → syntetyczny kod
+  `=SYS+LOC-AKU<n>` z tokenów POD biegunami (nad nimi leżą etykiety
+  przewodów/końcówek — stąd filtr y<=my+30). -RT do najbliższej pary
+  (≤230 pt), biegun '−' gdy obwód GND/PE/MASA, inaczej '+'; tylko oczka
+  wiszące albo masowe. `_circuit_extend_adjacency` dokłada krawędź
+  `_internal='battery'` (+`_batt_pin`) do węzła (bateria,'+'/'−');
+  `_circuit_end_role` → 'gnd' dla '−', 'source' dla '+'. Tokeny
+  `_pdf_page_text_positions` (format v3) łapią też `-G\d+`, `=SYS`,
+  `+LOC` i znaki '+/−'. Audyt D02 pomija te końcówki (`_bats` w
+  schema_audit, wspólny `_wadj` z `_rails`).
 - Tłumaczenia tekstów schematu (sygnały/funkcje/arkusze/kolory): tabela
   `zuken_translations` (forma→pl/en/de, kind=phrase/token/jargon,
   source=core/local) — display-time `_localize_payload` dokłada pola `*_t`

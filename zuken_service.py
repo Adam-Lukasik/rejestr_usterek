@@ -6998,6 +6998,7 @@ def _invalidate_patch_caches():
     _PATCH_CACHE.clear()
     _FUSE_RAILS_CACHE.clear()
     _FUSE_LIST_CACHE.clear()
+    _BAT_STUDS_CACHE.clear()
 
 
 def _active_patches(cur, ps_code, kind):
@@ -8270,6 +8271,23 @@ def _circuit_extend_adjacency(cur, adj, ps_code, dev_funcs=None, bom_names=None)
                 adj[rail_node][elem_node] = rrow
             internal_devs.add(m["elem"])
 
+    # ── bieguny akumulatorów: oczka -RT na szpilkach +/- nie mają
+    # w raporcie kodu urządzenia (wiszące końcówki) — krawędź do węzła
+    # (bateria, '+'/'−') odtwarzana z geometrii symbolu na schemacie
+    try:
+        _bats = _ps_battery_studs(cur, _rci, ps_code, adj)
+    except Exception:
+        _bats = {}
+    for _rtd, (_bdev, _bpol, _blbl) in (_bats or {}).items():
+        _bnode = (_bdev, _bpol)
+        adj.setdefault(_bnode, {})
+        for _nd in [nd for nd in list(adj.keys()) if nd[0] == _rtd]:
+            if _bnode not in adj.get(_nd, {}):
+                _link_nodes(_nd, _bnode, "battery", _blbl or _bdev)
+                _br = adj.get(_nd, {}).get(_bnode)
+                if isinstance(_br, dict):
+                    _br["_batt_pin"] = _bpol
+
     # ── łatki ręczne 'device_link' / 'power_rail' (zuken_data_patches):
     # przejście wewnętrzne aparatu spoza raportu (hebel/stycznik/blok —
     # np. A359 ML-RBS: szpilka A <-> B) oraz szyny zasilające z N
@@ -8448,6 +8466,10 @@ def _circuit_end_role(ed, last_row, dev_funcs=None, bom_names=None):
     traktujemy jako źródło zasilania."""
     d = (ed or "").upper()
     c = (clean_device_code(ed) or "").upper()
+    # koniec sieci na biegunie akumulatora (syntetyczna krawędź z
+    # _ps_battery_studs): '-' to masa, '+' to źródło zasilania
+    if isinstance(last_row, dict) and last_row.get("_internal") == "battery":
+        return "gnd" if last_row.get("_batt_pin") == "-" else "source"
     if "+GND" in d:
         return "gnd"
     if _CIRCUIT_MODULE_RE.match(c):
@@ -10080,7 +10102,7 @@ def _pdf_page_text_positions(schem_id, filepath, page_num, file_mtime=None):
     if row is not None:
         try:
             _d = json.loads(row[0])
-            if isinstance(_d, dict) and _d.get('v') == 2:
+            if isinstance(_d, dict) and _d.get('v') == 3:
                 items = [tuple(t) for t in _d['items']]
         except (ValueError, TypeError):
             items = None
@@ -10095,11 +10117,13 @@ def _pdf_page_text_positions(schem_id, filepath, page_num, file_mtime=None):
                 if 1 <= page_num <= len(reader.pages):
                     _w = r'[A-Z][A-Z0-9_+#]{1,24}'
                     tok_re = re.compile(
-                        r'-(?:FH|FR|F|RT|U|K|X|SP|RU)\d+(?:#\d+)?[A-Za-z\']*'
+                        r'-(?:FH|FR|F|RT|U|K|X|SP|RU|G)\d+(?:#\d+)?[A-Za-z\']*'
                         r'|=[A-Z]+\+[A-Z]+-[A-Z]+\d+'
+                        r'|=[A-Z0-9]+|\+[A-Z0-9]+'
                         r'|\d{1,3}(?:[.,]\d+)?A'
                         r'|' + _w + r'(?: ' + _w + r'){0,3}'
-                        r'|[A-Z]|\d+')
+                        r'|[A-Z]|\d+'
+                        r'|[+\u2212\u2013\u2014-]')
 
                     def _vis(text, cm, tm, font, size):
                         t = (text or "").strip()
@@ -10117,7 +10141,7 @@ def _pdf_page_text_positions(schem_id, filepath, page_num, file_mtime=None):
                     (schematic_id, page_number, file_mtime, tokens_json)
                 VALUES (?, ?, ?, ?);
             """, (schem_id, page_num, file_mtime,
-                  json.dumps({'v': 2, 'items': items})))
+                  json.dumps({'v': 3, 'items': items})))
             conn.commit()
         except sqlite3.OperationalError:
             conn.rollback()   # zapis cache best-effort (lock przy insertach)
@@ -11220,6 +11244,209 @@ def _ps_fuse_rails(cur, conn_ids, ps_code, adj):
                 "side": "dn" if _pin == "1" else "up", "pin": _pin,
                 "node": _node, "label": _label, "holder": _holder,
                 "taps": _taps, "sibs": _sibs, "patch_id": _pid}
+    return out
+
+
+_BAT_STUDS_CACHE = {}
+_BAT_GND_RE = re.compile(
+    r"GND|GROUND|EARTH|\bMAS[AE]\b|\bPE\b|MINUS|NEGAT", re.IGNORECASE)
+_MINUS_TOKS = {'-', '\u2212', '\u2013', '\u2014'}
+
+
+def _ps_battery_studs(cur, conn_ids, ps_code, adj):
+    """Końcówki -RT przykręcone do biegunów akumulatora, odtworzone
+    z geometrii schematu.
+
+    Raport połączeń nie wiąże oczka ze szpilką baterii (wiersz z pustym
+    kodem urządzenia i pinem '{4}'/'{5}'), więc końcówka wygląda na
+    wiszącą. Na schemacie bieguny są znakami '+/-' w stałym rozstawie
+    (~56 pt, minus po lewej) przy symbolu -G albo przy baterii bez
+    etykiety (akumulator KFZ). Końcówkę -RT przypisujemy do baterii
+    najbliższej parze biegunów; biegun '-' dla obwodów masowych
+    (GND/PE/MASA w nazwie przewodu), '+' dla pozostałych. Dokładamy
+    tylko oczka wiszące (stopień 1) albo masowe — końcówka z własnymi
+    przewodami w obie strony nie jest szpilką baterii.
+
+    Zwraca {rt_dev: (batt_dev, '+|−', label)}."""
+    row = _ps_fuse_schematic_row(cur, ps_code)
+    key = ((ps_code or "").upper(), tuple(conn_ids or ()),
+           row["id"] if row else 0,
+           row["file_mtime"] if row else 0.0, len(adj or {}))
+    if key in _BAT_STUDS_CACHE:
+        return _BAT_STUDS_CACHE[key]
+    out = {}
+    schem_path = resolve_kb_filepath(row["filepath"], heal_db=True) \
+        if row else ""
+    if not (row and conn_ids and adj and schem_path
+            and os.path.exists(schem_path)):
+        _BAT_STUDS_CACHE[key] = out
+        return out
+    schem_id, schem_mtime = row["id"], row["file_mtime"]
+
+    g_pages = set()
+    for pg, sname in cur.execute(
+            "SELECT page_number, symbol_name FROM zuken_pdf_symbols"
+            " WHERE schematic_id = ? AND symbol_name LIKE '-G%';",
+            (schem_id,)):
+        if re.fullmatch(r"-G\d+", sname or ""):
+            g_pages.add(pg)
+    if not g_pages:
+        _BAT_STUDS_CACHE[key] = out
+        return out
+
+    def _row_sig(r):
+        try:
+            return f"{r['signal'] or ''} {r['signal_name'] or ''}"
+        except Exception:
+            return ""
+
+    devs_by_clean = {}
+    gnd_devs = set()
+    for (d, _p), nbrs in adj.items():
+        cl = clean_device_code(d) or ""
+        devs_by_clean.setdefault(cl, set()).add(d)
+        if cl.startswith("RT") and d not in gnd_devs \
+                and any(_BAT_GND_RE.search(_row_sig(r))
+                        for r in nbrs.values()):
+            gnd_devs.add(d)
+
+    _ci, _bi = _ps_project_ids(cur, ps_code)
+    g_by_clean = {}
+    if _bi:
+        try:
+            ph = ",".join("?" for _ in _bi)
+            for dc, dcl in cur.execute(
+                    f"SELECT DISTINCT d.device_code, d.device_clean"
+                    f" FROM zuken_bom_devices d JOIN zuken_bom_items i"
+                    f"  ON i.id = d.bom_item_id"
+                    f" WHERE i.project_id IN ({ph});", list(_bi)):
+                cl = dcl or clean_device_code(dc) or ""
+                if re.fullmatch(r"G\d+", cl):
+                    g_by_clean.setdefault(cl, set()).add(dc)
+        except sqlite3.OperationalError:
+            pass
+
+    _PREF_RE = re.compile(r"(=[A-Z0-9]+)(\+[A-Z0-9]+)?-")
+
+    def _pref_score(code, pool_map, tx, ty, lim):
+        """Ile członów prefiksa =SYS+LOC kodu widać jako tokeny
+        w promieniu lim od punktu (tx, ty)."""
+        m = _PREF_RE.match(code or "")
+        if not m:
+            return 0
+        return sum(
+            1 for tok, pool in ((m.group(1), pool_map[0]),
+                                (m.group(2), pool_map[1]))
+            if tok and any(t2 == tok
+                           and (x - tx) ** 2 + (y - ty) ** 2 <= lim * lim
+                           for x, y, t2 in pool))
+
+    aku_seq = 0
+    for pg in sorted(g_pages):
+        toks = _pdf_page_text_positions(schem_id, schem_path, pg,
+                                        schem_mtime)
+        if not toks:
+            continue
+        minuses = [(x, y) for x, y, t in toks if t in _MINUS_TOKS]
+        pluses = [(x, y) for x, y, t in toks if t == '+']
+        # para biegunów: '-' bezpośrednio po lewej '+', ta sama wysokość
+        pairs = []
+        for mx, my in minuses:
+            best = None
+            for px, py in pluses:
+                dx, dy = px - mx, abs(py - my)
+                if 8 <= dx <= 100 and dy <= 12 \
+                        and (best is None or dx + dy < best[0]):
+                    best = (dx + dy, px, py)
+            if best:
+                pairs.append({"minus": (mx, my),
+                              "plus": (best[1], best[2])})
+        if not pairs:
+            continue
+        glabels = [(x, y, t) for x, y, t in toks
+                   if re.fullmatch(r"-G\d+", t or "")]
+        rts = [(x, y, t) for x, y, t in toks
+               if re.fullmatch(r"-RT\d+[A-Za-z']*", t or "")]
+        syss = [(x, y, t) for x, y, t in toks
+                if re.fullmatch(r"=[A-Z0-9]+", t or "")]
+        locs = [(x, y, t) for x, y, t in toks
+                if re.fullmatch(r"\+[A-Z0-9]+", t or "")]
+        caps = [(x, y, t) for x, y, t in toks
+                if re.fullmatch(r"[A-Z][A-Z0-9_+#]{2,24}", t or "")]
+        pool_map = (syss, locs)
+
+        # etykieta -G należy do jednej baterii — przydział globalny
+        # min-cost (KFZ bez własnej etykiety "pożyczał" -G3 sąsiada)
+        _g_edges = []
+        for _pi, _pr in enumerate(pairs):
+            _cx = (_pr["minus"][0] + _pr["plus"][0]) / 2.0
+            for _gi, (_gx, _gy, _gt) in enumerate(glabels):
+                _d2 = (_gx - _cx) ** 2 + (_gy - _pr["minus"][1]) ** 2
+                if _d2 <= 200 ** 2:
+                    _g_edges.append((_d2, _pi, _gi))
+        lab_assign = _min_cost_pairs(_g_edges, len(pairs), len(glabels))
+        for _pi, pr in enumerate(pairs):
+            (mx, my), (px, py) = pr["minus"], pr["plus"]
+            cx = (mx + px) / 2.0
+            gi = lab_assign.get(_pi)
+            bg = (0, glabels[gi][2], glabels[gi][0], glabels[gi][1]) \
+                if gi is not None else None
+            if bg:
+                gc = bg[1].lstrip("-")
+                cands = sorted(g_by_clean.get(gc) or ())
+                bdev = max(cands, key=lambda c: _pref_score(
+                    c, pool_map, bg[2], bg[3], 300)) if cands else bg[1]
+                blabel = gc
+            else:
+                # bateria bez etykiety -G (np. akumulator KFZ): kod z
+                # najbliższych tokenów =SYS/+LOC, nazwa z tekstu CAPS.
+                # Tylko tokeny POD biegunami (w obrysie baterii) — nad
+                # nimi leżą etykiety przewodów i lokalizacji końcówek.
+                es = min((((sx - cx) ** 2 + (sy - my) ** 2, st)
+                          for sx, sy, st in syss if sy <= my + 30),
+                         default=None)
+                el = min((((lx - cx) ** 2 + (ly - my) ** 2, lt)
+                          for lx, ly, lt in locs if ly <= my + 30),
+                         default=None)
+                loc = ((es[1] if es and es[0] <= 250 ** 2 else "")
+                       + (el[1] if el and el[0] <= 250 ** 2 else ""))
+                bc = min((((wx - cx) ** 2 + (wy - my) ** 2, wt)
+                          for wx, wy, wt in caps if wy <= my + 30
+                          and not wt.startswith(("VA0", "ELE", "GN"))),
+                         default=None)
+                tag = (" " + bc[1]) if bc and bc[0] <= 150 ** 2 else ""
+                aku_seq += 1
+                bdev = f"{loc}-AKU{aku_seq}" if loc else f"-AKU{aku_seq}"
+                blabel = "AKU" + tag
+            pr["dev"], pr["label"] = bdev, blabel
+
+        for rx, ry, rt in rts:
+            hit = None
+            for pr in pairs:
+                d2 = min((rx - pr["minus"][0]) ** 2
+                         + (ry - pr["minus"][1]) ** 2,
+                         (rx - pr["plus"][0]) ** 2
+                         + (ry - pr["plus"][1]) ** 2)
+                if d2 <= 230 ** 2 and (hit is None or d2 < hit[0]):
+                    hit = (d2, pr)
+            if not hit:
+                continue
+            cl = rt.lstrip("-").rstrip("'")
+            cands = sorted(devs_by_clean.get(cl) or ())
+            if not cands:
+                continue
+            rdev = max(cands, key=lambda c: _pref_score(
+                c, pool_map, rx, ry, 220))
+            nodes = [nd for nd in adj if nd[0] == rdev]
+            if not nodes:
+                continue
+            gnd = rdev in gnd_devs
+            dangling = all(len(adj.get(nd, {})) <= 1 for nd in nodes)
+            if not (dangling or gnd):
+                continue
+            pol = '-' if gnd else '+'
+            out.setdefault(rdev, (hit[1]["dev"], pol, hit[1]["label"]))
+    _BAT_STUDS_CACHE[key] = out
     return out
 
 

@@ -720,6 +720,12 @@ def det_dangling_terminal(ctx):
     for bars in (rails.get("bars") or {}).values():
         for b in (bars or {}).values():
             fuse_terms |= set(b.get("taps") or [])
+    # oczka na biegunach akumulatorów — szpilka +/− jest poza raportem
+    # z założenia; połączenie odtwarza geometria schematu (_bats)
+    try:
+        fuse_terms |= set(_bats(ctx) or ())
+    except Exception:
+        pass
     floating = [x for x in _floating_terminals(ctx) if x[0][0] not in fuse_terms]
     fl_nodes = {n for n, _, _ in floating}
     emitted = set()
@@ -1041,11 +1047,26 @@ def det_kb_document(ctx):
 # (szyny/zwory, parowanie oprawek, skrzynki bezpieczników). Nie zmieniają
 # ich wyników; zgłaszają to, co heurystyka musiała odtworzyć z geometrii.
 # ═══════════════════════════════════════════════════════════════════
+def _wadj(ctx):
+    """Surowa sąsiedztwo raportu (bez łatek) — wspólne dla rails/bats."""
+    return ctx._memo(
+        "wadj", lambda: zs._wire_adjacency(
+            ctx.cur, ctx.conn_ids, with_patches=False))
+
+
 def _rails(ctx):
-    def f():
-        adj = zs._wire_adjacency(ctx.cur, ctx.conn_ids, with_patches=False)
-        return zs._ps_fuse_rails_raw(ctx.cur, ctx.conn_ids, ctx.ps, adj) or {}
-    return ctx._memo("rails", f)
+    return ctx._memo(
+        "rails", lambda: zs._ps_fuse_rails_raw(
+            ctx.cur, ctx.conn_ids, ctx.ps, _wadj(ctx)) or {})
+
+
+def _bats(ctx):
+    """Końcówki -RT na biegunach akumulatorów (geometria schematu):
+    {rt_dev: (batt_dev, biegun, etykieta)} — jak rails['terms'] dla
+    oprawek bezpieczników."""
+    return ctx._memo(
+        "bats", lambda: zs._ps_battery_studs(
+            ctx.cur, ctx.conn_ids, ctx.ps, _wadj(ctx)) or {})
 
 
 def _loc_for_devices(ctx, devs, pad=40):
