@@ -146,6 +146,10 @@ app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 2 * 1024 * 1024 * 1024
 
 VERSION = "2.3.4"
+# Epoka danych Zuken: podbić, gdy wydanie wymaga ponownej generacji
+# zestawień + skanu kontroli schematów (nowe/zmienione detektory,
+# format cache PDF, łatki itd.). Zwykłe poprawki UI/tekstów -> bez zmiany.
+DATA_VERSION = 1
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # STATIC_DIR — zasoby kodu (UI, migracje, narzędzia); DATA_DIR — dane użytkownika
@@ -561,15 +565,31 @@ def init_db():
             value TEXT
         )
     """)
-    # Brak klucza = świeża baza -> oznacz bieżącą wersję jako widzianą
-    # (odświeżanie danych po update ma sens tylko, gdy baza przetrwała
-    # starszą wersję programu).
+    # Brak klucza = świeża baza -> oznacz bieżącą wersję i epokę danych
+    # jako widziane (odświeżanie po update ma sens tylko, gdy baza
+    # przetrwała starszą epokę programu).
     if not cursor.execute(
             "SELECT value FROM app_state WHERE key='last_version'").fetchone():
         cursor.execute(
             "INSERT INTO app_state (key, value) VALUES ('last_version', ?)",
             (VERSION,))
         conn.commit()
+    if not cursor.execute(
+            "SELECT value FROM app_state WHERE key='data_version'").fetchone():
+        # Świeża instalacja (brak wygenerowanych danych Zuken = nie ma
+        # czego odświeżać) -> od razu bieżąca epoka. Stara baza z danymi
+        # bez data_version zostaje na 0 -> update wymusi odświeżenie.
+        try:
+            _has_data = cursor.execute(
+                "SELECT 1 FROM zuken_ps_summaries LIMIT 1").fetchone() \
+                is not None
+        except sqlite3.OperationalError:
+            _has_data = False
+        if not _has_data:
+            cursor.execute(
+                "INSERT INTO app_state (key, value)"
+                " VALUES ('data_version', ?)", (str(DATA_VERSION),))
+            conn.commit()
 
     # 1. Tabela rekordów usterek
     cursor.execute("""
@@ -973,9 +993,13 @@ def _app_state_set(key, value):
 
 @app.route("/api/version")
 def api_version():
+    try:
+        dv = int(_app_state_get("data_version") or 0)
+    except (TypeError, ValueError):
+        dv = 0
     return jsonify({
         "version": VERSION,
-        "data_refresh_needed": _app_state_get("last_version") != VERSION,
+        "data_refresh_needed": dv < DATA_VERSION,
     })
 
 
@@ -4007,7 +4031,11 @@ def api_audit_scan():
 @app.route("/api/zuken/post_update", methods=["GET"])
 def api_post_update_status():
     st = schema_audit.post_update_status()
-    st["needed"] = _app_state_get("last_version") != VERSION
+    try:
+        dv = int(_app_state_get("data_version") or 0)
+    except (TypeError, ValueError):
+        dv = 0
+    st["needed"] = dv < DATA_VERSION
     return jsonify(st)
 
 
@@ -4022,8 +4050,10 @@ def api_post_update_start():
 
 @app.route("/api/zuken/post_update/finish", methods=["POST"])
 def api_post_update_finish():
-    """Oznacz bieżącą wersję jako widzianą (po odświeżeniu albo 'Pomiń')."""
+    """Oznacz bieżącą epokę danych jako widzianą (po odświeżeniu albo
+    'Pomiń')."""
     _app_state_set("last_version", VERSION)
+    _app_state_set("data_version", DATA_VERSION)
     return jsonify({"status": "ok"})
 
 

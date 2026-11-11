@@ -66,6 +66,13 @@ Wersja wielojęzykowa: `SUPPORTED_LANGS = ("pl", "en", "de")`, tłumaczenia w
   zdjęciem przykrywa stare pobrane u klienta; późniejszy upload/fetch
   użytkownika znowu wygrywa.
 - **Wersja:** stała `VERSION` w `app.py` — bump przed każdym buildem.
+  Odrębna stała `DATA_VERSION` (epoka danych): podbić TYLKO gdy wydanie
+  wymaga ponownej generacji zestawień Zuken + skanu kontroli (nowe/
+  zmienione detektory, format cache PDF, łatki). Frontend pokazuje
+  adminowi modal odświeżania (`checkPostUpdateRefresh`), gdy
+  `app_state.data_version` < `DATA_VERSION`; brak klucza przy danych
+  w bazie → 0 (wymusza), przy pustej bazie → od razu bieżąca epoka.
+  Koniec/Pomiń: `POST /api/zuken/post_update/finish`.
 - **DevTools wyłączone** domyślnie (pywebview `debug=False` → AreDevToolsEnabled,
   skróty i menu kontekstowe off); frontend i tak serwowany po localhost —
   realna ochrona = minifikacja. Backend .py nie wchodzi do paczki (binarka Nuitka).
