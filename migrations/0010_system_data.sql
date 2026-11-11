@@ -1,5 +1,5 @@
 -- Wygenerowano automatycznie przez tools/export_migrations.py
--- Data: 2026-11-08T12:02:02
+-- Data: 2026-11-11T14:52:32
 -- UWAGA: DELETE+INSERT — tabele systemowe są zarządzane centralnie,
 -- ich stan po migracji jest identyczny jak w dev-bazie.
 
@@ -1533,6 +1533,8 @@ CREATE TABLE IF NOT EXISTS zuken_data_patches (
             uid TEXT UNIQUE
         );
 DELETE FROM zuken_data_patches WHERE COALESCE(source, 'core') != 'local';
+INSERT OR REPLACE INTO zuken_data_patches (ps_code, kind, payload, status, source, issue_id, note, created_by, created_at, updated_at, uid) VALUES ('PS011871', 'connection', '{"from_device": "=BOX+TWR-RT120", "from_pin": "1", "link": "stud", "to_device": "-A359", "to_pin": "B"}', 'active', 'core', 21, '', 'Adam Łukasik', '2026-11-09T08:36:44', '2026-11-09T08:36:44', '8403e38142324bd28ee227f8bed62233');
+INSERT OR REPLACE INTO zuken_data_patches (ps_code, kind, payload, status, source, issue_id, note, created_by, created_at, updated_at, uid) VALUES ('PS011871', 'connection', '{"from_device": "=BOX+TWR-RT124", "from_pin": "1", "link": "stud", "to_device": "-A359", "to_pin": "A"}', 'active', 'core', 20, '', 'Adam Łukasik', '2026-11-09T08:37:16', '2026-11-09T08:37:16', '4bf92b05afb2430c8535e9bceb6b6690');
 
 CREATE TABLE IF NOT EXISTS zuken_ps_meta (
             ps_code TEXT PRIMARY KEY,
@@ -1543,6 +1545,7 @@ CREATE TABLE IF NOT EXISTS zuken_ps_meta (
         );
 DELETE FROM zuken_ps_meta;
 INSERT OR REPLACE INTO zuken_ps_meta (ps_code, base_vehicle, engineer_name, engineer_email, updated_at) VALUES ('PS012732', 'MB_SPRINTER', 'Marceli Koska', 'm.koska@was.pl', '2026-11-08T10:45:47');
+INSERT OR REPLACE INTO zuken_ps_meta (ps_code, base_vehicle, engineer_name, engineer_email, updated_at) VALUES ('PS011871', 'MAN_TGE', 'Klaudia Sarzyńska', 'k.sarzynska@was.pl', '2026-11-09T08:33:01');
 
 CREATE TABLE IF NOT EXISTS zuken_platform_terms (
             term TEXT PRIMARY KEY COLLATE NOCASE,
