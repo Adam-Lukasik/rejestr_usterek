@@ -554,6 +554,23 @@ def init_db():
     conn = get_db_connection()
     cursor = conn.cursor()
 
+    # Stan aplikacji per-baza (ostatio uruchomiona wersja itp.)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS app_state (
+            key TEXT PRIMARY KEY,
+            value TEXT
+        )
+    """)
+    # Brak klucza = świeża baza -> oznacz bieżącą wersję jako widzianą
+    # (odświeżanie danych po update ma sens tylko, gdy baza przetrwała
+    # starszą wersję programu).
+    if not cursor.execute(
+            "SELECT value FROM app_state WHERE key='last_version'").fetchone():
+        cursor.execute(
+            "INSERT INTO app_state (key, value) VALUES ('last_version', ?)",
+            (VERSION,))
+        conn.commit()
+
     # 1. Tabela rekordów usterek
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS records (
@@ -935,9 +952,31 @@ def index():
 def translations_js():
     return send_from_directory(STATIC_DIR, "translations.js")
 
+def _app_state_get(key, default=""):
+    try:
+        r = get_db_connection().execute(
+            "SELECT value FROM app_state WHERE key=?", (key,)).fetchone()
+        return r[0] if r else default
+    except Exception:
+        return default
+
+
+def _app_state_set(key, value):
+    conn = get_db_connection()
+    conn.execute(
+        "INSERT INTO app_state (key, value) VALUES (?, ?)"
+        " ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+        (key, str(value)))
+    conn.commit()
+    conn.close()
+
+
 @app.route("/api/version")
 def api_version():
-    return jsonify({"version": VERSION})
+    return jsonify({
+        "version": VERSION,
+        "data_refresh_needed": _app_state_get("last_version") != VERSION,
+    })
 
 
 # Moduły wymagane przez backend — ich cichy brak w paczce Nuitka (importy
@@ -3963,6 +4002,29 @@ def api_audit_scan():
     if not schema_audit.start_scan(ps, stages, reset=bool(data.get("reset"))):
         return jsonify({"status": "running", "error": schema_audit.amsg("scanRunning", _app_lang())}), 409
     return jsonify({"status": "started"})
+
+
+@app.route("/api/zuken/post_update", methods=["GET"])
+def api_post_update_status():
+    st = schema_audit.post_update_status()
+    st["needed"] = _app_state_get("last_version") != VERSION
+    return jsonify(st)
+
+
+@app.route("/api/zuken/post_update/start", methods=["POST"])
+def api_post_update_start():
+    if not _audit_admin():
+        return _audit_forbidden()
+    if not schema_audit.start_post_update_refresh(lang=_app_lang()):
+        return jsonify({"status": "running"}), 409
+    return jsonify({"status": "started"})
+
+
+@app.route("/api/zuken/post_update/finish", methods=["POST"])
+def api_post_update_finish():
+    """Oznacz bieżącą wersję jako widzianą (po odświeżeniu albo 'Pomiń')."""
+    _app_state_set("last_version", VERSION)
+    return jsonify({"status": "ok"})
 
 
 @app.route("/api/zuken/audit/scan/status", methods=["GET"])

@@ -1724,6 +1724,62 @@ def scan_status():
     return dict(SCAN_STATE)
 
 
+# ── Odświeżanie po aktualizacji programu ──
+# Po update frontend startuje zadanie: dla każdego PS z wygenerowanymi
+# danymi (zuken_ps_summaries) ponowna generacja zestawień + pełny skan
+# kontroli — bez tego zgłoszenia pokazują stare wyniki detektorów.
+REFRESH_STATE = {"running": False, "idx": 0, "total": 0, "done": 0,
+                 "ps": "", "step": "", "det": "", "det_i": 0, "det_n": 0,
+                 "error": "", "started_at": "", "finished_at": "",
+                 "results": []}
+_refresh_lock = threading.Lock()
+
+
+def post_update_status():
+    return dict(REFRESH_STATE)
+
+
+def start_post_update_refresh(lang="pl"):
+    """Regeneracja zestawień + skan kontroli dla wszystkich projektów PS
+    z danymi — w tle, stan w REFRESH_STATE. False gdy już trwa."""
+    with _refresh_lock:
+        if REFRESH_STATE["running"]:
+            return False
+        REFRESH_STATE.update(running=True, idx=0, total=0, done=0, ps="",
+                             step="", det="", det_i=0, det_n=0, error="",
+                             started_at=_now(), finished_at="", results=[])
+
+    def _run():
+        try:
+            conn = zs.get_db()
+            ps_list = [r[0] for r in conn.execute(
+                "SELECT ps_code FROM zuken_ps_summaries ORDER BY ps_code")]
+            conn.close()
+            REFRESH_STATE["total"] = len(ps_list)
+            for i, ps in enumerate(ps_list):
+                REFRESH_STATE.update(idx=i, ps=ps, step="summaries")
+                try:
+                    zs.generate_ps_technical_summaries(ps, lang=lang)
+                except Exception as e:
+                    REFRESH_STATE["results"].append(
+                        {"ps": ps, "step": "summaries", "error": str(e)})
+                REFRESH_STATE.update(step="scan", det="", det_i=0, det_n=0)
+                try:
+                    run_scan(ps, ("data", "pdf"), progress=lambda a, b, d:
+                             REFRESH_STATE.update(det_i=a, det_n=b, det=d))
+                except Exception as e:
+                    REFRESH_STATE["results"].append(
+                        {"ps": ps, "step": "scan", "error": str(e)})
+                REFRESH_STATE["done"] = i + 1
+        except Exception as e:
+            REFRESH_STATE["error"] = str(e)
+        finally:
+            REFRESH_STATE.update(running=False, finished_at=_now())
+
+    threading.Thread(target=_run, daemon=True).start()
+    return True
+
+
 # ═══════════════════════════════════════════════════════════════════
 # ŁATKI (zuken_data_patches) — CRUD; nakładanie w zuken_service
 # ═══════════════════════════════════════════════════════════════════

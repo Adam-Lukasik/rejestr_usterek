@@ -2564,6 +2564,24 @@
 </div>
 
 <!-- ════════════ MODAL: KONTROLA SCHEMATÓW — SZCZEGÓŁY ZGŁOSZENIA ════════════ -->
+<div class="modal-backdrop" id="modal-post-update" style="display:none; z-index:10080;">
+  <div class="modal-box" style="max-width:460px;">
+    <div class="modal-body" style="padding:24px;">
+      <h3 style="margin:0 0 8px 0; font-size:16px;" data-i18n="ui.upd.refreshTitle">Aktualizacja danych projektów</h3>
+      <p id="pu-hint" style="font-size:12.5px; color:var(--text-muted); margin:0 0 14px 0;" data-i18n="ui.upd.refreshHint">Po aktualizacji programu trzeba ponownie wygenerować zestawienia i przeskanować projekty — inaczej kontrola schematów pokazuje stare wyniki.</p>
+      <div id="pu-progress-wrap" style="display:none; margin-bottom:14px;">
+        <div style="font-size:12.5px; margin-bottom:6px;" id="pu-progress-text"></div>
+        <div style="height:8px; background:var(--border-subtle); border-radius:99px; overflow:hidden;">
+          <div id="pu-progress-bar" style="height:100%; width:0%; background:linear-gradient(90deg,#f59e0b,#d97706); transition:width .3s;"></div>
+        </div>
+      </div>
+      <div id="pu-btns" style="display:flex; gap:8px; justify-content:flex-end;">
+        <button type="button" class="btn-secondary-action" id="pu-skip" onclick="puFinish()" data-i18n="ui.upd.refreshSkip">Pomiń</button>
+        <button type="button" class="btn-primary-action" id="pu-start" onclick="puStart()" data-i18n="ui.upd.refreshStart">Rozpocznij</button>
+      </div>
+    </div>
+  </div>
+</div>
 <div class="modal-backdrop" id="modal-audit-issue" style="display:none; z-index:10050;" onclick="if(event.target===this)closeModal('modal-audit-issue')">
   <div class="modal-box" style="max-width:860px;" onclick="event.stopPropagation()">
     <div class="modal-header">
@@ -3581,6 +3599,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         startPolling();
         checkUpdateStatus();
         checkForUpdates(true);
+        checkPostUpdateRefresh();
         return;
       }
     } catch(e) {
@@ -8083,6 +8102,64 @@ document.getElementById('input-sync-import')?.addEventListener('change', async (
 
 // ─── AKTUALIZACJE PROGRAMU ───
 let _updInfo = null;
+let _puTimer = null;
+
+async function checkPostUpdateRefresh() {
+  try {
+    if (!STATE.activeUser || STATE.activeUser.role !== 'admin') return;
+    const st = await apiCall('/api/zuken/post_update');
+    if (st.running) { puShowRunning(); puPoll(); return; }
+    if (st.needed) {
+      document.getElementById('modal-post-update').style.display = 'flex';
+    }
+  } catch(e) {}
+}
+
+function puShowRunning() {
+  document.getElementById('modal-post-update').style.display = 'flex';
+  document.getElementById('pu-progress-wrap').style.display = '';
+  document.getElementById('pu-btns').style.display = 'none';
+  document.getElementById('pu-hint').textContent = t('ui.upd.refreshRun');
+}
+
+async function puStart() {
+  try {
+    await apiCall('/api/zuken/post_update/start', 'POST', {});
+    puShowRunning();
+    puPoll();
+  } catch(e) { showToast(e.message || t('ui.upd.refreshErr'), 'error'); }
+}
+
+function puPoll() {
+  if (_puTimer) clearTimeout(_puTimer);
+  _puTimer = setTimeout(async () => {
+    try {
+      const st = await apiCall('/api/zuken/post_update');
+      if (st.running) {
+        const step = st.step === 'scan' ? t('ui.upd.refreshStepScan') : t('ui.upd.refreshStepSumm');
+        document.getElementById('pu-progress-text').textContent =
+          `${st.done}/${st.total || '?'} ${st.ps || ''} · ${step}`;
+        const pct = st.total ? Math.round(100 * st.done / st.total) : 0;
+        document.getElementById('pu-progress-bar').style.width = pct + '%';
+        puPoll();
+      } else {
+        document.getElementById('pu-progress-bar').style.width = '100%';
+        const errs = (st.results || []).filter(r => r.error).length;
+        showToast(errs ? t('ui.upd.refreshErr') : t('ui.upd.refreshDone'),
+                  errs ? 'error' : 'success');
+        puFinish();
+      }
+    } catch(e) { puPoll(); }
+  }, 1000);
+}
+
+async function puFinish() {
+  if (_puTimer) { clearTimeout(_puTimer); _puTimer = null; }
+  try { await apiCall('/api/zuken/post_update/finish', 'POST', {}); } catch(e) {}
+  document.getElementById('modal-post-update').style.display = 'none';
+  document.getElementById('pu-progress-wrap').style.display = 'none';
+  document.getElementById('pu-btns').style.display = '';
+}
 
 async function refreshUpdateVersion() {
   const el = document.getElementById('upd-current-version');
@@ -8569,6 +8646,7 @@ function setupEventListeners() {
       startPolling();
       checkUpdateStatus();
       checkForUpdates(true);
+      checkPostUpdateRefresh();
     } catch(err) {
       errBox.textContent = err.message || t('js.auth.badLogin');
       errBox.style.display = 'block';

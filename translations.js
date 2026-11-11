@@ -327,6 +327,17 @@ const TRANSLATIONS = {
       generatingWait: "Trwa analizowanie plików XLSX i generowanie zestawień..."
     },
     ui: {
+      upd: {
+        refreshTitle: "Aktualizacja danych projektów",
+        refreshHint: "Po aktualizacji programu trzeba ponownie wygenerować zestawienia i przeskanować projekty — inaczej kontrola schematów pokazuje stare wyniki.",
+        refreshStart: "Rozpocznij",
+        refreshSkip: "Pomiń",
+        refreshRun: "Trwa odświeżanie danych projektów…",
+        refreshDone: "Dane projektów zaktualizowane.",
+        refreshErr: "Odświeżanie zakończone z błędami.",
+        refreshStepSumm: "zestawienia",
+        refreshStepScan: "kontrola schematów"
+      },
       common: {
         cancel: "Anuluj",
         save: "Zapisz",
@@ -1756,6 +1767,17 @@ const TRANSLATIONS = {
       generatingWait: "Analyzing XLSX files and compiling lists..."
     },
     ui: {
+      upd: {
+        refreshTitle: "Refreshing project data",
+        refreshHint: "After a program update the summaries and schematic audit need to be regenerated — otherwise the audit shows stale results.",
+        refreshStart: "Start",
+        refreshSkip: "Skip",
+        refreshRun: "Refreshing project data…",
+        refreshDone: "Project data refreshed.",
+        refreshErr: "Refresh finished with errors.",
+        refreshStepSumm: "summaries",
+        refreshStepScan: "schematic audit"
+      },
       common: {
         cancel: "Cancel",
         save: "Save",
@@ -3184,6 +3206,17 @@ const TRANSLATIONS = {
       generatingWait: "XLSX-Dateien werden analysiert und Listen erstellt..."
     },
     ui: {
+      upd: {
+        refreshTitle: "Projektdaten aktualisieren",
+        refreshHint: "Nach einem Programm-Update müssen die Zusammenstellungen neu erzeugt und die Schaltplanprüfung erneut ausgeführt werden — sonst zeigt sie veraltete Ergebnisse.",
+        refreshStart: "Starten",
+        refreshSkip: "Überspringen",
+        refreshRun: "Projektdaten werden aktualisiert…",
+        refreshDone: "Projektdaten aktualisiert.",
+        refreshErr: "Aktualisierung mit Fehlern abgeschlossen.",
+        refreshStepSumm: "Zusammenstellungen",
+        refreshStepScan: "Schaltplanprüfung"
+      },
       common: {
         cancel: "Abbrechen",
         save: "Speichern",
