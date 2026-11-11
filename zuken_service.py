@@ -6999,6 +6999,7 @@ def _invalidate_patch_caches():
     _FUSE_RAILS_CACHE.clear()
     _FUSE_LIST_CACHE.clear()
     _BAT_STUDS_CACHE.clear()
+    _DEV_STUDS_CACHE.clear()
 
 
 def _active_patches(cur, ps_code, kind):
@@ -8276,8 +8277,16 @@ def _circuit_extend_adjacency(cur, adj, ps_code, dev_funcs=None, bom_names=None)
     # (bateria, '+'/'−') odtwarzana z geometrii symbolu na schemacie
     try:
         _bats = _ps_battery_studs(cur, _rci, ps_code, adj)
+        _dstud = _ps_device_studs(cur, _rci, ps_code, adj)
     except Exception:
-        _bats = {}
+        _bats, _dstud = {}, {}
+    for _rtd, (_sdev, _spin, _slbl) in (_dstud or {}).items():
+        if _rtd in (_bats or {}):
+            continue
+        _snode = (_sdev, _spin)
+        adj.setdefault(_snode, {})
+        for _nd in [nd for nd in list(adj.keys()) if nd[0] == _rtd]:
+            _link_nodes(_nd, _snode, "stud", _slbl or _sdev)
     for _rtd, (_bdev, _bpol, _blbl) in (_bats or {}).items():
         _bnode = (_bdev, _bpol)
         adj.setdefault(_bnode, {})
@@ -8293,6 +8302,30 @@ def _circuit_extend_adjacency(cur, adj, ps_code, dev_funcs=None, bom_names=None)
     # np. A359 ML-RBS: szpilka A <-> B) oraz szyny zasilające z N
     # zaciskami (końcówki oczkowe na wspólnym pręcie — Carnation:
     # RT123+RT132 na jednej szynie, RT133+… na drugiej).
+    _bom_dev_map = [None]
+
+    def _bom_devs():
+        """Urządzenia z BOM projektu spoza raportu połączeń (np. -F
+        skrzynki niewidoczne w eksporcie E3) — fallback łatek."""
+        if _bom_dev_map[0] is None:
+            m = {}
+            try:
+                _ci2, _bi2 = _ps_project_ids(cur, ps_code)
+                if _bi2:
+                    ph = ",".join("?" for _ in _bi2)
+                    for _dc, _dcl in cur.execute(
+                            "SELECT DISTINCT d.device_code, d.device_clean"
+                            " FROM zuken_bom_devices d JOIN zuken_bom_items i"
+                            "  ON i.id = d.bom_item_id"
+                            f" WHERE i.project_id IN ({ph});",
+                            list(_bi2)):
+                        m.setdefault(_dcl or clean_device_code(_dc) or "",
+                                     set()).add(_dc)
+            except sqlite3.OperationalError:
+                pass
+            _bom_dev_map[0] = m
+        return _bom_dev_map[0]
+
     def _patch_dev(code):
         code = (code or "").strip()
         if not code:
@@ -8302,13 +8335,21 @@ def _circuit_extend_adjacency(cur, adj, ps_code, dev_funcs=None, bom_names=None)
         cl = clean_device_code(code) or code
         cands = [d for d in dev_pins
                  if (clean_device_code(d) or d) == cl]
-        return cands[0] if len(cands) == 1 else ""
+        if len(cands) == 1:
+            return cands[0]
+        bm = _bom_devs()
+        if code in {dc for cs in bm.values() for dc in cs}:
+            return code
+        bc = sorted(bm.get(cl) or ())
+        return bc[0] if len(bc) == 1 else ""
 
     for _pid, _p in _active_patches(cur, ps_code, "device_link"):
         _dev = _patch_dev(_p.get("device"))
         _pa = str(_p.get("pin_a") or "").strip()
         _pb = str(_p.get("pin_b") or "").strip()
         if _dev and _pa and _pb:
+            adj.setdefault((_dev, _pa), {})
+            adj.setdefault((_dev, _pb), {})
             _link(_dev, _pa, _pb, "switch",
                   (_p.get("label") or "").strip()
                   or clean_device_code(_dev) or _dev)
@@ -8320,7 +8361,8 @@ def _circuit_extend_adjacency(cur, adj, ps_code, dev_funcs=None, bom_names=None)
                 continue
             _md = _patch_dev(_m.get("dev"))
             _mp = str(_m.get("pin") or "1").strip() or "1"
-            if _md and (_md, _mp) in adj:
+            if _md:
+                adj.setdefault((_md, _mp), {})
                 _mems.append((_md, _mp))
         for _i in range(len(_mems)):
             for _j in range(_i + 1, len(_mems)):
@@ -10102,7 +10144,7 @@ def _pdf_page_text_positions(schem_id, filepath, page_num, file_mtime=None):
     if row is not None:
         try:
             _d = json.loads(row[0])
-            if isinstance(_d, dict) and _d.get('v') == 3:
+            if isinstance(_d, dict) and _d.get('v') == 4:
                 items = [tuple(t) for t in _d['items']]
         except (ValueError, TypeError):
             items = None
@@ -10115,9 +10157,9 @@ def _pdf_page_text_positions(schem_id, filepath, page_num, file_mtime=None):
                     reader = pypdf.PdfReader(filepath)
                     _PDF_READERS[filepath] = reader
                 if 1 <= page_num <= len(reader.pages):
-                    _w = r'[A-Z][A-Z0-9_+#]{1,24}'
+                    _w = r'[A-Z][A-Z0-9_+#/]{1,24}'
                     tok_re = re.compile(
-                        r'-(?:FH|FR|F|RT|U|K|X|SP|RU|G)\d+(?:#\d+)?[A-Za-z\']*'
+                        r'-[A-Z]{1,3}\d+(?:#\d+)?[A-Za-z\']*'
                         r'|=[A-Z]+\+[A-Z]+-[A-Z]+\d+'
                         r'|=[A-Z0-9]+|\+[A-Z0-9]+'
                         r'|\d{1,3}(?:[.,]\d+)?A'
@@ -10141,7 +10183,7 @@ def _pdf_page_text_positions(schem_id, filepath, page_num, file_mtime=None):
                     (schematic_id, page_number, file_mtime, tokens_json)
                 VALUES (?, ?, ?, ?);
             """, (schem_id, page_num, file_mtime,
-                  json.dumps({'v': 3, 'items': items})))
+                  json.dumps({'v': 4, 'items': items})))
             conn.commit()
         except sqlite3.OperationalError:
             conn.rollback()   # zapis cache best-effort (lock przy insertach)
@@ -11447,6 +11489,164 @@ def _ps_battery_studs(cur, conn_ids, ps_code, adj):
             pol = '-' if gnd else '+'
             out.setdefault(rdev, (hit[1]["dev"], pol, hit[1]["label"]))
     _BAT_STUDS_CACHE[key] = out
+    return out
+
+
+_DEV_STUDS_CACHE = {}
+_STUD_HDR_RE = re.compile(
+    r"^(POSITIVE|NEGATIVE|PE/EARTH|EARTH|GROUND|NEUTRAL)$")
+_STUD_DEV_RE = re.compile(r"-(A|S|Q|M|B|H|P|N|T)\d+$")
+_STUD_DEV_CLEAN_RE = re.compile(r"^(A|S|Q|M|B|H|P|N|T)\d+$")
+_STUD_MINUS_RE = re.compile(
+    r"NEG|MINUS|EARTH|GROUND|NEUTRAL|\bPE\b|GND|MAS[AE]", re.IGNORECASE)
+
+
+def _ps_device_studs(cur, conn_ids, ps_code, adj):
+    """Oczka -RT na nazwanych szpilkach aparatów (inwerter A9: kolumny
+    POSITIVE / NEGATIVE / PE-EARTH nad zaciskami M8), odtworzone z
+    geometrii schematu — jak _ps_battery_studs, ale biegunem jest tu
+    etykieta kolumny.
+
+    Nagłówek szpilki to token POSITIVE/NEGATIVE/PE-EARTH/EARTH/GROUND/
+    NEUTRAL; końcówkę -RT przypisujemy do kolumny nagłówka (|dx|<=45,
+    odległość pionowa <=220). Przy niejednoznaczności rozstrzyga nazwa
+    obwodu końcówki (GND/PE -> biegun minusowy/ochronny). Urządzenie =
+    najbliższa etykieta aparatu -(A|S|Q|M|B|H|P|N|T) w promieniu 350 pt
+    od nagłówka; kod z BOM rozstrzygany prefiksem =SYS/+LOC jak w
+    _ps_battery_studs. Dokładamy tylko oczka wiszące (stopień 1).
+
+    Zwraca {rt_dev: (dev, pin_name, label)} — pin_name to tekst
+    nagłówka ('POSITIVE', 'PE/EARTH', ...)."""
+    row = _ps_fuse_schematic_row(cur, ps_code)
+    key = ((ps_code or "").upper(), tuple(conn_ids or ()),
+           row["id"] if row else 0,
+           row["file_mtime"] if row else 0.0, len(adj or {}))
+    if key in _DEV_STUDS_CACHE:
+        return _DEV_STUDS_CACHE[key]
+    out = {}
+    schem_path = resolve_kb_filepath(row["filepath"], heal_db=True) \
+        if row else ""
+    if not (row and conn_ids and adj and schem_path
+            and os.path.exists(schem_path)):
+        _DEV_STUDS_CACHE[key] = out
+        return out
+    schem_id, schem_mtime = row["id"], row["file_mtime"]
+
+    # strony z etykietą aparatu i przynajmniej jednym -RT
+    app_pages, rt_pages = set(), set()
+    for pg, sc in cur.execute(
+            "SELECT page_number, symbol_clean FROM zuken_pdf_symbols"
+            " WHERE schematic_id = ?;", (schem_id,)):
+        sc = sc or ""
+        if _STUD_DEV_CLEAN_RE.match(sc):
+            app_pages.add(pg)
+        elif re.match(r"RT\d", sc):
+            rt_pages.add(pg)
+    pages = sorted(app_pages & rt_pages)
+    if not pages:
+        _DEV_STUDS_CACHE[key] = out
+        return out
+
+    devs_by_clean = {}
+    sig_by_dev = {}
+    for (d, _p), nbrs in adj.items():
+        cl = clean_device_code(d) or ""
+        devs_by_clean.setdefault(cl, set()).add(d)
+        if cl.startswith("RT") and d not in sig_by_dev:
+            sig_by_dev[d] = " ".join(
+                f"{(r['signal'] or '')} {(r['signal_name'] or '')}"
+                if isinstance(r, dict) else "" for r in nbrs.values())
+
+    _ci, _bi = _ps_project_ids(cur, ps_code)
+    app_by_clean = {}
+    if _bi:
+        try:
+            ph = ",".join("?" for _ in _bi)
+            for dc, dcl in cur.execute(
+                    f"SELECT DISTINCT d.device_code, d.device_clean"
+                    f" FROM zuken_bom_devices d JOIN zuken_bom_items i"
+                    f"  ON i.id = d.bom_item_id"
+                    f" WHERE i.project_id IN ({ph});", list(_bi)):
+                cl = dcl or clean_device_code(dc) or ""
+                if _STUD_DEV_CLEAN_RE.match(cl):
+                    app_by_clean.setdefault(cl, set()).add(dc)
+        except sqlite3.OperationalError:
+            pass
+
+    _PREF_RE2 = re.compile(r"(=[A-Z0-9]+)(\+[A-Z0-9]+)?-")
+
+    def _pref_score(code, syss, locs, tx, ty, lim):
+        m = _PREF_RE2.match(code or "")
+        if not m:
+            return 0
+        return sum(
+            1 for tok, pool in ((m.group(1), syss), (m.group(2), locs))
+            if tok and any(t2 == tok
+                           and (x - tx) ** 2 + (y - ty) ** 2 <= lim * lim
+                           for x, y, t2 in pool))
+
+    for pg in pages:
+        toks = _pdf_page_text_positions(schem_id, schem_path, pg,
+                                        schem_mtime)
+        if not toks:
+            continue
+        hdrs = [(x, y, t) for x, y, t in toks if _STUD_HDR_RE.fullmatch(t)]
+        if not hdrs:
+            continue
+        devlabs = [(x, y, t) for x, y, t in toks
+                   if _STUD_DEV_RE.fullmatch(t)]
+        rts = [(x, y, t) for x, y, t in toks
+               if re.fullmatch(r"-RT\d+[A-Za-z']*", t or "")]
+        syss = [(x, y, t) for x, y, t in toks
+                if re.fullmatch(r"=[A-Z0-9]+", t or "")]
+        locs = [(x, y, t) for x, y, t in toks
+                if re.fullmatch(r"\+[A-Z0-9]+", t or "")]
+
+        for rx, ry, rt in rts:
+            cands = [(abs(hx - rx) * 100 + abs(hy - ry), hx, hy, ht)
+                     for hx, hy, ht in hdrs
+                     if abs(hx - rx) <= 45 and 8 <= abs(hy - ry) <= 220]
+            if not cands:
+                continue
+            cands.sort()
+            hdr = None
+            if len(cands) == 1 or cands[0][0] + 400 < cands[1][0]:
+                hdr = cands[0]
+            else:
+                # remis kolumn — rozstrzyga biegunowość obwodu końcówki
+                cl = rt.lstrip("-").rstrip("'")
+                rcands = sorted(devs_by_clean.get(cl) or ())
+                rdev0 = rcands[0] if rcands else ""
+                minus = _STUD_MINUS_RE.search(sig_by_dev.get(rdev0) or "")
+                want = [_STUD_MINUS_RE.search(h[3]) for h in cands]
+                pick = [h for h, m in zip(cands, want) if bool(m) == bool(minus)]
+                if len(pick) == 1:
+                    hdr = pick[0]
+            if not hdr:
+                continue
+            _dc, hx, hy, pin_name = hdr
+            # urządzenie: najbliższa etykieta aparatu od nagłówka
+            lab = min((((dx - hx) ** 2 + (dy - hy) ** 2, lt, dx, dy)
+                       for dx, dy, lt in devlabs), default=None)
+            if not lab or lab[0] > 350 ** 2:
+                continue
+            aclean = lab[1].lstrip("-")
+            acands = sorted(app_by_clean.get(aclean) or ())
+            adev = max(acands, key=lambda c: _pref_score(
+                c, syss, locs, lab[2], lab[3], 300)) if acands else lab[1]
+            cl = rt.lstrip("-").rstrip("'")
+            cands2 = sorted(devs_by_clean.get(cl) or ())
+            if not cands2:
+                continue
+            rdev = max(cands2, key=lambda c: _pref_score(
+                c, syss, locs, rx, ry, 220))
+            nodes = [nd for nd in adj if nd[0] == rdev]
+            if not nodes or not all(len(adj.get(nd, {})) <= 1
+                                    for nd in nodes):
+                continue
+            label = f"{aclean} {pin_name}"
+            out.setdefault(rdev, (adev, pin_name, label))
+    _DEV_STUDS_CACHE[key] = out
     return out
 
 

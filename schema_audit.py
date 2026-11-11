@@ -1061,12 +1061,18 @@ def _rails(ctx):
 
 
 def _bats(ctx):
-    """Końcówki -RT na biegunach akumulatorów (geometria schematu):
-    {rt_dev: (batt_dev, biegun, etykieta)} — jak rails['terms'] dla
-    oprawek bezpieczników."""
-    return ctx._memo(
-        "bats", lambda: zs._ps_battery_studs(
-            ctx.cur, ctx.conn_ids, ctx.ps, _wadj(ctx)) or {})
+    """Końcówki -RT na szpilkach odtworzonych z geometrii schematu:
+    bieguny akumulatorów (_ps_battery_studs) + nazwane szpilki aparatów
+    (_ps_device_studs). Klucze = rt_dev."""
+    def f():
+        out = dict(
+            zs._ps_device_studs(ctx.cur, ctx.conn_ids, ctx.ps,
+                                _wadj(ctx)) or {})
+        out.update(
+            zs._ps_battery_studs(ctx.cur, ctx.conn_ids, ctx.ps,
+                                 _wadj(ctx)) or {})
+        return out
+    return ctx._memo("bats", f)
 
 
 def _loc_for_devices(ctx, devs, pad=40):

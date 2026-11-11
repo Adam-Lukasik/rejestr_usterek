@@ -253,9 +253,25 @@ Wersja wielojęzykowa: `SUPPORTED_LANGS = ("pl", "en", "de")`, tłumaczenia w
   wiszące albo masowe. `_circuit_extend_adjacency` dokłada krawędź
   `_internal='battery'` (+`_batt_pin`) do węzła (bateria,'+'/'−');
   `_circuit_end_role` → 'gnd' dla '−', 'source' dla '+'. Tokeny
-  `_pdf_page_text_positions` (format v3) łapią też `-G\d+`, `=SYS`,
+  `_pdf_page_text_positions` (format v4: etykiety `-[A-Z]{1,3}\d+`
+  łapią też -A/-Q itd., `/` w słowach CAPS) łapią też `-G\d+`, `=SYS`,
   `+LOC` i znaki '+/−'. Audyt D02 pomija te końcówki (`_bats` w
   schema_audit, wspólny `_wadj` z `_rails`).
+- Nazwane szpilki aparatów: `_ps_device_studs` — ten sam mechanizm co
+  baterie, dla nagłówków kolumn POSITIVE/NEGATIVE/PE-EARTH/EARTH/GROUND/
+  NEUTRAL nad zaciskami aparatu (inwerter -A9 na EoE: RT59→POSITIVE,
+  RT60→NEGATIVE, RT63→PE/EARTH). -RT przypisywany do kolumny nagłówka
+  (|dx|<=45, pionowo <=220), przy remisie kolumn rozstrzyga
+  biegunowość obwodu; urządzenie = najbliższa etykieta
+  `-(A|S|Q|M|B|H|P|N|T)<n>` w promieniu 350 pt od nagłówka, kod z BOM
+  przez prefiks-score. Krawędź `_internal='stud'`, tylko oczka wiszące.
+- Łatki `device_link`/`power_rail` mogą wskazywać urządzenia spoza
+  raportu (np. -F6..-F10 z banku bezpieczników): `_patch_dev` ma
+  fallback na BOM projektu (pełny kod verbatim albo jednoznaczny
+  clean), a brakujące węzły pinów są tworzone — szyna/wiązanie wewn.
+  działa też dla urządzeń bez wierszy w `zuken_connections`
+  (RT3 na wspólnej szynie F6–F10: power_rail z members RT3:1 +
+  F6..F10:1).
 - Tłumaczenia tekstów schematu (sygnały/funkcje/arkusze/kolory): tabela
   `zuken_translations` (forma→pl/en/de, kind=phrase/token/jargon,
   source=core/local) — display-time `_localize_payload` dokłada pola `*_t`
