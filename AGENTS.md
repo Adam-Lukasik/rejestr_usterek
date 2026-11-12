@@ -191,7 +191,18 @@ Wersja wielojęzykowa: `SUPPORTED_LANGS = ("pl", "en", "de")`, tłumaczenia w
   okablowania" (`js.zuken.circuitNoWires`) — trwałe missy u Walii to
   F5 (125A MEGA, brak etykiety na schemacie i urządzenia w raporcie) i
   A11 (=CAB+MOR-A11 "Comms Fuse Box" — obudowa skrzynki bez reprezentacji;
-  jej bezpieczniki F9–F11/F41 śledzone przez terminale RT). Diagram:
+  jej bezpieczniki F9–F11/F41 śledzone przez terminale RT). Sloty
+  jednopinowe (-U z pinem '' w raporcie, E3 scala oba zaciski w jeden
+  węzeł — banki Mega/MIDI jak F6–F10@PS011871): `u_split` w
+  `_ps_fuse_rails` rozbija pin '' na kołki '1'/'2' geometrią — strona
+  rysunku banku = strona z największą liczbą członków grupy
+  (strony-zestawienia powielają rząd), szyna = najszerszy poziomy bieg
+  przez ≥2 kolumny ≤100 pt od rzędu -F, terminale -RT w kolumnie
+  |dx|≤90 sortowane względem mediany fy etykiet (POD etykietą = pin 1,
+  NAD = pin 2). `_circuit_extend_adjacency` przenosi raportowe krawędzie
+  na kołki i okablowuje grupę: szyna -SZYNA↔kołek `rail_pin`, element
+  -F między kołkami. Ręczna łatka `connection` do kołka strony szyny
+  (RT3:1↔U9:2 = ta sama szpilka co RT111). Diagram:
   `circuitFuseDownPin` musi łapać też DRUGI pin roli 'feed' — oprawki/sloty
   (FH/FR/F/U i zespół -A10) mają oba piny 'feed' (np. FH1:1 zasilanie,
   FH1:2 → przewód 405 → X295 → A15); bez tego rysowała się tylko strona

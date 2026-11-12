@@ -8248,8 +8248,30 @@ def _circuit_extend_adjacency(cur, adj, ps_code, dev_funcs=None, bom_names=None)
         _rails = _ps_fuse_rails(cur, _rci, ps_code, adj)
     except Exception:
         _rails = {"slots": {}, "groups": []}
+    _usplit = _rails.get("u_split") or {}
+    for _ud, _usp in _usplit.items():
+        # rozbicie scalonego pinu '' slotu na kołki '1'/'2' — przenosimy
+        # raportowe krawędzie terminali na właściwy kołek
+        _old = (_ud, "")
+        for _pn in ("1", "2"):
+            _nn = (_ud, _pn)
+            adj.setdefault(_nn, {})
+            for _rt in _usp["pins"].get(_pn) or ():
+                _src = (_rt, "1")
+                _row = adj.get(_old, {}).get(_src)
+                if _row is None:
+                    continue
+                adj.setdefault(_nn, {})[_src] = _row
+                adj.setdefault(_src, {})[_nn] = _row
+                del adj[_old][_src]
+                del adj[_src][_old]
+        if _old in adj and not adj[_old]:
+            del adj[_old]
     for gi, g in enumerate(_rails["groups"], 1):
-        members = [m for m in g["members"] if (m["slot"], "") in adj]
+        members = [m for m in g["members"]
+                   if (m["slot"], "") in adj
+                   or (m["slot"], "1") in adj
+                   or (m["slot"], "2") in adj]
         if len(members) < 2:
             continue
         rail_dev = (members[0]["slot"].rsplit("-", 1)[0]
@@ -8262,6 +8284,18 @@ def _circuit_extend_adjacency(cur, adj, ps_code, dev_funcs=None, bom_names=None)
             elem_node = (m["elem"], "")
             adj.setdefault(elem_node, {})
             label = m["clean"] + (f" {m['rating']}" if m["rating"] else "")
+            _usp = _usplit.get(m["slot"])
+            if _usp:
+                # kołek strony szyny na szynę; element między kołkami
+                _feed = (m["slot"], _usp["rail_pin"])
+                _out = (m["slot"],
+                        "2" if _usp["rail_pin"] == "1" else "1")
+                internal_devs.add(m["slot"])
+                _link_nodes(rail_node, _feed, "busbar", label)
+                _link_nodes(_feed, elem_node, "fuse", label)
+                _link_nodes(elem_node, _out, "fuse", label)
+                internal_devs.add(m["elem"])
+                continue
             _link_nodes(slot_node, elem_node, "fuse", label)
             if rail_node not in adj.get(elem_node, {}):
                 rrow = _mark("fuse", label)
@@ -10613,6 +10647,8 @@ def _ps_fuse_rails_raw(cur, conn_ids, ps_code, adj):
                      # terminal szyny-zwory łączącej pin z pinami
                      # sąsiednich -F; bar_info = {"side","pin","node",
                      # "label","taps","sibs"}
+    fuse_pos = {}    # fuse_clean -> {page: (fx, fy)} — pozycja etykiety
+                     # -F (klasyfikacja stron kołków slotu -U)
     page_groups = [] # [fuse_clean...] rzędy elementów per strona
     for pg in sorted(fuse_pages):
         items = _pdf_page_label_positions(schem_id, schem_path, pg, schem_mtime)
@@ -10648,6 +10684,7 @@ def _ps_fuse_rails_raw(cur, conn_ids, ps_code, adj):
         unres = []     # indeksy -F bez oprawki/slotu w raporcie
         for fi, (fx, fy, fl) in enumerate(fuses):
             fc = fl[1:]
+            fuse_pos.setdefault(fc, {}).setdefault(pg, (fx, fy))
             pref = ""
             for dev, _rt in fuse_info.get(fc, ()):
                 pref = dev.rsplit("-", 1)[0] if "-" in dev else ""
@@ -11139,6 +11176,86 @@ def _ps_fuse_rails_raw(cur, conn_ids, ps_code, adj):
         groups.append({"feed": feeds[0] if len(feeds) == 1 else "",
                        "members": members})
     out["groups"] = groups
+
+    # ── Kołki jednopinowych slotów -U banków szynowych ──
+    # Raport scala oba zaciski slotu Mega/MIDI w jeden pin '' — przez to
+    # terminal zasilania szyny (RT111 FUSES FEED) i wyjścia (RT88)
+    # siedzą na tym samym węźle i element nie ma dwóch nóżek. Stronę
+    # rozstrzyga geometria: narysowana szyna (długi poziomy bieg przez
+    # >=2 kolumny członków) wskazuje stronę zasilania; terminal po jej
+    # stronie etykiety -F to kołek 'up', po przeciwnej 'dn'
+    # (numeracja wg konwencji plansz: POD etykietą = pin 1, NAD = 2).
+    u_split = {}
+    rt_pos_by_pg = {}
+    seg_by_pg = {}
+    for g in groups:
+        # strona rysunku banku = strona z największą liczbą członków
+        # grupy (strony-zestawienia powielają rząd, ale plansza banku
+        # ma wszystkie ogniwa i narysowaną szynę)
+        mem_pos = {}
+        for m in g["members"]:
+            spgs = fuse_slot.get(m["clean"]) or {}
+            for pg, pos in (fuse_pos.get(m["clean"]) or {}).items():
+                if pg in spgs:
+                    mem_pos.setdefault(pg, []).append(
+                        (pos[0], pos[1], m))
+        if not mem_pos:
+            continue
+        pg = max(mem_pos, key=lambda k: len(mem_pos[k]))
+        pg_mems = mem_pos[pg]
+        if len(pg_mems) < 2:
+            continue
+        if pg not in rt_pos_by_pg:
+            rt_pos_by_pg[pg] = {
+                l.lstrip("-"): (x, y)
+                for x, y, l in _pdf_page_label_positions(
+                    schem_id, schem_path, pg, schem_mtime)
+                if re.fullmatch(r"-RT\d+", l or "")}
+        if pg not in seg_by_pg:
+            try:
+                seg_by_pg[pg] = _pdf_page_line_segments(schem_path, pg)
+            except Exception:
+                seg_by_pg[pg] = ([], [])
+        fys = sorted(p[1] for p in pg_mems)
+        fy_med = fys[len(fys) // 2]
+        # strona szyny: długi poziomy bieg przecinający >=2 kolumny
+        # członków i leżący <=100 pt od rzędu etykiet -F
+        rail_side = ""
+        best = None
+        for x0, x1, by in (seg_by_pg[pg][0] or []):
+            cov = sum(1 for mx, _y2, _m2 in pg_mems
+                      if x0 - 15 <= mx <= x1 + 15)
+            if cov < 2 or abs(by - fy_med) > 100:
+                continue
+            side = "up" if by > fy_med + 2 else (
+                "dn" if by < fy_med - 2 else "")
+            if side and (best is None
+                         or (cov, x1 - x0) > (best[0], best[1])):
+                best = (cov, x1 - x0, side)
+        if best:
+            rail_side = best[2]
+        if not rail_side:
+            continue
+        for fx, fy, m in pg_mems:
+            slot = m["slot"]
+            if slot in u_split:
+                continue
+            pins = {"1": [], "2": []}
+            for (nd, _np), _row in (adj.get((slot, "")) or {}).items():
+                cl = clean_device_code(nd) or ""
+                if not re.fullmatch(r"RT\d+", cl):
+                    continue
+                rp = rt_pos_by_pg[pg].get(cl)
+                if not rp or abs(rp[0] - fx) > 90:
+                    continue
+                side = "up" if rp[1] > fy_med else "dn"
+                # POD etykietą = pin 1, NAD = pin 2
+                pins["1" if side == "dn" else "2"].append(nd)
+            if pins["1"] or pins["2"]:
+                u_split[slot] = {
+                    "pins": pins,
+                    "rail_pin": {"dn": "1", "up": "2"}[rail_side]}
+    out["u_split"] = u_split
     out["slots"] = {fc: sorted(fuse_slot[fc][min(fuse_slot[fc])],
                                key=_natural_sort_key)
                     for fc in fuse_slot}

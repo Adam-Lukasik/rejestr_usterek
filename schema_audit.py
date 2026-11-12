@@ -1133,6 +1133,49 @@ def det_busbar_unmodeled(ctx):
                           location=_loc_for_devices(ctx, loc_devs or full),
                           evidence={"bar": b, "fuse": fc}, workaround="heuristic",
                           suggestion=sugg))
+    # bank szynowy na jednopinowych slotach -U (E3 scala oba zaciski
+    # slotu w pin '') — kołki strony szyny/wyjścia rozdzielone
+    # geometrią (_ps_fuse_rails.u_split); zgłaszamy rekonstrukcję.
+    for gi, g in enumerate((_rails(ctx).get("groups") or []), 1):
+        members = g.get("members") or []
+        if len(members) < 2:
+            continue
+        usplit = (_rails(ctx).get("u_split") or {})
+        rail_dev = (members[0]["slot"].rsplit("-", 1)[0]
+                    + f"-SZYNA{gi}")
+        if rail_dev in seen:
+            continue
+        seen.add(rail_dev)
+        parts = []
+        for m in members:
+            us = usplit.get(m["slot"]) or {}
+            rp = us.get("rail_pin") or ""
+            parts.append(
+                f"{m['clean']}→{zs.clean_device_code(m['slot'])}"
+                + (f":{rp}" if rp else ""))
+        feed = zs.clean_device_code(g.get("feed") or "")
+        devs = [m["elem"] for m in members]
+        loc_devs = [
+            next((x["device_code"] for x in
+                  ctx.bom_by_clean.get(m["clean"]) or []), m["elem"])
+            for m in members]
+        sugg = {"kind": "patch", "confidence": "medium",
+                "payload": {"kind": "power_rail",
+                            "label": rail_dev.rsplit("-", 1)[-1],
+                            "members": [
+                                {"dev": m["slot"],
+                                 "pin": (usplit.get(m["slot"]) or {})
+                                 .get("rail_pin") or "1"}
+                                for m in members]}}
+        out.append(_f(f"D10|RAIL|{rail_dev}", "busbar_unmodeled",
+                      "busbar_unmodeled",
+                      {"members": " ↔ ".join(parts),
+                       "holder": rail_dev,
+                       "taps": feed},
+                      devices=loc_devs + [rail_dev],
+                      location=_loc_for_devices(ctx, loc_devs or devs),
+                      evidence={"group": g, "u_split": usplit},
+                      workaround="heuristic", suggestion=sugg))
     return out
 
 
