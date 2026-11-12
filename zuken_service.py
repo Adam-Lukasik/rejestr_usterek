@@ -9452,6 +9452,28 @@ def _trace_circuit_impl(ps_code, query, lang="pl"):
                 "pins": pins_syn,
             })
 
+    # Jednopinowy element -F na rozszczepionym slocie -U (u_split):
+    # raport scala go w pin '', ale ścieżki wychodzą przez dwa kołki
+    # slotu (U9:1/U9:2). Rozdziel końce wg kołka pierwszego przeskoku
+    # 'fuse', żeby diagram pokazał dwie strony jak przy F49.
+    for ld in loads_out:
+        if len(ld.get("pins") or []) != 1 or ld["pins"][0].get("pin") != "":
+            continue
+        ends0 = ld["pins"][0].get("ends") or []
+        by_slot_pin = {}
+        ok = bool(ends0)
+        for e in ends0:
+            h0 = (e.get("path") or [None])[0]
+            if (not h0 or h0.get("internal") != "fuse"
+                    or h0.get("to") == ld["device"]):
+                ok = False
+                break
+            by_slot_pin.setdefault(h0.get("to_pin") or "", []).append(e)
+        if ok and len([k for k in by_slot_pin if k]) > 1:
+            ld["pins"] = [{"pin": sp, "role": "feed", "ends": by_slot_pin[sp]}
+                          for sp in sorted(by_slot_pin,
+                                           key=_natural_sort_key)]
+
     # ── 2b. Obwody cewek przekaźników napotkanych na ścieżkach ──────
     # Gdy tor przechodzi przez styk przekaźnika, cewka to osobny obwód
     # sterowania (np. 85/86, złącze X185 dla styczników WM V231) —
