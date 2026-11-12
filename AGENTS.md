@@ -202,7 +202,16 @@ Wersja wielojęzykowa: `SUPPORTED_LANGS = ("pl", "en", "de")`, tłumaczenia w
   NAD = pin 2). `_circuit_extend_adjacency` przenosi raportowe krawędzie
   na kołki i okablowuje grupę: szyna -SZYNA↔kołek `rail_pin`, element
   -F między kołkami. Ręczna łatka `connection` do kołka strony szyny
-  (RT3:1↔U9:2 = ta sama szpilka co RT111). Diagram:
+  (RT3:1↔U9:2 = ta sama szpilka co RT111). Jednopinowy element -F
+  dostaje w `trace_circuit` post-pass rozdzielający końce na piny
+  '1'/'2' wg kołka slotu pierwszego przeskoku 'fuse' (inaczej diagram
+  rysuje jedną grupę ~11 odnóg zamiast dwóch stron jak przy F49).
+  TODO: bank `=CAB` na str. 1 sch.2 PS011871 (sloty U1–U4 = F16/F17/
+  F11/F12 — fabryczne bezpieczniki MAN w komorze silnika, dolna
+  szyna = akumulator pojazdu bazowego) NIE jest rekonstruowany —
+  narysowany bez etykiet -F/-U (samo -RT + prąd + opis). Wymaga
+  osobnego detektora parującego końcówki -RT góra/dół po kolumnie x
+  + zgłoszenie D10 w kontroli schematów. Diagram:
   `circuitFuseDownPin` musi łapać też DRUGI pin roli 'feed' — oprawki/sloty
   (FH/FR/F/U i zespół -A10) mają oba piny 'feed' (np. FH1:1 zasilanie,
   FH1:2 → przewód 405 → X295 → A15); bez tego rysowała się tylko strona
