@@ -8994,6 +8994,26 @@ def _trace_circuit_impl(ps_code, query, lang="pl"):
             wire_nodes |= (_ps_wire_label_nodes(
                 cur, conn_ids, ps_code, adj)
                 .get(q.strip().upper()) or set())
+    # bezpieczniki o prądzie == zapytanie ('30A' ~ '30 A' ~ '7,5A') —
+    # chipy alternatyw przy niejednoznacznym numerze; liczone tu, bo
+    # potrzebne też przy pustej odpowiedzi ('150A' → nic nie trafia,
+    # ale chip F9 150A ratuje)
+    rated_rows = []
+    qn_rate = re.sub(r"[^0-9.,]", "", q.strip()).replace(",", ".").rstrip(".")
+    if (qn_rate and re.fullmatch(r"[0-9][0-9A-Z.,]*A?", q.strip(),
+                                 re.IGNORECASE)):
+        try:
+            for r in cur.execute(
+                    "SELECT device_clean, rating FROM zuken_ps_fuses"
+                    " WHERE (? = '' OR ps_code = ?)",
+                    (ps_code or "", ps_code or "")):
+                rn = re.sub(r"[^0-9.,]", "", r["rating"] or "") \
+                    .replace(",", ".").rstrip(".")
+                if rn and rn == qn_rate:
+                    rated_rows.append(
+                        (r["device_clean"], (r["rating"] or "").strip()))
+        except Exception:
+            rated_rows = []
     conn.close()
 
     resolved = {"kind": "", "label": q}
@@ -9044,7 +9064,13 @@ def _trace_circuit_impl(ps_code, query, lang="pl"):
             sig_matches = [s for s in sig_nodes if qu in s.upper()][:6]
         if not sig_matches:
             return {"ok": True, "query": q, "resolved": resolved,
-                    "loads": [], "candidates": []}
+                    "loads": [], "candidates": [],
+                    "alternates": [
+                        {"kind": "fuse", "q": cl,
+                         "label": f"{cl} {rt}".strip()}
+                        for cl, rt in sorted(
+                            rated_rows,
+                            key=lambda kv: _natural_sort_key(kv[0]))][:8]}
 
         sig_names = list(dict.fromkeys(
             (r["signal_name"] or "").strip()
@@ -9850,10 +9876,61 @@ def _trace_circuit_impl(ps_code, query, lang="pl"):
     # Reworki projektu — frontend oznacza badge ⚠️ węzły-złącza objęte reworkiem
     reworks = list_reworks(ps_code) if ps_code else []
 
+    # Alternatywy przy zapytaniu niejednoznacznym ('30A' = przewód LUB
+    # prąd bezpiecznika): główna odpowiedź + chipy konkurencyjnych sensów.
+    alternates = []
+    if re.fullmatch(r"[0-9][0-9A-Z.,]*A?", q.strip(), re.IGNORECASE):
+        try:
+            conn_a = get_db()
+            cur_a = conn_a.cursor()
+            # bezpieczniki o prądzie == zapytanie ('30A' ~ '30 A' ~ '7,5A')
+            qn = re.sub(r"[^0-9.,]", "", q.strip()).replace(",", ".")
+            qn = qn.rstrip(".")
+            if qn and resolved.get("kind") != "relay":
+                try:
+                    rated = {}
+                    for r in cur_a.execute(
+                            "SELECT device_clean, rating FROM zuken_ps_fuses"
+                            " WHERE (? = '' OR ps_code = ?)",
+                            (ps_code or "", ps_code or "")):
+                        rn = re.sub(r"[^0-9.,]", "",
+                                    r["rating"] or "").replace(",", ".")
+                        rn = rn.rstrip(".")
+                        if rn and rn == qn:
+                            rated[r["device_clean"]] = (
+                                (r["rating"] or "").strip())
+                    # pomiń trafienie już pokazane jako główna odpowiedź
+                    for cl, rt in sorted(rated.items(),
+                                         key=lambda kv: _natural_sort_key(kv[0])):
+                        if (dev_q and cl.upper() == dev_q
+                                and resolved.get("kind") == "device"):
+                            continue
+                        # pomiń bezpiecznik już będący główną odpowiedzią
+                        if re.search(r"(?<![A-Z0-9])" + re.escape(cl.upper())
+                                     + r"(?![A-Z0-9])",
+                                     (resolved.get("label") or "").upper()):
+                            continue
+                        alternates.append({"kind": "fuse", "q": cl,
+                                           "label": f"{cl} {rt}".strip()})
+                except Exception:
+                    pass
+            # przewód o tym numerze (raport + napisy przy -RT w PDF)
+            if resolved.get("kind") == "device" and not resolved.get("wire"):
+                wn = _wire_number_nodes(cur_a, conn_ids, q)
+                if not wn:
+                    wn = (_ps_wire_label_nodes(cur_a, conn_ids, ps_code, adj)
+                          .get(q.strip().upper()) or set())
+                if wn:
+                    alternates.append({"kind": "wire", "q": q.strip(),
+                                       "label": q.strip()})
+            conn_a.close()
+        except Exception:
+            pass
+
     return {"ok": True, "query": q, "resolved": resolved, "ps_code": ps_code,
             "evpss": evpss_out, "loads": loads_out,
             "more_signals": more_signals, "conn_meta": conn_meta,
-            "reworks": reworks}
+            "reworks": reworks, "alternates": alternates[:8]}
 
 
 def get_ps_connector_types(ps_code):
