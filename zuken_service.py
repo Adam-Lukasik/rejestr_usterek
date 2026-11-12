@@ -7000,6 +7000,7 @@ def _invalidate_patch_caches():
     _FUSE_LIST_CACHE.clear()
     _BAT_STUDS_CACHE.clear()
     _DEV_STUDS_CACHE.clear()
+    _WIRE_LBL_CACHE.clear()
 
 
 def _active_patches(cur, ps_code, kind):
@@ -8987,6 +8988,12 @@ def _trace_circuit_impl(ps_code, query, lang="pl"):
     if dev_q and not dev_nodes and not relay_view_devs and not fuse_miss:
         bom_descs = _bom_device_descriptions(cur, bom_ids, dev_q)
         wire_nodes = _wire_number_nodes(cur, conn_ids, q)
+        # numer przewodu istnieje tylko jako napis przy etykiecie -RT
+        # na schemacie (eksport E3 go pomija, np. '34163' = RT3↔RT111)
+        if re.fullmatch(r"[0-9][0-9A-Z_.'\-]*", q.strip()):
+            wire_nodes |= (_ps_wire_label_nodes(
+                cur, conn_ids, ps_code, adj)
+                .get(q.strip().upper()) or set())
     conn.close()
 
     resolved = {"kind": "", "label": q}
@@ -9048,6 +9055,7 @@ def _trace_circuit_impl(ps_code, query, lang="pl"):
         ))
         evpss = _circuit_evpss_for_signal(sig_matches[0], ctrl, signal_names=sig_names)
         used_sigs, load_devs, all_terms = [], [], []
+        wire_seed = False
         for sig in sig_matches[:4]:
             nodes = sig_nodes.get(sig) or set()
             terms = []
@@ -9103,7 +9111,22 @@ def _trace_circuit_impl(ps_code, query, lang="pl"):
                                   key=_natural_sort_key)
                 seed_devices.append((d, pins[:16]))
         elif not relay_view_devs:
-            for nd in sorted(all_terms,
+            seed_terms = all_terms
+            if not seed_terms:
+                # przewód o dokładnym numerze ('394', '30A') — końce to
+                # węzły przelotowe (-RT/-SP odfiltrowane z 'terms'), więc
+                # siejemy prosto z węzłów sygnału: każdy koniec przewodu
+                # śledzi swój obwód (np. 394: RT84→cewka K1, RT85→szyna U8)
+                wq = q.strip().upper()
+                if re.fullmatch(r"[0-9][0-9A-Z_.'\-]*", wq):
+                    for s in sig_matches[:2]:
+                        if s.upper() == wq:
+                            seed_terms = [
+                                nd for nd in (sig_nodes.get(s) or set())
+                                if adj.get(nd)]
+                            wire_seed = bool(seed_terms)
+                            break
+            for nd in sorted(seed_terms,
                              key=lambda n: (_natural_sort_key(n[0]),
                                             _natural_sort_key(n[1])))[:12]:
                 seed_devices.append((nd[0], [nd[1]]))
@@ -9114,6 +9137,9 @@ def _trace_circuit_impl(ps_code, query, lang="pl"):
                 for rd in relay_view_devs)
         resolved = {"kind": "signal",
                     "label": f"{via_dev} \u2192 {label}" if via_dev else label}
+        if (sig_matches and sig_matches[0].upper() == q.strip().upper()
+                and re.fullmatch(r"[0-9][0-9A-Z_.'\-]*", q.strip())):
+            resolved["wire"] = 1
 
     # ── 2. Śledzenie pinów ──────────────────────────────────────
     def _ground_end(ed, path):
@@ -11764,6 +11790,70 @@ def _ps_device_studs(cur, conn_ids, ps_code, adj):
             label = f"{aclean} {pin_name}"
             out.setdefault(rdev, (adev, pin_name, label))
     _DEV_STUDS_CACHE[key] = out
+    return out
+
+
+_WIRE_LBL_CACHE = {}
+
+
+def _ps_wire_label_nodes(cur, conn_ids, ps_code, adj):
+    """Numery przewodów napisane przy etykietach -RT na schemacie,
+    a brakujące w raporcie E3 (np. '34163' nad -RT3 i w kolumnie
+    szpilki -RT111 — fizyczny przewód RT3↔szyna F9).
+
+    Zwraca {wire_no: {(dev, pin)}} — węzły końców przewodu. Etykieta
+    -RT rozwiązywana jest do wszystkich urządzeń raportu o tym clean;
+    pin z istniejących węzłów adjacency."""
+    row = _ps_fuse_schematic_row(cur, ps_code)
+    key = ((ps_code or "").upper(), tuple(conn_ids or ()),
+           row["id"] if row else 0,
+           row["file_mtime"] if row else 0.0, len(adj or {}))
+    if key in _WIRE_LBL_CACHE:
+        return _WIRE_LBL_CACHE[key]
+    out = {}
+    schem_path = resolve_kb_filepath(row["filepath"], heal_db=True) \
+        if row else ""
+    if not (row and conn_ids and adj and schem_path
+            and os.path.exists(schem_path)):
+        _WIRE_LBL_CACHE[key] = out
+        return out
+    rt_devs = {}
+    for (d, p) in adj:
+        cl = clean_device_code(d) or ""
+        if re.fullmatch(r"RT\d+", cl):
+            rt_devs.setdefault(cl, []).append((d, p))
+    if not rt_devs:
+        _WIRE_LBL_CACHE[key] = out
+        return out
+    tr = cur.execute(
+        "SELECT total_pages FROM zuken_pdf_schematics WHERE id = ?",
+        (row["id"],)).fetchone()
+    total = int(tr[0] or 0) if tr else 0
+    for pg in range(1, total + 1):
+        try:
+            toks = _pdf_page_text_positions(
+                row["id"], schem_path, pg, row["file_mtime"])
+        except Exception:
+            continue
+        if not toks:
+            continue
+        labels = [(x, y, t) for x, y, t in toks
+                  if re.fullmatch(r"-RT\d+(#\d+)?", t or "")]
+        if not labels:
+            continue
+        for x, y, t in toks:
+            if not re.fullmatch(r"\d{3,6}", t or ""):
+                continue
+            best, bd = None, 1e9
+            for lx, ly, l in labels:
+                dx, dy = abs(x - lx), abs(y - ly)
+                if dx <= 40 and dy <= 45 and dx * dx + dy * dy < bd:
+                    bd, best = dx * dx + dy * dy, l
+            if best:
+                cl = re.sub(r"#\d+$", "", best.lstrip("-"))
+                for d, p in rt_devs.get(cl, ()):
+                    out.setdefault(t, set()).add((d, p))
+    _WIRE_LBL_CACHE[key] = out
     return out
 
 
