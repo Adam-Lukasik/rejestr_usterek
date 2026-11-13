@@ -7244,6 +7244,7 @@ def _wire_hop(fdev, fpin, tdev, tpin, row):
         "wire_type": _g("wire_type"), "length": ln,
         "internal": (row.get("_internal") or "") if isinstance(row, dict) else "",
         "internal_label": (row.get("_internal_label") or "") if isinstance(row, dict) else "",
+        "batt_pin": (row.get("_batt_pin") or "") if isinstance(row, dict) else "",
         "bar_holder": (row.get("_bar_holder") or "") if isinstance(row, dict) else "",
         "relay_dev": (row.get("_relay_dev") or "") if isinstance(row, dict) else "",
         "pin_names": (row.get("_pin_names") or {}) if isinstance(row, dict) else {},
@@ -9265,6 +9266,13 @@ def _trace_circuit_impl(ps_code, query, lang="pl"):
                     "path": hops,
                     "via_fuse": any(h.get("internal") == "fuse" for h in hops),
                     "via_relay": any(h.get("internal") == "relay" for h in hops),
+                    "via_stud": any(h.get("internal") == "stud" for h in hops),
+                    "batt": ("+" if any(h.get("internal") == "battery"
+                                        and h.get("batt_pin") == "+"
+                                        for h in hops)
+                             else "-" if any(h.get("internal") == "battery"
+                                             and h.get("batt_pin") == "-"
+                                             for h in hops) else ""),
                     "shared": (max(0, len(adj.get((ed, ep), {})) - 1)
                                if role == "gnd" else 0),
                 })
@@ -9318,6 +9326,28 @@ def _trace_circuit_impl(ps_code, query, lang="pl"):
                 role = "feed"
             else:
                 role = "other"
+            if role != "gnd":
+                # ścieżka główna pierwsza: końce dochodzące do bieguna
+                # akumulatora (+ przed −), potem szpilki/zaciski, przekaźniki,
+                # elementy bezpiecznikowe i dopiero odbiorniki. Dla torów
+                # +→+ (mostkowanie baterii przez przekaźnik) obie strony z
+                # batt='+' wyszukują się na górze karty.
+                def _end_rank(e):
+                    if e.get("batt") == "+" or e.get("via_stud"):
+                        r = 0
+                    elif e["role"] in ("source", "terminal"):
+                        r = 1
+                    elif e["role"] == "fuse":
+                        r = 2
+                    elif e["role"] == "relay":
+                        r = 3
+                    elif e.get("batt") == "-" or e["role"] == "gnd":
+                        r = 4
+                    else:
+                        r = 5
+                    return (r, len(e["path"]),
+                            _natural_sort_key(e["clean"]))
+                ends_out.sort(key=_end_rank)
             pins_out.append({"pin": npin, "role": role, "ends": ends_out})
         if pins_out:
             loads_out.append({

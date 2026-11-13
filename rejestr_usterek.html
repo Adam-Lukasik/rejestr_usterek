@@ -12023,6 +12023,9 @@ function circuitEndHtml(e) {
     return circuitHopInline(h, partner);
   }).filter(Boolean).join(' ');
   const metaBits = [];
+  if (e.batt === '+') metaBits.push('🔋+');
+  else if (e.batt === '-') metaBits.push('🔋−');
+  else if (e.via_stud) metaBits.push('🔩');
   if (ml) metaBits.push(entText(endL) + (e.plug ? ` · ${escapeHtml(t('js.zuken.plugLabel'))} ${entText(e.plug.clean)} (${escapeHtml(tr(e.plug, 'label'))})` : ''));
   if (e.function || e.desc) metaBits.push(escapeHtml(tr(e, 'function') || tr(e, 'desc')));
   if (ml && ml.max_current) metaBits.push(escapeHtml(ml.max_current));
