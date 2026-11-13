@@ -11394,6 +11394,139 @@ def _ps_fuse_rails_raw(cur, conn_ids, ps_code, adj):
     out["slots"] = {fc: sorted(fuse_slot[fc][min(fuse_slot[fc])],
                                key=_natural_sort_key)
                     for fc in fuse_slot}
+
+    # ── Banki narysowane bez etykiet -F (np. =CAB F11-F15 na str. 1
+    # sch.2 PS011871 — fabryczne bezpieczniki MAN, dolna szyna =
+    # akumulator pojazdu bazowego): kotwicą jest łańcuch >=3 etykiet
+    # -RT w sąsiednich kolumnach, z których każda jest zgłoszonym
+    # terminalem innego jednopinowego slotu -U. Etykiety łańcucha =
+    # strona wyjść (pin '1'); pozostałe scalone terminale slotu =
+    # strona szyny (pin '2') — zgodnie z konwencją u_split.
+    try:
+        slot_to_fc = {}
+        for _fc, _spgs in fuse_slot.items():
+            for _ss in _spgs.values():
+                for _sd in _ss:
+                    slot_to_fc.setdefault(_sd, _fc)
+        for pg in sorted(fuse_pages):
+            items = _pdf_page_label_positions(
+                schem_id, schem_path, pg, schem_mtime)
+            if not items:
+                continue
+            # kandydaci: etykieta -RT -> urządzenie raportu, które jest
+            # terminalem jednopinowego slotu -U
+            cands = []   # (x, y, rt_dev, slot)
+            for x, y, lab in items:
+                if not re.fullmatch(r"-RT\d+", lab or ""):
+                    continue
+                for rtd in devs_by_clean.get(lab.lstrip("-"), ()):
+                    for (nd, _np), _row in adj.get((rtd, "1"),
+                                                 {}).items():
+                        if re.fullmatch(r".*-U\d+", nd or "") \
+                                and adj.get((nd, "")):
+                            cands.append((x, y, rtd, nd))
+                            break
+            if len(cands) < 3:
+                continue
+            # kolumny: deduplikacja po x (ta sama kolumna bywa
+            # etykietą wyjścia i odczepem szyny jak RT78/RT71)
+            cands.sort(key=lambda c: (c[0], c[1]))
+            col_groups = []
+            for c in cands:
+                if col_groups and abs(c[0] - col_groups[-1][-1][0]) <= 20:
+                    col_groups[-1].append(c)
+                else:
+                    col_groups.append([c])
+            # sekwencje sąsiednich kolumn (rozstaw ~45, okno 95)
+            chains = []
+            for cg in col_groups:
+                cx = sum(c[0] for c in cg) / len(cg)
+                if chains and abs(cx - chains[-1][-1][0]) <= 95:
+                    chains[-1].append((cx, cg))
+                else:
+                    chains.append([(cx, cg)])
+            for ch in chains:
+                if len(ch) < 3:
+                    continue
+                ys = sorted(c[1] for _cx, cg in ch for c in cg)
+                y_med = ys[len(ys) // 2]
+                mems = []
+                for _cx, cg in ch:
+                    # w kolumnie wygrywa etykieta najbliższa medianie
+                    # wysokości rzędu wyjść
+                    c = min(cg, key=lambda c: abs(c[1] - y_med))
+                    fc = slot_to_fc.get(c[3])
+                    if not fc:
+                        mems = []
+                        break
+                    mems.append((c[2], c[3], fc))
+                if len(mems) < 3:
+                    continue
+                # kołki: etykieta łańcucha = pin '1' (wyjście),
+                # pozostałe scalone terminale slotu = pin '2' (szyna)
+                ch_slots = {sl for _rt, sl, _fc in mems}
+                for rt_dev, sl, _fc in mems:
+                    if sl in u_split:
+                        continue
+                    others = sorted(
+                        (nd for (nd, _np) in adj.get((sl, ""), {})
+                         if nd != rt_dev
+                         and re.fullmatch(r"RT\d+",
+                                          clean_device_code(nd) or "")),
+                        key=_natural_sort_key)
+                    u_split[sl] = {"pins": {"1": [rt_dev], "2": others},
+                                   "rail_pin": "2"}
+                # dokładamy członków tylko gdy łańcuch przecina
+                # DOKŁADNIE JEDNĄ istniejącą grupę (rząd na stronie-
+                # -zestawieniu może objąć kilka banków naraz — wtedy
+                # nie wiadomo, do której dołączyć); zero → nowa grupa
+                hit_groups = [g for g in groups
+                              if any(m["slot"] in ch_slots
+                                     for m in g["members"])]
+                if len(hit_groups) > 1:
+                    continue
+                grp = hit_groups[0] if hit_groups else None
+                have = {m["slot"] for m in grp["members"]} if grp \
+                    else set()
+                in_any = {m["slot"] for g in groups
+                          for m in g["members"]}
+                for rt_dev, sl, fc in mems:
+                    if sl in have or sl in in_any:
+                        continue
+                    pref = sl.rsplit("-", 1)[0] if "-" in sl else ""
+                    edev = ""
+                    for dev, _rt in fuse_info.get(fc, ()):
+                        if not pref or dev.startswith(pref):
+                            edev = dev
+                            break
+                    if not edev and fuse_info.get(fc):
+                        edev = fuse_info[fc][0][0]
+                    if not edev:
+                        edev = f"{pref}-{fc}" if pref else f"-{fc}"
+                    rating = next(
+                        (rt for d, rt in fuse_info.get(fc, ())
+                         if d == edev),
+                        fuse_info.get(fc, [("", "")])[0][1])
+                    memb = {"clean": fc, "elem": edev, "slot": sl,
+                            "rating": rating}
+                    if grp:
+                        grp["members"].append(memb)
+                    else:
+                        feeds = [edev] if _net_reaches_battery(
+                            adj, (sl, "")) else []
+                        groups.append({"feed": edev if feeds else "",
+                                       "members": [memb]})
+                if grp:
+                    grp["members"].sort(
+                        key=lambda m: _natural_sort_key(m["clean"]))
+                    if not grp.get("feed"):
+                        feeds = [m["elem"] for m in grp["members"]
+                                 if _net_reaches_battery(
+                                     adj, (m["slot"], ""))]
+                        grp["feed"] = feeds[0] if len(feeds) == 1 else ""
+    except Exception:
+        pass
+    out["u_split"] = u_split
     out["holders"] = {fc: fuse_holder[fc][min(fuse_holder[fc])]
                       for fc in fuse_holder}
     out["terms"] = {fc: fuse_terms[fc][min(fuse_terms[fc])]

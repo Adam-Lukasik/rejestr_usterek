@@ -206,12 +206,16 @@ Wersja wielojęzykowa: `SUPPORTED_LANGS = ("pl", "en", "de")`, tłumaczenia w
   dostaje w `trace_circuit` post-pass rozdzielający końce na piny
   '1'/'2' wg kołka slotu pierwszego przeskoku 'fuse' (inaczej diagram
   rysuje jedną grupę ~11 odnóg zamiast dwóch stron jak przy F49).
-  TODO: bank `=CAB` na str. 1 sch.2 PS011871 (sloty U1–U4 = F16/F17/
-  F11/F12 — fabryczne bezpieczniki MAN w komorze silnika, dolna
-  szyna = akumulator pojazdu bazowego) NIE jest rekonstruowany —
-  narysowany bez etykiet -F/-U (samo -RT + prąd + opis). Wymaga
-  osobnego detektora parującego końcówki -RT góra/dół po kolumnie x
-  + zgłoszenie D10 w kontroli schematów. Diagram:
+  Banki narysowane bez etykiet -F (np. =CAB na str. 1 sch.2
+  PS011871 — sloty U3–U7 = F11–F15, fabryczne bezpieczniki MAN,
+  dolna szyna = akumulator pojazdu bazowego): pass w
+  `_ps_fuse_rails_raw` kotwiczy bank łańcuchem >=3 etykiet -RT w
+  sąsiednich kolumnach, gdzie każda jest terminalem innego
+  jednopinowego slotu -U; etykieta łańcucha = pin '1' (wyjście),
+  pozostałe scalone terminale = pin '2' (szyna, np. odczep RT71
+  na U4). Członków dokłada tylko do DOKŁADNIE JEDNEJ przeciętej
+  grupy (rzędy na stronach-zestawieniach objęłyby kilka banków),
+  zero przecięć → nowa grupa (D10|RAIL|SZYNA3 = F11–F15). Diagram:
   `circuitFuseDownPin` musi łapać też DRUGI pin roli 'feed' — oprawki/sloty
   (FH/FR/F/U i zespół -A10) mają oba piny 'feed' (np. FH1:1 zasilanie,
   FH1:2 → przewód 405 → X295 → A15); bez tego rysowała się tylko strona
