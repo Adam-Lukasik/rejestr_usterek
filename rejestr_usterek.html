@@ -13408,7 +13408,7 @@ function circuitSvgForLoad(ld, connMeta, opts) {
     src = pickEnd(primeLoad ? mateEnds : directEnds);
     thruEnd = pickEnd(primeLoad ? directEnds : mateEnds);
   } else {
-    src = endsF.length ? pickEnd(endsF) : null;
+    src = opts.srcEnd || (endsF.length ? pickEnd(endsF) : null);
   }
   // oprawka bezpiecznika jako seed: tor pinu 'other' kontynuujemy pod
   // węzłem oprawki (połączony wewnętrzną krawędzią topika)
@@ -13460,6 +13460,16 @@ function circuitSvgForLoad(ld, connMeta, opts) {
         trunk.push({ dev: h.to, pin: h.to_pin, clean: h.to_clean, edge: h, role: '', info: '' }));
       const last = trunk[trunk.length - 1];
       last.role = downEnd.role; last.info = downEnd.function || downEnd.desc || '';
+    } else if (opts.contPath) {
+      // tor główny: za nasieniem biegnie druga połowa ścieżki kotwicowej
+      // (np. 394: G3/RT102 w górę, RT84→K1→…→RT72/AKU1 w dół)
+      const mid = trunk[trunk.length - 1];
+      mid.role = ''; mid.info = ld.function || ld.desc || '';
+      (opts.contPath || []).forEach(h =>
+        trunk.push({ dev: h.to, pin: h.to_pin, clean: h.to_clean, edge: h, role: '', info: '' }));
+      const last = trunk[trunk.length - 1];
+      last.role = (opts.contEnd || {}).role || '';
+      last.info = (opts.contEnd || {}).function || (opts.contEnd || {}).desc || '';
     } else {
       const trunkLast = trunk.length - 1;
       trunk[trunkLast].role = 'load';
@@ -13940,7 +13950,32 @@ function circuitRelayContactLabel(rv, p) {
 
 function circuitDiagramPartsHtml(cp) {
   const meta = cp.conn_meta || {};
-  return (cp.loads || []).slice(0, 5).map(ld => {
+  // tor główny jako pionowy kręgosłup diagramu: nasienie zapytania
+  // pośrodku, kotwica A w górę, kotwica B w dół; pozostałe końce
+  // wypadają jako odnogi na właściwych wysokościach kręgosłupa
+  const mp0 = cp.main_path;
+  let mainSvg = '';
+  if (mp0 && mp0.end_a && mp0.end_b && (mp0.end_a.path || []).length) {
+    const h0 = mp0.end_a.path[0] || {};
+    const stubs = [];
+    (cp.loads || []).forEach(l => (l.pins || []).forEach(p =>
+      (p.ends || []).forEach(e => {
+        if (e !== mp0.end_a && e !== mp0.end_b && !stubs.includes(e)) stubs.push(e);
+      })));
+    const pseudoLd = {
+      device: h0.from || '', clean: h0.from_clean || '',
+      function: h0.to_function || '',
+      pins: [{ pin: h0.from_pin || '1', role: 'feed',
+               ends: [mp0.end_a, ...stubs] }],
+    };
+    mainSvg = circuitSvgForLoad(pseudoLd, meta,
+      { srcEnd: mp0.end_a, contPath: mp0.end_b.path, contEnd: mp0.end_b });
+  }
+  const mainHtml = mainSvg
+    ? `<div style="margin:0 0 10px; padding:7px 10px; border:1px solid rgba(217,119,6,0.35); border-radius:8px; background:rgba(217,119,6,0.05);">
+        <div style="font-size:11px; font-weight:800; color:#b45306;">⚡ ${escapeHtml(t('js.zuken.mainPath'))}</div>
+        ${mainSvg}</div>` : '';
+  return mainHtml + (cp.loads || []).slice(0, 5).map(ld => {
     const rv = ld.relay_view;
     let svg = '';
     if (rv) {

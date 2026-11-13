@@ -10037,7 +10037,8 @@ def _trace_circuit_impl(ps_code, query, lang="pl"):
                                "function": best[2].get("function") or ""},
                          "b": {"clean": best[3]["clean"], "pin": best[3]["pin"],
                                "role": best[3]["role"],
-                               "function": best[3].get("function") or ""}}
+                               "function": best[3].get("function") or ""},
+                         "end_a": best[2], "end_b": best[3]}
     except Exception:
         main_path = None
 
