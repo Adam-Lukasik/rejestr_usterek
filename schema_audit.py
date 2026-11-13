@@ -727,6 +727,19 @@ def det_dangling_terminal(ctx):
     except Exception:
         pass
     floating = [x for x in _floating_terminals(ctx) if x[0][0] not in fuse_terms]
+    # końcówka wisi na drugim końcu toru przez bezpiecznik — nie jest
+    # nieprzypisanym punktem montażu: (a) jej jedyny peer to terminal
+    # oprawki przezroczystej (RT141→RT145→F24→RT150), (b) peer to
+    # element/oprawka/slot -F z obiema stronami okablowanymi
+    def _fuse_side_peer(peer_dev):
+        pcl = zs.clean_device_code(peer_dev) or ""
+        if not re.match(r"^(?:F|FH|FR|U)\d", pcl):
+            return False
+        return sum(len(ctx.neighbours.get((peer_dev, p), ()))
+                   for p in ("", "1", "2")) >= 2
+    floating = [x for x in floating
+                if x[1][0] not in fuse_terms
+                and not _fuse_side_peer(x[1][0])]
     fl_nodes = {n for n, _, _ in floating}
     emitted = set()
     for node, peer, row in floating:
