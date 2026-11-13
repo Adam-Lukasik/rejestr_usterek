@@ -9925,6 +9925,82 @@ def _trace_circuit_impl(ps_code, query, lang="pl"):
             for hv in (cm.get("halves") or {}).values():
                 hv["desc"] = _strip_holder_rating_text(hv.get("desc"))
 
+    # ── 4c. Ścieżka główna: para końców-kotwic o rozłącznych śladach ────
+    # Dwa końce (np. AKU1:+ przez styk K1 i A359 przez szynę AUX) mają
+    # ścieżki wychodzące z tego samego nasiona — złożone przez wspólny
+    # prefiks dają pełny tor obwodu (+→−, +→+ mostkowanie baterii albo
+    # odbiornik↔odbiornik dla torów sygnałowych). Frontend podświetla
+    # ten łańcuch jako 'main_path'.
+    main_path = None
+    try:
+        def _anchor_rank(e):
+            if e.get("batt") == "+" or e.get("via_stud"):
+                return 0
+            if e["role"] in ("source", "terminal"):
+                return 1
+            if e["role"] in ("gnd", "fuse", "relay") or e.get("batt") == "-":
+                return 2
+            return 3
+
+        def _path_nodes(e):
+            ns = []
+            for h in (e.get("path") or []):
+                a = (h.get("from") or "", h.get("from_pin") or "")
+                b = (h.get("to") or "", h.get("to_pin") or "")
+                if not ns:
+                    ns.append(a)
+                ns.append(b)
+            return ns
+
+        cands = []
+        for ld in loads_out[:3]:
+            for p in ld["pins"]:
+                for e in (p.get("ends") or []):
+                    if e.get("path"):
+                        cands.append(e)
+        cands.sort(key=lambda e: (_anchor_rank(e),
+                                  len(e["path"])))
+        best = None
+        for i, a in enumerate(cands[:8]):
+            na = _path_nodes(a)
+            if not na:
+                continue
+            for b in cands[i + 1:10]:
+                nb = _path_nodes(b)
+                if not nb:
+                    continue
+                # wspólny prefiks węzłów od nasiona (co najmniej seed)
+                L = 0
+                while (L < min(len(na), len(nb)) and na[L] == nb[L]):
+                    L += 1
+                # rozłączne od seeda: prefiks kończy się blisko początku
+                if L > 3 or L == 0:
+                    continue
+                hops = []
+                for h in reversed(a["path"][L - 1:]):
+                    hops.append(dict(h, **{"from": h["to"],
+                                           "to": h["from"],
+                                           "from_pin": h["to_pin"],
+                                           "to_pin": h["from_pin"],
+                                           "from_clean": h["to_clean"],
+                                           "to_clean": h["from_clean"]}))
+                hops.extend(b["path"][L - 1:])
+                score = _anchor_rank(a) + _anchor_rank(b)
+                if best is None or score < best[0]:
+                    best = (score, hops, a, b)
+            if best is not None and best[0] == 0:
+                break
+        if best:
+            main_path = {"hops": best[1],
+                         "a": {"clean": best[2]["clean"], "pin": best[2]["pin"],
+                               "role": best[2]["role"],
+                               "function": best[2].get("function") or ""},
+                         "b": {"clean": best[3]["clean"], "pin": best[3]["pin"],
+                               "role": best[3]["role"],
+                               "function": best[3].get("function") or ""}}
+    except Exception:
+        main_path = None
+
     # Reworki projektu — frontend oznacza badge ⚠️ węzły-złącza objęte reworkiem
     reworks = list_reworks(ps_code) if ps_code else []
 
@@ -9980,7 +10056,7 @@ def _trace_circuit_impl(ps_code, query, lang="pl"):
             pass
 
     return {"ok": True, "query": q, "resolved": resolved, "ps_code": ps_code,
-            "evpss": evpss_out, "loads": loads_out,
+            "evpss": evpss_out, "loads": loads_out, "main_path": main_path,
             "more_signals": more_signals, "conn_meta": conn_meta,
             "reworks": reworks, "alternates": alternates[:8]}
 
