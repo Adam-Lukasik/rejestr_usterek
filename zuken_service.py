@@ -8308,6 +8308,26 @@ def _circuit_extend_adjacency(cur, adj, ps_code, dev_funcs=None, bom_names=None)
                 adj[rail_node][elem_node] = rrow
             internal_devs.add(m["elem"])
 
+    # rozszczepiony slot spoza banku (samotny -U jak F17→=BOX+BF-U2
+    # na PS011871): brak krawędzi elementu między kołkami — oba kołki
+    # są ślepymi końcami i śledzenie nie dochodzi do baterii za
+    # bezpiecznikiem. Domykamy kołki syntetyczną krawędzią 'fuse'.
+    _slot_fc = {}
+    for _fc, _sl in (_rails.get("slots") or {}).items():
+        for _sd in _sl:
+            _slot_fc.setdefault(_sd, _fc)
+    for _ud, _usp in _usplit.items():
+        _n1, _n2 = (_ud, "1"), (_ud, "2")
+        if _n1 not in adj or _n2 not in adj or _n2 in adj.get(_n1, {}):
+            continue
+        if any(isinstance(r, dict)
+               and r.get("_internal") in ("fuse", "busbar")
+               for _pn in (_n1, _n2) for r in adj.get(_pn, {}).values()):
+            continue
+        _link_nodes(_n1, _n2, "fuse",
+                    _slot_fc.get(_ud) or _ud.rsplit("-", 1)[-1])
+        internal_devs.add(_ud)
+
     # ── bieguny akumulatorów: oczka -RT na szpilkach +/- nie mają
     # w raporcie kodu urządzenia (wiszące końcówki) — krawędź do węzła
     # (bateria, '+'/'−') odtwarzana z geometrii symbolu na schemacie
@@ -9974,17 +9994,37 @@ def _trace_circuit_impl(ps_code, query, lang="pl"):
                 while (L < min(len(na), len(nb)) and na[L] == nb[L]):
                     L += 1
                 # rozłączne od seeda: prefiks kończy się blisko początku
-                if L > 3 or L == 0:
+                if L > 3:
                     continue
-                hops = []
-                for h in reversed(a["path"][L - 1:]):
-                    hops.append(dict(h, **{"from": h["to"],
-                                           "to": h["from"],
-                                           "from_pin": h["to_pin"],
-                                           "to_pin": h["from_pin"],
-                                           "from_clean": h["to_clean"],
-                                           "to_clean": h["from_clean"]}))
-                hops.extend(b["path"][L - 1:])
+                if L == 0:
+                    # końce sieją z różnych kołków TEGO SAMEGO urządzenia
+                    # (np. U2:1/U2:2 slotu F17) — łączymy je krawędzią
+                    # wewnętrzną (element -F / styk) między kołkami
+                    sa, sb = na[0], nb[0]
+                    if sa[0] != sb[0]:
+                        continue
+                    row = (adj.get(sa) or {}).get(sb) \
+                        or (adj.get(sb) or {}).get(sa)
+                    if row is None:
+                        continue
+                    hops = [dict(h, **{"from": h["to"], "to": h["from"],
+                                       "from_pin": h["to_pin"],
+                                       "to_pin": h["from_pin"],
+                                       "from_clean": h["to_clean"],
+                                       "to_clean": h["from_clean"]})
+                            for h in reversed(a["path"])]
+                    hops.append(_wire_hop(sa[0], sa[1], sb[0], sb[1], row))
+                    hops.extend(b["path"])
+                else:
+                    hops = []
+                    for h in reversed(a["path"][L - 1:]):
+                        hops.append(dict(h, **{"from": h["to"],
+                                               "to": h["from"],
+                                               "from_pin": h["to_pin"],
+                                               "to_pin": h["from_pin"],
+                                               "from_clean": h["to_clean"],
+                                               "to_clean": h["from_clean"]}))
+                    hops.extend(b["path"][L - 1:])
                 score = _anchor_rank(a) + _anchor_rank(b)
                 if best is None or score < best[0]:
                     best = (score, hops, a, b)
