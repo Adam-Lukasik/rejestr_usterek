@@ -966,11 +966,15 @@ def init_db():
 
 @app.route("/")
 def index():
-    return send_from_directory(STATIC_DIR, "rejestr_usterek.html")
+    resp = send_from_directory(STATIC_DIR, "rejestr_usterek.html")
+    resp.headers["Cache-Control"] = "no-cache"
+    return resp
 
 @app.route("/translations.js")
 def translations_js():
-    return send_from_directory(STATIC_DIR, "translations.js")
+    resp = send_from_directory(STATIC_DIR, "translations.js")
+    resp.headers["Cache-Control"] = "no-cache"
+    return resp
 
 def _app_state_get(key, default=""):
     try:
