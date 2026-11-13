@@ -10251,6 +10251,7 @@ def _pdf_page_label_positions(schem_id, filepath, page_num, file_mtime=None):
             items = None
     if items is None:
         items = []
+        ok = True
         if pypdf is not None:
             try:
                 reader = _PDF_READERS.get(filepath)
@@ -10269,13 +10270,20 @@ def _pdf_page_label_positions(schem_id, filepath, page_num, file_mtime=None):
 
                     reader.pages[page_num - 1].extract_text(visitor_text=_vis)
             except Exception:
-                items = []
-        cur.execute("""
-            INSERT OR REPLACE INTO zuken_pdf_labelpos
-                (schematic_id, page_number, file_mtime, labels_json)
-            VALUES (?, ?, ?, ?);
-        """, (schem_id, page_num, file_mtime, json.dumps(items)))
-        conn.commit()
+                # błąd ekstrakcji (np. lock/reader) — NIE cache'ujemy,
+                # żeby kolejne wywołanie mogło ponowić; zostają
+                # częściowo zebrane etykiety zamiast pustki
+                ok = False
+        if ok:
+            try:
+                cur.execute("""
+                    INSERT OR REPLACE INTO zuken_pdf_labelpos
+                        (schematic_id, page_number, file_mtime, labels_json)
+                    VALUES (?, ?, ?, ?);
+                """, (schem_id, page_num, file_mtime, json.dumps(items)))
+                conn.commit()
+            except sqlite3.OperationalError:
+                conn.rollback()   # zapis cache best-effort
     conn.close()
     _PDF_PAGE_LABELS[key] = items
     return items
@@ -10309,6 +10317,7 @@ def _pdf_page_text_positions(schem_id, filepath, page_num, file_mtime=None):
             items = None
     if items is None:
         items = []
+        ok = True
         if pypdf is not None:
             try:
                 reader = _PDF_READERS.get(filepath)
@@ -10335,17 +10344,18 @@ def _pdf_page_text_positions(schem_id, filepath, page_num, file_mtime=None):
 
                     reader.pages[page_num - 1].extract_text(visitor_text=_vis)
             except Exception:
-                items = []
-        try:
-            cur.execute("""
-                INSERT OR REPLACE INTO zuken_pdf_textpos
-                    (schematic_id, page_number, file_mtime, tokens_json)
-                VALUES (?, ?, ?, ?);
-            """, (schem_id, page_num, file_mtime,
-                  json.dumps({'v': 4, 'items': items})))
-            conn.commit()
-        except sqlite3.OperationalError:
-            conn.rollback()   # zapis cache best-effort (lock przy insertach)
+                ok = False   # jak wyżej: brak cache, ponowi przy następnym użyciu
+        if ok:
+            try:
+                cur.execute("""
+                    INSERT OR REPLACE INTO zuken_pdf_textpos
+                        (schematic_id, page_number, file_mtime, tokens_json)
+                    VALUES (?, ?, ?, ?);
+                """, (schem_id, page_num, file_mtime,
+                      json.dumps({'v': 4, 'items': items})))
+                conn.commit()
+            except sqlite3.OperationalError:
+                conn.rollback()   # zapis cache best-effort (lock przy insertach)
     conn.close()
     _PDF_PAGE_TEXT[key] = items
     return items
