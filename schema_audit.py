@@ -1582,6 +1582,16 @@ def det_pdf_report_label(ctx):
     for cl, info in seen.items():
         near = []
         m = re.match(r"^([A-Z]+)(\d+)", cl)
+        # sklejona etykieta symbolu: 'X703CHARGER' = -X703 + napis
+        # funkcyjny obok — złącze jest w raporcie pod czystym kodem
+        if m and (m.group(1) + m.group(2)).upper() in known_u:
+            continue
+        # 'X4440430250400' = -X444 + numer artykułu w jednym ciągu
+        _pre = cl.upper()
+        if any(_pre.startswith(k) and len(_pre) > len(k)
+               and re.fullmatch(r"\d{4,}", _pre[len(k):])
+               for k in known_u):
+            continue
         if m and (m.group(1), m.group(2)) in core:
             near.append(core[(m.group(1), m.group(2))])
         near += [k for k in known if len(k) >= 4 and len(cl) >= 4
