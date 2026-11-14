@@ -13674,9 +13674,9 @@ function circuitSvgForLoad(ld, connMeta, opts) {
 
   const stubs = [];
   const addStub = e => {
-    let at = Math.max(0, trunk2.length - 1);
-    (e.path || []).forEach(h => { const k = h.to + ':' + h.to_pin; if (k in rowOf) at = rowOf[k]; });
-    stubs.push({ e, at });
+    let at = Math.max(0, trunk2.length - 1), atKey = '';
+    (e.path || []).forEach(h => { const k = h.to + ':' + h.to_pin; if (k in rowOf) { at = rowOf[k]; atKey = k; } });
+    stubs.push({ e, at, atKey });
   };
   if (src || thruEnd) (feedPin.ends || []).forEach(e => { if (e !== src && e !== thruEnd) addStub(e); });
   if (downPin) (downPin.ends || []).forEach(e => { if (e !== downEnd) addStub(e); });
@@ -13749,12 +13749,22 @@ function circuitSvgForLoad(ld, connMeta, opts) {
 
   // rozrzut odnóg: stub'y z tego samego węzła idą w dół wachlarzem
   const STUB_STEP = 36, STUB_CAP = 12;
+  // strona bezpiecznika, z której odnoga opuszcza tor: 'a' = górny kołek,
+  // 'b' = dolny; wachlarz odnóg startuje przy tym kołku, nie ze środka symbolu
+  const stubSide = st => {
+    const nd0 = allNodes[st.at] || {};
+    if (!nd0._fuse) return '';
+    const fa = nd0._fuse.a || {}, fb = nd0._fuse.b || {};
+    return (fa.dev && st.atKey === fa.dev + ':' + fa.pin) ? 'a'
+      : (fb.dev && st.atKey === fb.dev + ':' + fb.pin) ? 'b' : '';
+  };
   const stubGroups = {};
-  stubs.forEach(st => { (stubGroups[st.at] = stubGroups[st.at] || []).push(st); });
+  stubs.forEach(st => { st.side = stubSide(st); const gk = st.at + (st.side ? '|' + st.side : ''); (stubGroups[gk] = stubGroups[gk] || []).push(st); });
   const stubLayout = [];
   let stubMaxY = 0;
   Object.keys(stubGroups).forEach(atK => {
-    const at = +atK, baseY = yOf[at] + nodeH[at] / 2, grp = stubGroups[atK];
+    const at = parseInt(atK, 10), side0 = atK.split('|')[1] || '', grp = stubGroups[atK];
+    const baseY = yOf[at] + (side0 === 'a' ? 9 : side0 === 'b' ? nodeH[at] - 9 : nodeH[at] / 2);
     grp.slice(0, STUB_CAP).forEach((st, k) => {
       const sy = baseY + k * STUB_STEP;
       stubLayout.push({ st, sy });
@@ -13979,7 +13989,7 @@ function circuitSvgForLoad(ld, connMeta, opts) {
         const crx = axm + 52, crw = 14, cry0 = y + 20, crH = hgt - 40, sup = rc0.suppression || '';
         const cpins = [...new Set((rc0.ends || []).map(e => e.coil_pin_name || e.coil_pin).filter(Boolean))].slice(0, 2).sort((a, b) => (parseInt(b, 10) || 0) - (parseInt(a, 10) || 0));
         svg += `<line x1="${axm + 6}" y1="${midY}" x2="${crx}" y2="${midY}" stroke="${col}" stroke-width="1.2" stroke-dasharray="3 2"/>`;
-        svg += `<g style="cursor:pointer" onclick="event.stopPropagation();var _ce=document.getElementById('${escapeHtml(coilId)}');if(_ce)_ce.scrollIntoView({behavior:'smooth',block:'center'});"><title>${escapeHtml(t('js.zuken.coilCircuit'))}</title>`;
+        svg += `<g style="cursor:pointer" onclick="circuitGoCoil(this, event, '${escapeHtml(coilId)}')"><title>${escapeHtml(t('js.zuken.coilCircuit'))}</title>`;
         svg += `<rect x="${crx}" y="${cry0}" width="${crw}" height="${crH}" fill="var(--bg-card, #fff)" stroke="${col}" stroke-width="1.5"/>`;
         svg += `<line x1="${crx + crw / 2}" y1="${y + 8}" x2="${crx + crw / 2}" y2="${cry0}" stroke="${col}" stroke-width="1.4"/>`;
         svg += `<line x1="${crx + crw / 2}" y1="${cry0 + crH}" x2="${crx + crw / 2}" y2="${y + hgt - 8}" stroke="${col}" stroke-width="1.4"/>`;
@@ -14080,12 +14090,17 @@ function circuitSvgForLoad(ld, connMeta, opts) {
     if (segH) wireLbl = wireLabelAttrs(segH).join(' · ');
     const wireStroke = (segH && segH.wire_color) ? circuitWireStroke(segH.wire_color) : '#94a3b8';
     const atNd = allNodes[st.at] || {};
-    const ax = atNd._splice ? cx + boxW / 2 + SPLICE_R
+    let ax = atNd._splice ? cx + boxW / 2 + SPLICE_R
       : atNd._bar ? cx + boxW / 2 + 48
       : atNd._term ? cx + boxW / 2 + 90
       : (atNd._fuse || atNd._relay || atNd._batt) ? cx + boxW / 2 + 110 : cx + boxW;
-    const ay = atNd._splice ? atY + SPLICE_R
+    let ay = atNd._splice ? atY + SPLICE_R
       : atNd._bar ? atY + 9 : atY + (nodeH[st.at] || boxH) / 2;
+    if (atNd._fuse) {
+      // odnoga wychodzi z konkretnej strony bezpiecznika: gorny kolek (a)
+      // albo dolny (b) — linia startuje przy tym kolku, nie ze srodka
+      if (st.side) { ay = atY + (st.side === 'a' ? 9 : (nodeH[st.at] || 70) - 9); ax = cx + boxW / 2 + 8; }
+    }
     svg += `<line x1="${ax}" y1="${ay}" x2="${stubX}" y2="${y}" stroke="${wireStroke}" stroke-width="1.6" stroke-dasharray="4 3"/>`;
     const eSfx = (e.device || '').split('-').pop() || e.clean;
     const ml = e.module_label;
@@ -14126,6 +14141,21 @@ function scrollToCircuitSeed(root) {
   const cRect = root.getBoundingClientRect();
   const aRect = a.getBoundingClientRect();
   root.scrollTop += (aRect.top + aRect.height / 2) - (cRect.top + cRect.height / 2);
+}
+
+function circuitGoCoil(el, ev, id) {
+  if (ev) ev.stopPropagation();
+  // sekcja cewki w tym samym kontenerze co kliknięty symbol (nakładka
+  // powiększenia ma własną kopię — getElementById trafiałby w kartę pod nią)
+  const root = el.closest('#circuit-overlay') || document;
+  const target = [...root.querySelectorAll('[id]')].find(n => n.id === id)
+    || [...document.querySelectorAll('[id]')].find(n => n.id === id);
+  if (!target) return;
+  target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  const prev = target.style.boxShadow;
+  target.style.transition = 'box-shadow .3s';
+  target.style.boxShadow = '0 0 0 3px rgba(8,145,178,0.55)';
+  setTimeout(() => { target.style.boxShadow = prev; }, 1600);
 }
 
 function showCircuitDiagram() {

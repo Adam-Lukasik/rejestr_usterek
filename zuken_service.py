@@ -9610,6 +9610,12 @@ def _trace_circuit_impl(ps_code, query, lang="pl"):
             "path": hops,
             "via_fuse": any(h.get("internal") == "fuse" for h in hops),
             "via_relay": any(h.get("internal") == "relay" for h in hops),
+            "via_stud": any(h.get("internal") == "stud" for h in hops),
+            "batt": ("+" if any(h.get("internal") == "battery"
+                                and h.get("batt_pin") == "+" for h in hops)
+                     else "-" if any(h.get("internal") == "battery"
+                                     and h.get("batt_pin") == "-" for h in hops)
+                     else ""),
         }
         out.update(extra)
         return out
@@ -10015,13 +10021,15 @@ def _trace_circuit_impl(ps_code, query, lang="pl"):
     main_path = None
     try:
         def _anchor_rank(e):
-            if e.get("batt") == "+" or e.get("via_stud"):
+            if e.get("batt") == "+":
                 return 0
-            if e["role"] in ("source", "terminal"):
+            if e.get("via_stud"):
                 return 1
-            if e["role"] in ("gnd", "fuse", "relay") or e.get("batt") == "-":
+            if e["role"] in ("source", "terminal"):
                 return 2
-            return 3
+            if e["role"] in ("gnd", "fuse", "relay") or e.get("batt") == "-":
+                return 3
+            return 4
 
         def _path_nodes(e):
             ns = []
@@ -10086,11 +10094,10 @@ def _trace_circuit_impl(ps_code, query, lang="pl"):
                                                "from_clean": h["to_clean"],
                                                "to_clean": h["from_clean"]}))
                     hops.extend(b["path"][L - 1:])
-                score = _anchor_rank(a) + _anchor_rank(b)
+                score = (_anchor_rank(a) + _anchor_rank(b),
+                         len(a["path"]) + len(b["path"]))
                 if best is None or score < best[0]:
                     best = (score, hops, a, b)
-            if best is not None and best[0] == 0:
-                break
         if best:
             main_path = {"hops": best[1],
                          "a": {"clean": best[2]["clean"], "pin": best[2]["pin"],
