@@ -1926,7 +1926,10 @@ def _clean_patch_payload(kind, payload):
             p[k] = str(p.get(k) or "").strip()
         if not p["device"] or not p["pin_a"] or not p["pin_b"]:
             raise ValueError("device/pin_a/pin_b required")
-        if p["pin_a"] == p["pin_b"]:
+        # device_b (opcjonalne): drugi aparat — styk/przełącznik spoza
+        # raportu łączący piny DWÓCH urządzeń (np. -S300: FR24:1 <-> FR25:1)
+        p["device_b"] = str(p.get("device_b") or "").strip()
+        if p["pin_a"] == p["pin_b"] and (not p["device_b"] or p["device_b"] == p["device"]):
             raise ValueError("pin_a must differ from pin_b")
         p["label"] = str(p.get("label") or "").strip()
     elif kind == "power_rail":
@@ -2078,7 +2081,10 @@ def _mark_redundant_patches(cur, ps, ctx):
                 new = "active"
         elif kind == "device_link":
             dev = p.get("device") or ""
-            if not _dev_nodes(dev) and zs.clean_device_code(dev) not in known:
+            devb = p.get("device_b") or ""
+            if (not _dev_nodes(dev) and zs.clean_device_code(dev) not in known) or (
+                    devb and not _dev_nodes(devb)
+                    and zs.clean_device_code(devb) not in known):
                 new = "disabled"
             else:
                 new = "active"

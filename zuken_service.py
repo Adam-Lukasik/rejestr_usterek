@@ -8401,14 +8401,23 @@ def _circuit_extend_adjacency(cur, adj, ps_code, dev_funcs=None, bom_names=None)
 
     for _pid, _p in _active_patches(cur, ps_code, "device_link"):
         _dev = _patch_dev(_p.get("device"))
+        # device_b: łatka łączy piny DWÓCH aparatów (przełącznik spoza raportu)
+        _devb = _patch_dev(_p.get("device_b")) if _p.get("device_b") else _dev
         _pa = str(_p.get("pin_a") or "").strip()
         _pb = str(_p.get("pin_b") or "").strip()
-        if _dev and _pa and _pb:
+        if _dev and _devb and _pa and _pb:
             adj.setdefault((_dev, _pa), {})
-            adj.setdefault((_dev, _pb), {})
-            _link(_dev, _pa, _pb, "switch",
-                  (_p.get("label") or "").strip()
-                  or clean_device_code(_dev) or _dev)
+            adj.setdefault((_devb, _pb), {})
+            _lbl = ((_p.get("label") or "").strip()
+                    or clean_device_code(_dev) or _dev)
+            if _devb == _dev:
+                _link(_dev, _pa, _pb, "switch", _lbl)
+            else:
+                _link_nodes((_dev, _pa), (_devb, _pb), "switch", _lbl)
+                for _d2 in (_dev, _devb):
+                    _c2 = clean_device_code(_d2) or ""
+                    if not _CIRCUIT_PASS_RE.match(_c2) and not _CIRCUIT_RT_RE.match(_c2):
+                        internal_devs.add(_d2)
     for _pid, _p in _active_patches(cur, ps_code, "power_rail"):
         _lbl = (_p.get("label") or "").strip() or "rail"
         _mems = []
@@ -9641,6 +9650,48 @@ def _trace_circuit_impl(ps_code, query, lang="pl"):
         out["cls"] = _end_cls(out)
         return out
 
+    def _extend_fuse_end(e):
+        """Koniec typu bezpiecznik/oprawka: przechodzi przez element na
+        drugą stronę (przez szynę, wejściowy bezpiecznik banku, zaciski)
+        aż do bieguna baterii. Zwraca scalony koniec (ścieżka = dotychczasowa
+        + przedłużenie, ext=True) albo None, gdy za bezpiecznikiem nie ma
+        baterii. Dzięki temu tor głównego obwodu bezpiecznika i cewki
+        dochodzi do plusa, a nie kończy się na sąsiednim bezpieczniku."""
+        if e.get("role") != "fuse" or not e.get("path"):
+            return None
+        start = (e["device"], e["pin"])
+        if start not in adj:
+            return None
+        banned = set()
+        for h in e["path"]:
+            banned.add((h["from"], h["from_pin"]))
+            banned.add((h["to"], h["to_pin"]))
+        banned.discard(start)
+        best = None
+        for (ed, ep), raw in _wire_net_paths(adj, start, banned=banned,
+                                             max_nodes=900, max_ends=80,
+                                             pass_fn=pass_fn):
+            if ed == e["device"]:
+                continue
+            ne = _mk_end(ed, ep, raw)
+            if ne["batt"] != "+" and not ne["via_stud"]:
+                continue
+            if best is None or (ne["batt"] != "+", len(raw)) < \
+                    (best["batt"] != "+", len(best["path"])):
+                best = ne
+        if best is None:
+            return None
+        best["path"] = list(e["path"]) + best["path"]
+        best["via_fuse"] = True
+        best["via_relay"] = any(h.get("internal") == "relay"
+                                for h in best["path"])
+        best["ext"] = True
+        for k, v in e.items():
+            if k in ("coil_pin", "coil_pin_name", "coil_dev"):
+                best[k] = v
+        best["cls"] = _end_cls(best)
+        return best
+
     def _relay_label(rd):
         info = relay_coils.get(rd) or {}
         return info.get("clean") or clean_device_code(rd) or rd
@@ -9661,17 +9712,30 @@ def _trace_circuit_impl(ps_code, query, lang="pl"):
                 continue
             for (ced, cep), cpath in _wire_net_paths(
                     adj, cnd, banned=coil_set - {cnd},
-                    max_nodes=600, max_ends=10, pass_fn=_coil_pass):
+                    max_nodes=800, max_ends=40, pass_fn=_coil_pass):
                 if (ced, cep) in coil_set or (ced, cep) in seen_ce:
                     continue
                 seen_ce.add((ced, cep))
                 coil_ends.append(_mk_end(ced, cep, cpath, coil_pin=cnd[1],
                                          coil_pin_name=(info.get("coil_names") or {}).get(cnd[1]) or cnd[1],
                                          coil_dev=clean_device_code(cnd[0]) or cnd[0]))
-        # najpierw masa, potem zasilanie sterowania — czytelna diagnoza
-        _coil_rank = {"gnd": 0, "source": 1, "terminal": 1, "load": 2}
-        coil_ends.sort(key=lambda x: (_coil_rank.get(x["role"], 3),
-                                      len(x["path"]),
+        # końce typu bezpiecznik/oprawka: przechodzimy przez element do
+        # bieguna baterii (plus obwodu sterowania), zamiast kończyć na nim
+        _ext_done = 0
+        for _i, _ce in enumerate(coil_ends):
+            if _ce["role"] == "fuse" and _ext_done < 6:
+                _ext_done += 1
+                _ne = _extend_fuse_end(_ce)
+                if _ne:
+                    coil_ends[_i] = _ne
+        # najpierw masa, potem bateria +, potem zasilanie sterowania
+        def _coil_rk(x):
+            if x["role"] == "gnd":
+                return 0
+            if x.get("batt") == "+":
+                return 1
+            return {"source": 2, "terminal": 2, "load": 3}.get(x["role"], 4)
+        coil_ends.sort(key=lambda x: (_coil_rk(x), len(x["path"]),
                                       _natural_sort_key(x["clean"])))
         if not coil_ends:
             return None
@@ -10087,7 +10151,23 @@ def _trace_circuit_impl(ps_code, query, lang="pl"):
             for pi, p in enumerate(ld["pins"]):
                 for ei, e in enumerate(p.get("ends") or []):
                     if e.get("path"):
-                        cands.append((e, li, pi, ei))
+                        cands.append((e, li, pi, ei, False))
+        # końce-bezpieczniki (sąsiedzi na szynie) przedłużamy przez element
+        # do bieguna baterii — tor dochodzi do źródła zamiast kończyć się
+        # na sąsiednim bezpieczniku; przedłużenia trzymamy w pin['ext_ends']
+        _n_ext = 0
+        _fuse_q = any(_CIRCUIT_FUSE_RE.match(
+            clean_device_code(ld.get("device") or "") or "") for ld in loads_out)
+        for c in [c for c in cands if c[0].get("role") == "fuse" and _fuse_q]:
+            if _n_ext >= 10:
+                break
+            _n_ext += 1
+            ne = _extend_fuse_end(c[0])
+            if not ne:
+                continue
+            _pin = loads_out[c[1]]["pins"][c[2]]
+            _pin.setdefault("ext_ends", []).append(ne)
+            cands.append((ne, c[1], c[2], len(_pin["ext_ends"]) - 1, True))
         cands.sort(key=lambda c: (_anchor_rank(c[0]), len(c[0]["path"])))
         sel = cands[:12]
         for c in cands[12:]:
@@ -10137,8 +10217,8 @@ def _trace_circuit_impl(ps_code, query, lang="pl"):
         def _cand_dict(f):
             (_s, hops, ca, cb) = f
             return {"kind": _pair_kind(ca[0], cb[0]), "hops": hops,
-                    "a": {"li": ca[1], "pi": ca[2], "ei": ca[3]},
-                    "b": {"li": cb[1], "pi": cb[2], "ei": cb[3]},
+                    "a": {"li": ca[1], "pi": ca[2], "ei": ca[3], "ext": ca[4]},
+                    "b": {"li": cb[1], "pi": cb[2], "ei": cb[3], "ext": cb[4]},
                     "a_label": (ca[0]["clean"] + (":" + ca[0]["pin"]
                                                   if ca[0].get("pin") else "")),
                     "b_label": (cb[0]["clean"] + (":" + cb[0]["pin"]
@@ -10172,11 +10252,10 @@ def _trace_circuit_impl(ps_code, query, lang="pl"):
             # najlepsza para zawsze pierwsza na liście kandydatów
             bk = (best[2][0]["clean"], best[2][0].get("pin"),
                   best[3][0]["clean"], best[3][0].get("pin"))
-            main_candidates.sort(key=lambda c: 0 if (
-                loads_out[c["a"]["li"]]["pins"][c["a"]["pi"]]["ends"][c["a"]["ei"]]["clean"],
-                loads_out[c["a"]["li"]]["pins"][c["a"]["pi"]]["ends"][c["a"]["ei"]].get("pin"),
-                loads_out[c["b"]["li"]]["pins"][c["b"]["pi"]]["ends"][c["b"]["ei"]]["clean"],
-                loads_out[c["b"]["li"]]["pins"][c["b"]["pi"]]["ends"][c["b"]["ei"]].get("pin")) == bk else 1)
+            main_candidates.sort(
+                key=lambda c: 0 if (c["a_label"], c["b_label"]) == (
+                    bk[0] + (":" + bk[1] if bk[1] else ""),
+                    bk[2] + (":" + bk[3] if bk[3] else "")) else 1)
     except Exception:
         main_path = None
         main_candidates = []

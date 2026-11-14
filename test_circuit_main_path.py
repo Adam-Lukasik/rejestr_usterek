@@ -102,6 +102,14 @@ else:
     check("K1: SIMA bez tłumienia",
           all(not rc.get("suppression") for rc in coils if rc["clean"] == "K1"))
 
+    _ck = [rc for l in (cp or {}).get("loads", []) for rc in (l.get("relay_coils") or [])
+           if rc["clean"] == "K1"]
+    _ce = [e for rc in _ck for e in (rc.get("ends") or [])]
+    check("K1: cewka dochodzi do GND", any(e.get("role") == "gnd" for e in _ce),
+          str([(e.get("clean"), e.get("role"), e.get("batt")) for e in _ce])[:200])
+    check("K1: cewka dochodzi do plusa baterii", any(e.get("batt") == "+" for e in _ce),
+          str([(e.get("clean"), e.get("role"), e.get("batt")) for e in _ce])[:200])
+
     # F9 / F11 — bezpieczniki: dwie strony, tor główny
     cp = trace(PS1, "F9")
     pins = [p["pin"] for l in cp["loads"] for p in l["pins"]]
@@ -136,7 +144,10 @@ else:
     # X303 — złącze cewki: tor sygnałowy bez wyjątku
     cp = trace(PS1, "X303")
     check("X303: main_path (sygnał) bez wyjątku", bool((cp.get("main_path") or {}).get("hops")))
-    check("X303: kind to signal", (cp.get("main_path") or {}).get("kind") == "signal")
+    _mc = cp.get("main_candidates") or []
+    check("X303: kind to signal/feed (feed po łatce S300 do G3)",
+          (cp.get("main_path") or {}).get("kind") in ("signal", "feed"))
+    check("X303: kandydat signal nadal dostępny", any(c["kind"] == "signal" for c in _mc))
 
     # emergency start
     cp = trace(PS1, "emergency start")

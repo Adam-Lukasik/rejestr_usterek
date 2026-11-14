@@ -6908,7 +6908,7 @@ function _auditPatchesHtml() {
       : p.kind === 'busbar' ? escapeHtml((pl.members || []).map(m => `${m.fuse}:${m.pin}`).join(' ↔ ')) + (pl.holder ? ` · ${entText(pl.holder)}` : '')
       : p.kind === 'box_fuse' ? `${escapeHtml(pl.box_name || '')} ${escapeHtml(pl.cell || '')}${pl.rating ? ` ${escapeHtml(pl.rating)}` : ''}${pl.out_dev ? ` → ${entText(pl.out_dev)}` : ''}`
       : p.kind === 'device_location' ? `${entText(pl.device || '')} <b style="color:#ea580c;">→</b> ${entText(pl.full_code || '')}`
-      : p.kind === 'device_link' ? `${entText(pl.device || '')} ${escapeHtml(pl.pin_a || '')} <b style="color:#ea580c;">⟷</b> ${escapeHtml(pl.pin_b || '')}${pl.label ? ` · ${escapeHtml(pl.label)}` : ''}`
+      : p.kind === 'device_link' ? `${entText(pl.device || '')} ${escapeHtml(pl.pin_a || '')} <b style="color:#ea580c;">⟷</b> ${pl.device_b ? entText(pl.device_b) + ' ' : ''}${escapeHtml(pl.pin_b || '')}${pl.label ? ` · ${escapeHtml(pl.label)}` : ''}`
       : p.kind === 'power_rail' ? escapeHtml((pl.members || []).map(m => `${m.dev}:${m.pin}`).join(' ↔ ')) + (pl.label ? ` · ${escapeHtml(pl.label)}` : '')
       : `<code>${escapeHtml(JSON.stringify(pl))}</code>`;
     const stCol = p.status === 'active' ? '#15803d' : p.status === 'redundant' ? '#0284c7' : '#64748b';
@@ -6950,7 +6950,7 @@ function _auditPatchFormHtml() {
   } else if (k === 'device_location') {
     fields = `${i2('device', 100, '-A359')} <b style="color:#ea580c;">→</b> ${i2('full_code', 200, '=BOX+TWR-A359')} <span style="font-size:11px; color:var(--text-muted);">${escapeHtml(t('ui.audit.devLocFormHint'))}</span>`;
   } else if (k === 'device_link') {
-    fields = `${i2('device', 150, '-A359')} ${i2('pin_a', 42, 'A')} <b style="color:#ea580c;">⟷</b> ${i2('pin_b', 42, 'B')} ${i2('label', 130, t('ui.audit.apfLabel'))} <span style="font-size:11px; color:var(--text-muted);">${escapeHtml(t('ui.audit.devLinkFormHint'))}</span>`;
+    fields = `${i2('device', 150, '-A359')} ${i2('pin_a', 42, 'A')} <b style="color:#ea580c;">⟷</b> ${i2('device_b', 120, '-FR25')} ${i2('pin_b', 42, 'B')} ${i2('label', 130, t('ui.audit.apfLabel'))} <span style="font-size:11px; color:var(--text-muted);">${escapeHtml(t('ui.audit.devLinkFormHint'))}</span>`;
   } else if (k === 'power_rail') {
     fields = `<div style="flex:1; min-width:280px;">
       <div style="font-size:11px; color:var(--text-muted); margin-bottom:3px;">${escapeHtml(t('ui.audit.powerRailFormHint'))}</div>
@@ -6989,6 +6989,7 @@ async function auditPatchSaveNew() {
       Object.assign(payload, { device: g('device'), full_code: g('full_code') });
     } else if (k === 'device_link') {
       Object.assign(payload, { device: g('device'), pin_a: g('pin_a'), pin_b: g('pin_b') });
+      if (g('device_b')) payload.device_b = g('device_b');
       if (g('label')) payload.label = g('label');
     } else if (k === 'power_rail') {
       payload.members = String(document.getElementById('apf-members').value || '').split(/\n+/).map(l => l.trim()).filter(Boolean)
@@ -12048,7 +12049,7 @@ function circuitMainSelected(cp) {
   const i = cp._sel || 0;
   if (i <= 0 || !cands[i]) return cp.main_path;
   const c = cands[i];
-  const endAt = r => (((((cp.loads || [])[r.li] || {}).pins || [])[r.pi] || {}).ends || [])[r.ei];
+  const endAt = r => (((((cp.loads || [])[r.li] || {}).pins || [])[r.pi] || {})[r.ext ? 'ext_ends' : 'ends'] || [])[r.ei];
   const ea = endAt(c.a), eb = endAt(c.b);
   if (!ea || !eb) return cp.main_path;
   return { hops: c.hops, end_a: ea, end_b: eb, kind: c.kind };
