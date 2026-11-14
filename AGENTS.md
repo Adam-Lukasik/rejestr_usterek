@@ -536,3 +536,27 @@ wielopinowych):
 - **Zapytany element**: półprzezroczyste podświetlenie tła, nie ramka.
 - Pasek postępu: `zukenLoadingHtml` (+ placeholder `#zuken-circuit-loading`).
 
+## Asystent obwodów: faza 2 i 3 (gotowe)
+
+- Backend `trace_circuit`: każdy koniec ma `cls` (`_end_cls`: feed/load/
+  ground/coil/branch); `main_candidates` = do 6 par kotwic (max 2 na rodzaj:
+  `bridge` +→+, `power` +→−, `feed` zasilanie→urządzenie, `signal`),
+  pierwszy = `main_path`. Para kotwic: biegun baterii `+` (`batt`) ma rangę 0,
+  szpilka urządzenia 1; remis rozstrzyga najkrótsza trasa. Odbiornik z
+  zasilaniem i masą na różnych pinach dostaje syntetyczny przeskok
+  `internal='device'` (frontend zwija go w jeden węzeł z dwoma pinami).
+  Kandydaci niosą tylko indeksy końców (`li/pi/ei`) + `hops` — końce są w `loads`.
+- Frontend: `circuitMainSelected/circuitMainBlockHtml/circuitSelectMain`
+  (`cp._sel` = wybrany kandydat), chipy „Inne obwody przez ten punkt",
+  odnogi grupowane nagłówkami klas (ZASILANIE/ODBIORNIKI/MASA/…),
+  wachlarze z różnych węzłów nie nachodzą na siebie, sekcja „Obwód sterowania"
+  (cewki przekaźników z toru) w `<details>`, klik w cewkę = nakładka
+  (`circuitShowCoil`; globalny handler `[data-ent-q]` w fazie capture
+  przechwytuje kliknięcia — cewka musi leżeć POZA grupą ent-link).
+- Testy: `RU_DATA_DIR=... python test_circuit_main_path.py` (394, K1, F9,
+  F11, X164 +→−, X303, emergency start, F27/K4 na Walii, node --check frontu,
+  i18n); bez bazy projektów testy danych dają SKIP. UI w prawdziwej
+  przeglądarce: `tools/dev_server_5099.py` + `tools/cdp_ui_check.js`.
+- Pułapka narzędziowa: heredoc w powłoce zjada `\` i potrafi ciąć długie
+  bloki — większe wstawki robić narzędziem edit/write, nie `cat <<EOF`.
+

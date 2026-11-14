@@ -1,0 +1,8 @@
+[
+  {"name": "inject", "ev": "(async()=>{ await ensureKnownDevs('PS011871'); const cp = await apiCall('/api/zuken/circuit-path?ps=PS011871&q=394'); ZUKEN_STATE.lastCircuit = cp; ZUKEN_STATE.lastQuery='394'; const host=document.createElement('div'); host.id='tst'; host.style.cssText='position:absolute;left:0;top:0;z-index:99999;background:#fff;width:1280px;padding:10px'; host.innerHTML = circuitCardHtml(cp,'394'); document.body.appendChild(host); return 'cands=' + (cp.main_candidates||[]).length; })()", "sleep": 600},
+  {"name": "svgcount", "ev": "document.querySelectorAll('#tst svg').length + ' svgs; chips=' + document.querySelectorAll('#tst .circuit-main-wrap button').length"},
+  {"shot": "_ui1.png", "sel": "#tst .circuit-main-wrap"},
+  {"name": "pick2", "ev": "(()=>{ const b=[...document.querySelectorAll('#tst .circuit-main-wrap button')]; b[1].click(); return document.querySelector('#tst .circuit-main-banner').innerText.slice(0,160); })()", "sleep": 400},
+  {"shot": "_ui2.png", "sel": "#tst .circuit-main-wrap"},
+  {"name": "overlay-coil", "ev": "(()=>{ const b=[...document.querySelectorAll('#tst .circuit-main-wrap button')]; b[0].click(); const g=[...document.querySelectorAll('#tst .circuit-main-wrap g[onclick]')].find(x=>/circuitShowCoil/.test(x.getAttribute('onclick'))); if(!g) return 'no coil g'; g.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true})); const ov=document.getElementById('circuit-overlay'); return ov ? 'overlay: ' + ov.innerText.slice(0,80).replace(/\\n/g,' | ') : 'NO OVERLAY (nav?) q=' + document.getElementById('zuken-search-input')?.value; })()", "sleep": 500}
+]

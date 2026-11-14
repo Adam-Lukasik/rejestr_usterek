@@ -8607,6 +8607,22 @@ def _module_label_from_function(func_text, controller="Sterownik"):
             "function": "", "max_current": ""}
 
 
+def _end_cls(e):
+    """Klasa końca ścieżki do grupowania odnóg na diagramie: feed
+    (zasilanie), ground (masa), load (odbiornik), coil (sterowanie
+    cewką), branch (bezpiecznik/przekaźnik/inne odgałęzienie)."""
+    if "coil_pin" in e:
+        return "coil"
+    if e.get("batt") == "-" or e.get("role") == "gnd":
+        return "ground"
+    if (e.get("batt") == "+" or e.get("via_stud")
+            or e.get("role") in ("source", "terminal")):
+        return "feed"
+    if e.get("role") == "load":
+        return "load"
+    return "branch"
+
+
 def _circuit_end_role(ed, last_row, dev_funcs=None, bom_names=None):
     """Rola końca sieci patrząc od odbiornika:
     gnd (punkt masy), source (moduł EVPSS/OPM), terminal (zacisk/stud),
@@ -9347,6 +9363,7 @@ def _trace_circuit_impl(ps_code, query, lang="pl"):
                     "shared": (max(0, len(adj.get((ed, ep), {})) - 1)
                                if role == "gnd" else 0),
                 })
+                ends_out[-1]["cls"] = _end_cls(ends_out[-1])
             if not ends_out:
                 continue
             all_ends = ends_out
@@ -9618,6 +9635,10 @@ def _trace_circuit_impl(ps_code, query, lang="pl"):
                      else ""),
         }
         out.update(extra)
+        # klasa końca do grupowania odnóg na diagramie: feed (zasilanie),
+        # ground (masa), load (odbiornik), coil (sterowanie cewką),
+        # branch (bezpiecznik/przekaźnik/inne odgałęzienie)
+        out["cls"] = _end_cls(out)
         return out
 
     def _relay_label(rd):
@@ -10019,6 +10040,7 @@ def _trace_circuit_impl(ps_code, query, lang="pl"):
     # odbiornik↔odbiornik dla torów sygnałowych). Frontend podświetla
     # ten łańcuch jako 'main_path'.
     main_path = None
+    main_candidates = []
     try:
         def _anchor_rank(e):
             if e.get("batt") == "+":
@@ -10031,6 +10053,19 @@ def _trace_circuit_impl(ps_code, query, lang="pl"):
                 return 3
             return 4
 
+        def _is_ground(e):
+            return e.get("role") == "gnd" or e.get("batt") == "-"
+
+        def _pair_kind(a, b):
+            pa, pb = a.get("batt") == "+", b.get("batt") == "+"
+            if pa and pb:
+                return "bridge"
+            if (pa and _is_ground(b)) or (pb and _is_ground(a)):
+                return "power"
+            if pa or pb or a.get("via_stud") or b.get("via_stud"):
+                return "feed"
+            return "signal"
+
         def _path_nodes(e):
             ns = []
             for h in (e.get("path") or []):
@@ -10041,74 +10076,110 @@ def _trace_circuit_impl(ps_code, query, lang="pl"):
                 ns.append(b)
             return ns
 
+        def _rev_hop(h):
+            return dict(h, **{"from": h["to"], "to": h["from"],
+                              "from_pin": h["to_pin"], "to_pin": h["from_pin"],
+                              "from_clean": h["to_clean"],
+                              "to_clean": h["from_clean"]})
+
         cands = []
-        for ld in loads_out[:3]:
-            for p in ld["pins"]:
-                for e in (p.get("ends") or []):
+        for li, ld in enumerate(loads_out[:3]):
+            for pi, p in enumerate(ld["pins"]):
+                for ei, e in enumerate(p.get("ends") or []):
                     if e.get("path"):
-                        cands.append(e)
-        cands.sort(key=lambda e: (_anchor_rank(e),
-                                  len(e["path"])))
-        best = None
-        for i, a in enumerate(cands[:8]):
-            na = _path_nodes(a)
-            if not na:
-                continue
-            for b in cands[i + 1:10]:
-                nb = _path_nodes(b)
-                if not nb:
+                        cands.append((e, li, pi, ei))
+        cands.sort(key=lambda c: (_anchor_rank(c[0]), len(c[0]["path"])))
+        sel = cands[:12]
+        for c in cands[12:]:
+            if _is_ground(c[0]) and sum(1 for s in sel if _is_ground(s[0])) < 3:
+                sel.append(c)
+
+        found = []
+        for i, ca0 in enumerate(sel):
+            for cb0 in sel[i + 1:]:
+                ca, cb = ca0, cb0
+                # zasilanie zawsze nad masą (tor +→− rysowany z góry na dół)
+                if _is_ground(ca[0]) and not _is_ground(cb[0]):
+                    ca, cb = cb, ca
+                a, b = ca[0], cb[0]
+                na, nb = _path_nodes(a), _path_nodes(b)
+                if not na or not nb:
                     continue
-                # wspólny prefiks węzłów od nasiona (co najmniej seed)
                 L = 0
                 while (L < min(len(na), len(nb)) and na[L] == nb[L]):
                     L += 1
-                # rozłączne od seeda: prefiks kończy się blisko początku
                 if L > 3:
                     continue
                 if L == 0:
-                    # końce sieją z różnych kołków TEGO SAMEGO urządzenia
-                    # (np. U2:1/U2:2 slotu F17) — łączymy je krawędzią
-                    # wewnętrzną (element -F / styk) między kołkami
                     sa, sb = na[0], nb[0]
                     if sa[0] != sb[0]:
                         continue
                     row = (adj.get(sa) or {}).get(sb) \
                         or (adj.get(sb) or {}).get(sa)
                     if row is None:
-                        continue
-                    hops = [dict(h, **{"from": h["to"], "to": h["from"],
-                                       "from_pin": h["to_pin"],
-                                       "to_pin": h["from_pin"],
-                                       "from_clean": h["to_clean"],
-                                       "to_clean": h["from_clean"]})
-                            for h in reversed(a["path"])]
+                        # odbiornik: zasilanie na jednym pinie, masa na
+                        # drugim — prąd płynie PRZEZ aparat (krawędź 'device')
+                        if _is_ground(a) == _is_ground(b):
+                            continue
+                        row = {"_internal": "device",
+                               "_internal_label": clean_device_code(sa[0]) or sa[0]}
+                    hops = [_rev_hop(h) for h in reversed(a["path"])]
                     hops.append(_wire_hop(sa[0], sa[1], sb[0], sb[1], row))
                     hops.extend(b["path"])
                 else:
-                    hops = []
-                    for h in reversed(a["path"][L - 1:]):
-                        hops.append(dict(h, **{"from": h["to"],
-                                               "to": h["from"],
-                                               "from_pin": h["to_pin"],
-                                               "to_pin": h["from_pin"],
-                                               "from_clean": h["to_clean"],
-                                               "to_clean": h["from_clean"]}))
+                    hops = [_rev_hop(h) for h in reversed(a["path"][L - 1:])]
                     hops.extend(b["path"][L - 1:])
                 score = (_anchor_rank(a) + _anchor_rank(b),
                          len(a["path"]) + len(b["path"]))
-                if best is None or score < best[0]:
-                    best = (score, hops, a, b)
-        if best:
+                found.append((score, hops, ca, cb))
+        found.sort(key=lambda f: f[0])
+
+        def _cand_dict(f):
+            (_s, hops, ca, cb) = f
+            return {"kind": _pair_kind(ca[0], cb[0]), "hops": hops,
+                    "a": {"li": ca[1], "pi": ca[2], "ei": ca[3]},
+                    "b": {"li": cb[1], "pi": cb[2], "ei": cb[3]},
+                    "a_label": (ca[0]["clean"] + (":" + ca[0]["pin"]
+                                                  if ca[0].get("pin") else "")),
+                    "b_label": (cb[0]["clean"] + (":" + cb[0]["pin"]
+                                                  if cb[0].get("pin") else ""))}
+
+        kind_n, seen_pairs = {}, set()
+        for f in found:
+            cd = _cand_dict(f)
+            key = (f[2][0]["clean"], f[2][0].get("pin"),
+                   f[3][0]["clean"], f[3][0].get("pin"))
+            if key in seen_pairs or kind_n.get(cd["kind"], 0) >= 2:
+                continue
+            seen_pairs.add(key)
+            kind_n[cd["kind"]] = kind_n.get(cd["kind"], 0) + 1
+            main_candidates.append(cd)
+            if len(main_candidates) >= 6:
+                break
+        if found:
+            best = found[0]
             main_path = {"hops": best[1],
-                         "a": {"clean": best[2]["clean"], "pin": best[2]["pin"],
-                               "role": best[2]["role"],
-                               "function": best[2].get("function") or ""},
-                         "b": {"clean": best[3]["clean"], "pin": best[3]["pin"],
-                               "role": best[3]["role"],
-                               "function": best[3].get("function") or ""},
-                         "end_a": best[2], "end_b": best[3]}
+                         "a": {"clean": best[2][0]["clean"],
+                               "pin": best[2][0]["pin"],
+                               "role": best[2][0]["role"],
+                               "function": best[2][0].get("function") or ""},
+                         "b": {"clean": best[3][0]["clean"],
+                               "pin": best[3][0]["pin"],
+                               "role": best[3][0]["role"],
+                               "function": best[3][0].get("function") or ""},
+                         "end_a": best[2][0], "end_b": best[3][0],
+                         "kind": _pair_kind(best[2][0], best[3][0])}
+            # najlepsza para zawsze pierwsza na liście kandydatów
+            bk = (best[2][0]["clean"], best[2][0].get("pin"),
+                  best[3][0]["clean"], best[3][0].get("pin"))
+            main_candidates.sort(key=lambda c: 0 if (
+                loads_out[c["a"]["li"]]["pins"][c["a"]["pi"]]["ends"][c["a"]["ei"]]["clean"],
+                loads_out[c["a"]["li"]]["pins"][c["a"]["pi"]]["ends"][c["a"]["ei"]].get("pin"),
+                loads_out[c["b"]["li"]]["pins"][c["b"]["pi"]]["ends"][c["b"]["ei"]]["clean"],
+                loads_out[c["b"]["li"]]["pins"][c["b"]["pi"]]["ends"][c["b"]["ei"]].get("pin")) == bk else 1)
     except Exception:
         main_path = None
+        main_candidates = []
 
     # Reworki projektu — frontend oznacza badge ⚠️ węzły-złącza objęte reworkiem
     reworks = list_reworks(ps_code) if ps_code else []
@@ -10165,7 +10236,7 @@ def _trace_circuit_impl(ps_code, query, lang="pl"):
             pass
 
     return {"ok": True, "query": q, "resolved": resolved, "ps_code": ps_code,
-            "evpss": evpss_out, "loads": loads_out, "main_path": main_path,
+            "evpss": evpss_out, "loads": loads_out, "main_path": main_path, "main_candidates": main_candidates,
             "more_signals": more_signals, "conn_meta": conn_meta,
             "reworks": reworks, "alternates": alternates[:8]}
 

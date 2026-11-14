@@ -1,0 +1,4 @@
+[
+  {"name": "inject", "ev": "(async()=>{ await ensureKnownDevs('PS011871'); const cp = await apiCall('/api/zuken/circuit-path?ps=PS011871&q=X164'); ZUKEN_STATE.lastCircuit = cp; ZUKEN_STATE.lastQuery='X164'; const host=document.createElement('div'); host.id='tst'; host.style.cssText='position:absolute;left:0;top:0;z-index:99999;background:#fff;width:1280px;padding:10px'; host.innerHTML = circuitCardHtml(cp,'X164'); document.body.appendChild(host); return 'cands=' + (cp.main_candidates||[]).length + ' kind=' + ((cp.main_path||{}).kind); })()", "sleep": 600},
+  {"shot": "_ui3.png", "sel": "#tst .circuit-main-wrap"}
+]
