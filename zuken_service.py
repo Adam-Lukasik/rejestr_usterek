@@ -9728,6 +9728,12 @@ def _trace_circuit_impl(ps_code, query, lang="pl"):
                 _ne = _extend_fuse_end(_ce)
                 if _ne:
                     coil_ends[_i] = _ne
+        # tor przez własne styki tej cewki (samopodtrzymanie / pętla przez
+        # styk roboczy) nie jest obwodem cewki — pokazałby tor styków
+        _own = {cnd[0] for cnd in coil_set} | {rd}
+        coil_ends = [x for x in coil_ends if not any(
+            h.get("internal") == "relay" and h.get("relay_dev") in _own
+            for h in x["path"])] or coil_ends
         # najpierw masa, potem bateria +, potem zasilanie sterowania
         def _coil_rk(x):
             if x["role"] == "gnd":
