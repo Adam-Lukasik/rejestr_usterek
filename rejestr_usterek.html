@@ -13586,7 +13586,7 @@ function circuitSvgForLoad(ld, connMeta, opts) {
         out[out.length - 1] = {
           dev: prev.dev, pin: '', clean: prev.clean, edge: null,
           role: prev.role || 'source', info: prev.info || '', ml: prev.ml || null,
-          _batt: { pole: poleOf(prev.clean),
+          _batt: { pole: poleOf(prev.clean), dir: 'down',
                    term: { dev: nd.dev, clean: nd.clean, pin: nd.pin },
                    label: nd.edge.internal_label || '' },
         };
@@ -13596,7 +13596,7 @@ function circuitSvgForLoad(ld, connMeta, opts) {
       out[out.length - 1] = {
         dev: nd.dev, pin: '', clean: nd.clean, edge: prev.edge,
         role: nd.role || 'source', info: nd.info || '', ml: nd.ml || null,
-        _batt: { pole: poleOf(nd.clean),
+        _batt: { pole: poleOf(nd.clean), dir: 'up',
                  term: { dev: prev.dev, clean: prev.clean, pin: prev.pin },
                  label: nd.edge.internal_label || '' },
       };
@@ -13885,13 +13885,17 @@ function circuitSvgForLoad(ld, connMeta, opts) {
       svg += `<rect x="${x}" y="${y}" width="${boxW}" height="${hgt}" rx="7" fill="var(--bg-card, #fff)" stroke="${col}" stroke-width="2"/>`;
       svg += `<text x="${x + 8}" y="${y + 15}" font-size="11" font-weight="700" fill="${fg}" font-family="monospace">🔋 ${escapeHtml(nd.clean)}</text>`;
       if (nd.info) svg += `<text x="${x + 8}" y="${y + 28}" font-size="9" fill="var(--text-muted, #64748b)">${escapeHtml(String(nd.info).slice(0, 46))}</text>`;
+      // plytki ustawione biegunem do obwodu: bateria u gory toru ma
+      // + na dole (dir='down'), na dole toru + u gory (dir='up')
       const gy = y + boxH + 8;
-      svg += `<line x1="${axm}" y1="${y + boxH + 1}" x2="${axm}" y2="${gy}" stroke="${col}" stroke-width="1.8"/>`;
-      svg += `<line x1="${axm - 14}" y1="${gy}" x2="${axm + 14}" y2="${gy}" stroke="${col}" stroke-width="1.8"/>`;
-      svg += `<line x1="${axm - 7}" y1="${gy + 7}" x2="${axm + 7}" y2="${gy + 7}" stroke="${col}" stroke-width="4.5"/>`;
-      svg += `<text x="${axm + 18}" y="${gy + 3}" font-size="10" font-weight="800" fill="${col}" font-family="monospace">${bt.pole}</text>`;
+      const pPlus = bt.dir === 'down' ? gy + 7 : gy;
+      const pMinus = bt.dir === 'down' ? gy : gy + 7;
+      svg += `<line x1="${axm}" y1="${y + boxH + 1}" x2="${axm}" y2="${bt.dir === 'down' ? pMinus : pPlus}" stroke="${col}" stroke-width="1.8"/>`;
+      svg += `<line x1="${axm - 14}" y1="${pPlus}" x2="${axm + 14}" y2="${pPlus}" stroke="${col}" stroke-width="1.8"/>`;
+      svg += `<line x1="${axm - 7}" y1="${pMinus}" x2="${axm + 7}" y2="${pMinus}" stroke="${col}" stroke-width="4.5"/>`;
+      svg += `<text x="${axm + 18}" y="${pPlus + 3}" font-size="10" font-weight="800" fill="${col}" font-family="monospace">${bt.pole}</text>`;
       // zacisk przy plytce jego bieguna (dluga linia = +, gruba = −)
-      const tY = bt.pole === '−' ? gy + 10 : gy + 3;
+      const tY = bt.pole === '−' ? pMinus + 3 : pPlus + 3;
       svg += `<text x="${axm - 18}" y="${tY}" font-size="8.5" font-weight="700" text-anchor="end" fill="#475569" font-family="monospace">${escapeHtml(termName)}</text>`;
       svg += '</g>';
       return;
