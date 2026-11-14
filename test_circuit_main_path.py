@@ -107,6 +107,15 @@ else:
     pins = [p["pin"] for l in cp["loads"] for p in l["pins"]]
     check("F9: dwie strony (piny 1 i 2)", {"1", "2"} <= set(pins), str(pins))
     check("F9: main_path istnieje", bool((cp.get("main_path") or {}).get("hops")))
+    # F49 (EoE): oprawka FH49 — dwie strony, zasilanie A15:14 / szyna bezpieczników
+    cp = trace(PS1, "F49")
+    f49 = [p for l in cp["loads"] for p in l["pins"]]
+    check("F49 (EoE): dwie strony z końcami",
+          {p["pin"] for p in f49} >= {"1", "2"} and all(p["ends"] for p in f49))
+    check("F49 (EoE): koniec A15:14 po stronie pinu 1",
+          any(e["clean"] == "A15" and e["pin"] == "14"
+              for p in f49 if p["pin"] == "1" for e in p["ends"]))
+    check("F49 (EoE): main_path istnieje", bool((cp.get("main_path") or {}).get("hops")))
     cp = trace(PS1, "F11")
     check("F11: AKU1 w torze głównym",
           "AKU1" in {(cp.get("main_path") or {}).get("a", {}).get("clean"),
