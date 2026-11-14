@@ -515,3 +515,24 @@ listy poprawek dla inżyniera E3. Nowy widok „Kontrola schematów"
 - `node check_i18n.js` — kompletność tłumaczeń
 - `python test_multilang.py` — testy wielojęzyczności
 - Brak formalnego test runnera; testować ręcznie przez UI.
+
+## Diagram obwodu głównego — specyfikacja (ustalona z Adamem)
+
+Tor główny (`cp.main_path`, `circuitSvgForLoad` z `srcEnd`/`contPath`) rysujemy
+jako schemat ideowy BEZ ramek wokół symboli (skrzynki zostają tylko dla złączy
+wielopinowych):
+- **Bezpiecznik** (`withFuses`): topik jak w E3 + `F17 250A MEGA` (prąd i typ z
+  `zuken_ps_fuses.fuse_type`) + opis funkcji z sąsiednich RT (np. AUX GŁÓWNY
+  BEZPIECZNIK) tylko przy symbolu; piny oprawki U8:1/U8:2 przy końcówkach.
+- **Akumulator** (`withBatt`): para koniec + terminal RT w jednym symbolu
+  płytek, biegun + zwrócony do obwodu, zacisk przy swojej płytce.
+- **Przekaźnik** (`withRelays`): styk (piny 14/12 lub 30/87) + cewka 86/85
+  obok połączona linią przerywaną; dioda/rezystor/⏱ tylko gdy BOM je zna
+  (`relay_coils[*].suppression/timed`); klik w cewkę przewija do `#coil-*`.
+- **Zaciski RT/U** na torze: małe kółko + nazwa; opisy zawierające
+  bezpiecznik/fuse/Sicherung nie są powtarzane przy RT.
+- **Etykieta przewodu**: tylko numer, kolor, przekrój, długość (bez nazw
+  sygnałów E3 — idą do tooltipu); przewód z zapytania wyróżniony tłem.
+- **Zapytany element**: półprzezroczyste podświetlenie tła, nie ramka.
+- Pasek postępu: `zukenLoadingHtml` (+ placeholder `#zuken-circuit-loading`).
+
