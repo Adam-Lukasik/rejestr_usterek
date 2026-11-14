@@ -13531,21 +13531,38 @@ function circuitSvgForLoad(ld, connMeta, opts) {
     const out = [];
     for (let i = 0; i < arr.length; i++) {
       const nd = arr[i], nx = arr[i + 1];
-      if (nd.edge && nd.edge.internal === 'fuse' && nx && nx.edge
-          && nx.edge.internal === 'fuse' && !nd._relay && !nx._relay
-          && !nd._fuse && !nx._fuse) {
+      if (nd.edge && nd.edge.internal === 'fuse' && !nd._fuse && !nd._relay) {
         const prev = out[out.length - 1];
-        out.push({
-          dev: nd.dev, pin: '', clean: nd.clean,
-          edge: nd.edge, role: '', info: nd.info || '',
-          _fuse: {
-            a: prev ? { dev: prev.dev, clean: prev.clean, pin: prev.pin } : {},
-            b: { dev: nx.dev, clean: nx.clean, pin: nx.pin },
-            label: nx.edge.internal_label || nd.edge.internal_label || '',
-          },
-        });
-        i++;
-        continue;
+        if (nx && nx.edge && nx.edge.internal === 'fuse' && !nx._relay && !nx._fuse) {
+          // slot z elementem w raporcie: U8:1 -> F10 -> U8:2
+          out.push({
+            dev: nd.dev, pin: '', clean: nd.clean,
+            edge: nd.edge, role: '', info: nd.info || '',
+            _fuse: {
+              a: prev ? { dev: prev.dev, clean: prev.clean, pin: prev.pin } : {},
+              b: { dev: nx.dev, clean: nx.clean, pin: nx.pin },
+              label: nx.edge.internal_label || nd.edge.internal_label || '',
+            },
+          });
+          i++;
+          continue;
+        }
+        if (prev && prev.dev === nd.dev && prev.pin && nd.pin && prev.pin !== nd.pin) {
+          // slot domknięty syntetycznie (elementu brak w raporcie):
+          // pojedynczy hop -U:a -> -U:b z etykieta elementu (np. F17)
+          const lbl = nd.edge.internal_label || '';
+          out[out.length - 1] = {
+            dev: nd.dev, pin: '',
+            clean: (lbl.split(' ')[0]) || nd.clean,
+            edge: prev.edge, role: '', info: nd.info || '',
+            _fuse: {
+              a: { dev: prev.dev, clean: prev.clean, pin: prev.pin },
+              b: { dev: nd.dev, clean: nd.clean, pin: nd.pin },
+              label: lbl,
+            },
+          };
+          continue;
+        }
       }
       out.push(nd);
     }
@@ -13814,12 +13831,15 @@ function circuitSvgForLoad(ld, connMeta, opts) {
       svg += `<rect x="${x}" y="${y}" width="${boxW}" height="${hgt}" rx="7" fill="var(--bg-card, #fff)" stroke="#d97706" stroke-width="2"/>`;
       svg += `<text x="${x + 8}" y="${y + 15}" font-size="11" font-weight="700" fill="${fg}" font-family="monospace">⏛ ${escapeHtml(fz.label || nd.clean)}</text>`;
       if (nd.info) svg += `<text x="${x + 8}" y="${y + 28}" font-size="9" fill="var(--text-muted, #64748b)">${escapeHtml(String(nd.info).slice(0, 46))}</text>`;
-      const fAy = y + boxH + 6, fBy = y + hgt - 8;
-      svg += `<circle cx="${axm}" cy="${fAy}" r="3" fill="var(--bg-card, #fff)" stroke="#d97706" stroke-width="1.6"/>`;
-      svg += `<circle cx="${axm}" cy="${fBy}" r="3" fill="var(--bg-card, #fff)" stroke="#d97706" stroke-width="1.6"/>`;
-      const fw = 7, fy0 = fAy + 6, fh2 = fBy - 6 - fy0;
-      svg += `<rect x="${axm - fw}" y="${fy0}" width="${fw * 2}" height="${fh2}" fill="var(--bg-card, #fff)" stroke="#d97706" stroke-width="1.6"/>`;
-      svg += `<line x1="${axm - fw}" y1="${fy0}" x2="${axm + fw}" y2="${fy0 + fh2}" stroke="#d97706" stroke-width="1.4"/>`;
+      // topik jak na schemacie E3: waski pionowy prostokat na osi toru,
+      // kod -F10 przy nim, kolki oprawki jako male kola na koncach
+      const fAy = y + boxH + 4, fBy = y + hgt - 6, fw = 6;
+      svg += `<circle cx="${axm}" cy="${fAy}" r="2.6" fill="var(--bg-card, #fff)" stroke="#d97706" stroke-width="1.6"/>`;
+      svg += `<line x1="${axm}" y1="${fAy + 2.6}" x2="${axm}" y2="${fAy + 5}" stroke="#d97706" stroke-width="1.6"/>`;
+      svg += `<rect x="${axm - fw}" y="${fAy + 5}" width="${fw * 2}" height="${fBy - fAy - 10}" fill="var(--bg-card, #fff)" stroke="#d97706" stroke-width="1.6"/>`;
+      svg += `<line x1="${axm}" y1="${fBy - 5}" x2="${axm}" y2="${fBy - 2.6}" stroke="#d97706" stroke-width="1.6"/>`;
+      svg += `<circle cx="${axm}" cy="${fBy}" r="2.6" fill="var(--bg-card, #fff)" stroke="#d97706" stroke-width="1.6"/>`;
+      svg += `<text x="${axm + fw + 5}" y="${(fAy + fBy) / 2 + 3}" font-size="9" font-weight="700" fill="#b45309" font-family="monospace">-${escapeHtml(nd.clean)}</text>`;
       svg += `<text x="${axm - fw - 6}" y="${fAy + 3}" font-size="9" font-weight="700" text-anchor="end" fill="#b45309" font-family="monospace">${escapeHtml(slotPin(fz.a))}</text>`;
       svg += `<text x="${axm - fw - 6}" y="${fBy + 3}" font-size="9" font-weight="700" text-anchor="end" fill="#b45309" font-family="monospace">${escapeHtml(slotPin(fz.b))}</text>`;
       svg += '</g>';
