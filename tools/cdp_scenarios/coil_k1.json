@@ -1,0 +1,21 @@
+[
+ {
+  "name": "inject",
+  "ev": "(async()=>{ await ensureKnownDevs('PS011871'); const cp = await apiCall('/api/zuken/circuit-path?ps=PS011871&q=394'); ZUKEN_STATE.lastCircuit = cp; circuitShowCoil('K1'); return !!document.getElementById('circuit-overlay'); })()",
+  "sleep": 800
+ },
+ {
+  "sleep": 400
+ },
+ {
+  "shot": "_coil_view.png"
+ },
+ {
+  "name": "top",
+  "ev": "document.querySelector('#circuit-overlay .cov-scroll').scrollTop=0",
+  "sleep": 200
+ },
+ {
+  "shot": "_coil_top.png"
+ }
+]

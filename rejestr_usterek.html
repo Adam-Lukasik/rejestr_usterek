@@ -13466,7 +13466,8 @@ function circuitSvgForLoad(ld, connMeta, opts) {
   const feedPin = (ld.pins || []).find(p => p.role === 'feed') || (ld.pins || []).find(p => p !== gndPin);
   // tor główny woli ścieżkę przez styk przekaźnika — wtedy symbol K jest
   // na diagramie, a nie schowany w dymku odnogi
-  const pickEnd = list => list.find(e => e.via_relay && (e.role === 'source' || e.role === 'terminal'))
+  const pickEnd = list => (ld._coil && list.find(e => e.batt === '+'))
+    || list.find(e => e.via_relay && (e.role === 'source' || e.role === 'terminal'))
     || list.find(e => e.role === 'source' || e.role === 'terminal')
     || list.find(e => e.via_relay)
     || list[0];
@@ -14299,6 +14300,11 @@ function circuitShowCoil(clean) {
   }).join('');
   const back = `<button type="button" onclick="showCircuitDiagram()" style="margin:0 0 8px 0; padding:4px 10px; font-size:11px; font-weight:700; border:1px solid var(--border); border-radius:8px; background:var(--bg-card); color:var(--text-main); cursor:pointer;">◀ ${escapeHtml(t('js.zuken.diagramTitle'))}</button>`;
   circuitOverlay(`${t('js.zuken.coilCircuit')} — ${rc.clean}`, back + (body || `<div style="color:var(--text-muted); font-size:12px;">—</div>`), true);
+  setTimeout(() => {
+    const sc = document.querySelector('#circuit-overlay .cov-scroll');
+    const g = sc && [...sc.querySelectorAll('svg text')].find(x => (x.textContent || '').indexOf(rc.clean + ':8') >= 0);
+    if (sc && g) sc.scrollTop += g.getBoundingClientRect().top - sc.getBoundingClientRect().top - sc.clientHeight / 2;
+  }, 80);
 }
 
 function showCircuitDiagram() {
@@ -14326,6 +14332,7 @@ function circuitCoilPseudoLoad(rc, allCoils) {
       ends: byPin[pin],
     })),
     relay_coils: allCoils || [],
+    _coil: true,
   };
 }
 
