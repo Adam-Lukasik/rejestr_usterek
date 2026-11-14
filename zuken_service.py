@@ -11895,6 +11895,36 @@ _BAT_GND_RE = re.compile(
 _MINUS_TOKS = {'-', '\u2212', '\u2013', '\u2014'}
 
 
+_PDF_PAGE_CAPS = {}
+
+
+def _pdf_page_capacity_tokens(filepath, page_num):
+    """Pojemności baterii ('92Ah', '100 Ah') z pozycjami (x, y) — wspólny
+    cache tokenów ich nie łapie (regex etykiet), a to jedyny sposób na
+    pojemność akumulatora KFZ bez pozycji w BOM. Cache: pamięć procesu."""
+    key = (filepath, page_num)
+    if key in _PDF_PAGE_CAPS:
+        return _PDF_PAGE_CAPS[key]
+    items = []
+    if pypdf is not None:
+        try:
+            reader = _PDF_READERS.get(filepath)
+            if reader is None:
+                reader = pypdf.PdfReader(filepath)
+                _PDF_READERS[filepath] = reader
+            if 1 <= page_num <= len(reader.pages):
+                def _vis(text, cm, tm, font, size):
+                    t = (text or "").strip()
+                    if re.fullmatch(r"\d{1,4}\s?Ah", t, re.I):
+                        items.append((tm[4] * cm[0] + tm[5] * cm[2] + cm[4],
+                                      tm[4] * cm[1] + tm[5] * cm[3] + cm[5], t))
+                reader.pages[page_num - 1].extract_text(visitor_text=_vis)
+        except Exception:
+            return items
+    _PDF_PAGE_CAPS[key] = items
+    return items
+
+
 def _ps_battery_studs(cur, conn_ids, ps_code, adj):
     """Końcówki -RT przykręcone do biegunów akumulatora, odtworzone
     z geometrii schematu.
@@ -12057,6 +12087,13 @@ def _ps_battery_studs(cur, conn_ids, ps_code, adj):
                           and not wt.startswith(("VA0", "ELE", "GN"))),
                          default=None)
                 tag = (" " + bc[1]) if bc and bc[0] <= 150 ** 2 else ""
+                # pojemnosc z symbolu ('92Ah') — token pod biegunami
+                ah = min((((wx - cx) ** 2 + (wy - my) ** 2, wt)
+                          for wx, wy, wt in _pdf_page_capacity_tokens(
+                              schem_path, pg) if wy <= my + 30),
+                         default=None)
+                if ah and ah[0] <= 200 ** 2:
+                    tag += " " + ah[1].replace(" ", "")
                 aku_seq += 1
                 bdev = f"{loc}-AKU{aku_seq}" if loc else f"-AKU{aku_seq}"
                 blabel = "AKU" + tag

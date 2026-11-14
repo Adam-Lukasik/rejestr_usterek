@@ -13737,7 +13737,7 @@ function circuitSvgForLoad(ld, connMeta, opts) {
     nodeH[i] = nd._relay
       ? (nd._relay.coil && (nd._relay.coil.ends || []).length ? 96 : 64)
       : (nd._fuse ? 70
-        : nd._batt ? 52
+        : nd._batt ? 56
         : nd._term ? 10
         : nd._splice ? SPLICE_R * 2
         : nd._bar ? 18 : boxH + (gh ? gh + 6 : 0));
@@ -13936,7 +13936,20 @@ function circuitSvgForLoad(ld, connMeta, opts) {
       svg += `<text x="${axm + 20}" y="${pPlus + 4}" font-size="11" font-weight="800" fill="${col}" font-family="monospace">${bt.pole}</text>`;
       svg += `<text x="${axm - 20}" y="${(bt.pole === '−' ? pMinus : pPlus) + 3}" font-size="9" font-weight="700" text-anchor="end" fill="#475569" font-family="monospace">${escapeHtml(termName)}</text>`;
       svg += `<text x="${axm + 38}" y="${y + 14}" font-size="12" font-weight="800" fill="${fg}" font-family="monospace">🔋 ${escapeHtml(nd.clean)}</text>`;
-      if (nd.info) svg += `<text x="${axm + 38}" y="${y + 27}" font-size="9" fill="var(--text-muted, #64748b)">${escapeHtml(String(nd.info).slice(0, 60))}</text>`;
+      // opis baterii: z BOM (producent + artykul + opis) albo, dla
+      // akumulatora rekonstruowanego z rysunku (AKU), etykieta symbolu
+      // (KFZ, pojemnosc) i informacja, ze to akumulator pojazdu bazowego
+      const bHalf = (((connMeta || {})[nd.clean] || {}).halves || {});
+      const bh0 = bHalf[Object.keys(bHalf)[0]] || null;
+      let bLines;
+      if (bh0) bLines = [[bh0.supplier, bh0.article].filter(Boolean).join(' '), bh0.desc || ''];
+      else if (/^AKU/i.test(nd.clean || '')) {
+        const lblRest = String(bt.label || '').replace(/^AKU\s*/i, '').trim().split(/\s+/).filter(Boolean).join(' · ');
+        bLines = [t('js.zuken.baseBattery') + (lblRest ? ' · ' + lblRest : ''), nd.info || ''];
+      } else bLines = [nd.info || '', ''];
+      bLines.filter(Boolean).forEach((ln, k) => {
+        svg += `<text x="${axm + 38}" y="${y + 27 + k * 12}" font-size="9" ${k ? 'fill="var(--text-muted, #64748b)"' : 'font-weight="700" fill="var(--text-main, #0f172a)"'}>${escapeHtml(String(ln).slice(0, 64))}</text>`;
+      });
       svg += '</g>';
       return;
     }
@@ -13983,13 +13996,14 @@ function circuitSvgForLoad(ld, connMeta, opts) {
       svg += `<line x1="${axm}" y1="${pBy + 3}" x2="${axm}" y2="${y + hgt}" stroke="${col}" stroke-width="2.2"/>`;
       svg += `<text x="${axm - 8}" y="${pAy + 3}" font-size="9" font-weight="700" text-anchor="end" fill="#0891b2" font-family="monospace">${escapeHtml(pinA)}</text>`;
       svg += `<text x="${axm - 8}" y="${pBy + 3}" font-size="9" font-weight="700" text-anchor="end" fill="#0891b2" font-family="monospace">${escapeHtml(pinB)}</text>`;
+      svg += '</g>';
       let textX = axm + 26;
       if (rl.coil && (rl.coil.ends || []).length) {
-        const rc0 = rl.coil, coilId = 'coil-' + (rc0.clean || nd.clean);
+        const rc0 = rl.coil;
         const crx = axm + 52, crw = 14, cry0 = y + 20, crH = hgt - 40, sup = rc0.suppression || '';
         const cpins = [...new Set((rc0.ends || []).map(e => e.coil_pin_name || e.coil_pin).filter(Boolean))].slice(0, 2).sort((a, b) => (parseInt(b, 10) || 0) - (parseInt(a, 10) || 0));
         svg += `<line x1="${axm + 6}" y1="${midY}" x2="${crx}" y2="${midY}" stroke="${col}" stroke-width="1.2" stroke-dasharray="3 2"/>`;
-        svg += `<g style="cursor:pointer" onclick="circuitGoCoil(this, event, '${escapeHtml(coilId)}')"><title>${escapeHtml(t('js.zuken.coilCircuit'))}</title>`;
+        svg += `<g style="cursor:pointer" onclick="circuitShowCoil('${escapeHtml(rc0.clean || nd.clean)}')"><title>${escapeHtml(t('js.zuken.coilCircuit'))}</title>`;
         svg += `<rect x="${crx}" y="${cry0}" width="${crw}" height="${crH}" fill="var(--bg-card, #fff)" stroke="${col}" stroke-width="1.5"/>`;
         svg += `<line x1="${crx + crw / 2}" y1="${y + 8}" x2="${crx + crw / 2}" y2="${cry0}" stroke="${col}" stroke-width="1.4"/>`;
         svg += `<line x1="${crx + crw / 2}" y1="${cry0 + crH}" x2="${crx + crw / 2}" y2="${y + hgt - 8}" stroke="${col}" stroke-width="1.4"/>`;
@@ -14013,6 +14027,7 @@ function circuitSvgForLoad(ld, connMeta, opts) {
         svg += '</g>';
         textX = crx + crw + (sup ? 36 : 16);
       }
+      svg += `<g class="ent-link" data-ent-q="${escapeHtml(nd.clean)}" style="cursor:pointer"><title>${escapeHtml(t('js.zuken.entLinkTitle', { v: nd.clean }))}</title>`;
       svg += `<text x="${textX}" y="${midY - 1}" font-size="12" font-weight="800" fill="${fg}" font-family="monospace" ${halo}>${escapeHtml(nd.clean)}</text>`;
       const rInfo = nd.info || '';
       if (rInfo) svg += `<text x="${textX}" y="${midY + 11}" font-size="9" fill="var(--text-muted, #64748b)" ${halo}>${escapeHtml(String(rInfo).slice(0, 34))}</text>`;
@@ -14143,19 +14158,24 @@ function scrollToCircuitSeed(root) {
   root.scrollTop += (aRect.top + aRect.height / 2) - (cRect.top + cRect.height / 2);
 }
 
-function circuitGoCoil(el, ev, id) {
-  if (ev) ev.stopPropagation();
-  // sekcja cewki w tym samym kontenerze co kliknięty symbol (nakładka
-  // powiększenia ma własną kopię — getElementById trafiałby w kartę pod nią)
-  const root = el.closest('#circuit-overlay') || document;
-  const target = [...root.querySelectorAll('[id]')].find(n => n.id === id)
-    || [...document.querySelectorAll('[id]')].find(n => n.id === id);
-  if (!target) return;
-  target.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  const prev = target.style.boxShadow;
-  target.style.transition = 'box-shadow .3s';
-  target.style.boxShadow = '0 0 0 3px rgba(8,145,178,0.55)';
-  setTimeout(() => { target.style.boxShadow = prev; }, 1600);
+function circuitShowCoil(clean) {
+  const cp = ZUKEN_STATE.lastCircuit;
+  if (!cp) return;
+  const all = [];
+  (cp.loads || []).forEach(l => (l.relay_coils || []).forEach(rc => { if (!all.some(c => c.device === rc.device)) all.push(rc); }));
+  const rc = all.find(c => c.clean === clean);
+  if (!rc) return;
+  // cewka wybranego przekaźnika + przekaźniki sterujące jej zasilaniem
+  const chain = [rc, ...all.filter(c => c !== rc && c.drives === rc.clean)];
+  const meta = cp.conn_meta || {};
+  const body = chain.map(c => {
+    const svg = circuitSvgForLoad(circuitCoilPseudoLoad(c, all), meta);
+    return svg ? `<div style="margin:0 0 10px 0; padding:7px 10px; border:1px dashed #0891b2; border-radius:6px; background:rgba(8,145,178,0.05);">
+      <div style="font-size:11px; font-weight:800; color:#0e7490;">🔁 ${escapeHtml(t('js.zuken.coilCircuit'))} — ${escapeHtml(c.clean)}${c.function ? ' · ' + escapeHtml(c.function) : ''}${c.coil_label ? ' · ' + escapeHtml(c.coil_label) : ''}</div>
+      ${svg}</div>` : '';
+  }).join('');
+  const back = `<button type="button" onclick="showCircuitDiagram()" style="margin:0 0 8px 0; padding:4px 10px; font-size:11px; font-weight:700; border:1px solid var(--border); border-radius:8px; background:var(--bg-card); color:var(--text-main); cursor:pointer;">◀ ${escapeHtml(t('js.zuken.diagramTitle'))}</button>`;
+  circuitOverlay(`${t('js.zuken.coilCircuit')} — ${rc.clean}`, back + (body || `<div style="color:var(--text-muted); font-size:12px;">—</div>`), true);
 }
 
 function showCircuitDiagram() {
