@@ -110,6 +110,9 @@ else:
     check("K1: cewka dochodzi do plusa baterii", any(e.get("batt") == "+" for e in _ce),
           str([(e.get("clean"), e.get("role"), e.get("batt")) for e in _ce])[:200])
 
+    _bn = {e["clean"]: e.get("batt_name") for l in probe["loads"] for p in l["pins"] for e in p["ends"] if e.get("batt")}
+    check("akumulatory: G3=AUX, AKU1=CHASSIS", _bn.get("G3") == "AUX" and _bn.get("AKU1") == "CHASSIS", str(_bn))
+
     # F9 / F11 — bezpieczniki: dwie strony, tor główny
     cp = trace(PS1, "F9")
     pins = [p["pin"] for l in cp["loads"] for p in l["pins"]]

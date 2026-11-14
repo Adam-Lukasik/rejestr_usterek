@@ -5,17 +5,13 @@
   "sleep": 800
  },
  {
-  "sleep": 400
+  "ev": "(()=>{const sc=document.querySelector('#circuit-overlay .cov-scroll'); const t=[...sc.querySelectorAll('svg text')].map(x=>x.textContent).filter(x=>/Czerwony|Bia/.test(x)); return t.join(' || ')})()"
  },
  {
-  "shot": "_coil_view.png"
- },
- {
-  "name": "top",
-  "ev": "document.querySelector('#circuit-overlay .cov-scroll').scrollTop=0",
+  "ev": "(()=>{const sc=document.querySelector('#circuit-overlay .cov-scroll'); const g=[...sc.querySelectorAll('svg text')].find(x=>/S300/.test(x.textContent)); sc.scrollTop += g.getBoundingClientRect().top - sc.getBoundingClientRect().top - 150; return 1})()",
   "sleep": 200
  },
  {
-  "shot": "_coil_top.png"
+  "shot": "_c2.png"
  }
 ]

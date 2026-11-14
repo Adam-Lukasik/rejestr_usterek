@@ -7245,6 +7245,7 @@ def _wire_hop(fdev, fpin, tdev, tpin, row):
         "internal": (row.get("_internal") or "") if isinstance(row, dict) else "",
         "internal_label": (row.get("_internal_label") or "") if isinstance(row, dict) else "",
         "batt_pin": (row.get("_batt_pin") or "") if isinstance(row, dict) else "",
+        "batt_name": (row.get("_batt_name") or "") if isinstance(row, dict) else "",
         "bar_holder": (row.get("_bar_holder") or "") if isinstance(row, dict) else "",
         "relay_dev": (row.get("_relay_dev") or "") if isinstance(row, dict) else "",
         "pin_names": (row.get("_pin_names") or {}) if isinstance(row, dict) else {},
@@ -8343,6 +8344,21 @@ def _circuit_extend_adjacency(cur, adj, ps_code, dev_funcs=None, bom_names=None)
         adj.setdefault(_snode, {})
         for _nd in [nd for nd in list(adj.keys()) if nd[0] == _rtd]:
             _link_nodes(_nd, _snode, "stud", _slbl or _sdev)
+    # nazwa akumulatora jak na panelu Carnation (AUX / COMMS / CHASSIS) —
+    # z nazw sygnałów przewodów przy oczkach -RT jego biegunów
+    # ('BATTERY FUSE AUX', 'COMMS GND', 'CHASS MAIN FEED')
+    _bnames = {}
+    for _rtd, (_bdev, _bpol, _blbl) in (_bats or {}).items():
+        for _nd in [nd for nd in list(adj.keys()) if nd[0] == _rtd]:
+            for _r in adj.get(_nd, {}).values():
+                _sn = ((_r.get("signal_name") if isinstance(_r, dict)
+                        else (_r["signal_name"] if _r else "")) or "").upper()
+                for _m in re.findall(r"(AUX|COMMS?|CHASS)", _sn):
+                    _k = {"COMM": "COMMS", "CHASS": "CHASSIS"}.get(_m, _m)
+                    _bnames.setdefault(_bdev, {}).setdefault(_k, 0)
+                    _bnames[_bdev][_k] += 1
+    _bnames = {d: max(c.items(), key=lambda kv: kv[1])[0]
+               for d, c in _bnames.items()}
     for _rtd, (_bdev, _bpol, _blbl) in (_bats or {}).items():
         _bnode = (_bdev, _bpol)
         adj.setdefault(_bnode, {})
@@ -8352,6 +8368,7 @@ def _circuit_extend_adjacency(cur, adj, ps_code, dev_funcs=None, bom_names=None)
                 _br = adj.get(_nd, {}).get(_bnode)
                 if isinstance(_br, dict):
                     _br["_batt_pin"] = _bpol
+                    _br["_batt_name"] = _bnames.get(_bdev, "")
 
     # ── łatki ręczne 'device_link' / 'power_rail' (zuken_data_patches):
     # przejście wewnętrzne aparatu spoza raportu (hebel/stycznik/blok —
@@ -9363,6 +9380,9 @@ def _trace_circuit_impl(ps_code, query, lang="pl"):
                     "via_fuse": any(h.get("internal") == "fuse" for h in hops),
                     "via_relay": any(h.get("internal") == "relay" for h in hops),
                     "via_stud": any(h.get("internal") == "stud" for h in hops),
+                    "batt_name": next((h.get("batt_name") for h in hops
+                                       if h.get("internal") == "battery"
+                                       and h.get("batt_name")), ""),
                     "batt": ("+" if any(h.get("internal") == "battery"
                                         and h.get("batt_pin") == "+"
                                         for h in hops)
@@ -9637,6 +9657,9 @@ def _trace_circuit_impl(ps_code, query, lang="pl"):
             "via_fuse": any(h.get("internal") == "fuse" for h in hops),
             "via_relay": any(h.get("internal") == "relay" for h in hops),
             "via_stud": any(h.get("internal") == "stud" for h in hops),
+            "batt_name": next((h.get("batt_name") for h in hops
+                               if h.get("internal") == "battery"
+                               and h.get("batt_name")), ""),
             "batt": ("+" if any(h.get("internal") == "battery"
                                 and h.get("batt_pin") == "+" for h in hops)
                      else "-" if any(h.get("internal") == "battery"
