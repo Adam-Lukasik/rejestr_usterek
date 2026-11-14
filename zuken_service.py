@@ -8427,6 +8427,57 @@ def _circuit_extend_adjacency(cur, adj, ps_code, dev_funcs=None, bom_names=None)
             _mc = clean_device_code(_md) or ""
             if not _CIRCUIT_PASS_RE.match(_mc) and not _CIRCUIT_RT_RE.match(_mc):
                 internal_devs.add(_md)
+
+    # ── atrybuty cewki przekaźnika z BOM: tłumienie odrzutu (dioda /
+    # rezystor równoległy) i przekaźniki czasowe — diagram rysuje właściwy
+    # symbol zamiast diody "na sztywno" przy każdej cewce.
+    try:
+        if ps_code:
+            _attr_rows = cur.execute(
+                "SELECT device_code, device_clean, relay_type, description,"
+                " function, article_number FROM zuken_ps_relays WHERE ps_code = ?",
+                (ps_code,)).fetchall()
+        else:
+            _attr_rows = cur.execute(
+                "SELECT device_code, device_clean, relay_type, description,"
+                " function, article_number FROM zuken_ps_relays").fetchall()
+        _attr = {}
+        for _r in _attr_rows:
+            _txt = " ".join(str(_r[k] or "") for k in
+                            ("relay_type", "description", "article_number")).lower()
+            _a = {
+                "suppression": ("diode" if re.search(
+                                    r"diod|suppress|sperrdiode|freilauf|4RD", _txt)
+                                else "resistor" if re.search(
+                                    r"resistor|widerstand|rezyst", _txt)
+                                else ""),
+                "timed": bool(re.search(
+                    r"timer|czasow|zeitverz|delay|time[- ]?delay|off[- ]?delay", _txt)),
+            }
+            _fn = " ".join(str(_r["function"] or "").split()).upper()
+            for _k in (_r["device_code"], _r["device_clean"], _fn):
+                if _k:
+                    _attr.setdefault(_k, _a)
+        for _dev, _info in relay_coils.items():
+            # przekaźnik w gnieździe (X294/X318/X363): cewka jest kluczowana
+            # gniazdem, więc typ dopasowujemy też po funkcji z BOM — tak jak
+            # robi to mapowanie gniazdo->K wyżej
+            _fns = {(_info.get("function") or "").upper(),
+                    ((dev_funcs or {}).get(_dev) or "").upper(),
+                    ((dev_funcs or {}).get((_info.get("clean") or "").strip()) or "").upper(),
+                    ((dev_funcs or {}).get((_info.get("coil_label") or "").strip()) or "").upper()}
+            _a = (_attr.get(_dev)
+                  or _attr.get((_info.get("clean") or "").strip())
+                  or _attr.get((_info.get("coil_label") or "").strip())
+                  or next((_attr[f] for f in _fns if f and f in _attr), None)
+                  or next((_attr[tok] for f in _fns
+                           for tok in re.findall(r"\bK\d+\b", f)
+                           if tok in _attr), None))
+            if _a:
+                _info["suppression"] = _a["suppression"]
+                _info["timed"] = _a["timed"]
+    except Exception:
+        pass
     return adj, internal_devs, relay_coils
 
 
@@ -9600,6 +9651,8 @@ def _trace_circuit_impl(ps_code, query, lang="pl"):
         return {"device": rd, "clean": _relay_label(rd),
                 "function": _relay_func(rd),
                 "coil_label": info.get("coil_label") or "",
+                "suppression": info.get("suppression") or "",
+                "timed": bool(info.get("timed")),
                 "ends": coil_ends[:6]}
 
     def _coils_cascade(rds, limit=6):

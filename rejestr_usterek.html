@@ -13944,14 +13944,25 @@ function circuitSvgForLoad(ld, connMeta, opts) {
         const rc0 = rl.coil, coilId = 'coil-' + (rc0.clean || nd.clean);
         const crx = axm + 64, crw = 16, cry0 = y + boxH + 2, crH = hgt - boxH - 16;
         svg += `<g style="cursor:pointer" onclick="event.stopPropagation();var _ce=document.getElementById('${escapeHtml(coilId)}');if(_ce)_ce.scrollIntoView({behavior:'smooth',block:'center'});"><title>${escapeHtml(t('js.zuken.coilCircuit'))}</title>`;
-        // dioda odrzutu (trojkat + kreska) rownolegle do cewki
-        const ddx = crx - 13, dcy = cry0 + crH / 2;
-        svg += `<line x1="${ddx}" y1="${cry0 + 2}" x2="${ddx}" y2="${dcy - 5}" stroke="${rs.stroke}" stroke-width="1.1"/>`;
-        svg += `<line x1="${ddx}" y1="${dcy + 5}" x2="${ddx}" y2="${cry0 + crH - 2}" stroke="${rs.stroke}" stroke-width="1.1"/>`;
-        svg += `<path d="M${ddx - 4} ${dcy + 5} L${ddx + 4} ${dcy + 5} L${ddx} ${dcy - 5} Z" fill="${rs.stroke}"/>`;
-        svg += `<line x1="${ddx - 4}" y1="${dcy - 6}" x2="${ddx + 4}" y2="${dcy - 6}" stroke="${rs.stroke}" stroke-width="1.5"/>`;
-        svg += `<line x1="${crx - 1}" y1="${cry0}" x2="${ddx}" y2="${cry0}" stroke="${rs.stroke}" stroke-width="1.1"/>`;
-        svg += `<line x1="${crx - 1}" y1="${cry0 + crH}" x2="${ddx}" y2="${cry0 + crH}" stroke="${rs.stroke}" stroke-width="1.1"/>`;
+        // tłumienie odrzutu rownolegle do cewki — tylko gdy BOM je zna:
+        // 'diode' -> symbol diody, 'resistor' -> zygzak rezystora,
+        // 'timed' (przekaźnik czasowy) -> znacznik ⏱ przy cewce
+        const sup = rc0.suppression || '';
+        if (sup) {
+          const ddx = crx - 13, dcy = cry0 + crH / 2;
+          svg += `<line x1="${ddx}" y1="${cry0 + 2}" x2="${ddx}" y2="${dcy - 5}" stroke="${rs.stroke}" stroke-width="1.1"/>`;
+          svg += `<line x1="${ddx}" y1="${dcy + 5}" x2="${ddx}" y2="${cry0 + crH - 2}" stroke="${rs.stroke}" stroke-width="1.1"/>`;
+          if (sup === 'resistor') {
+            svg += `<path d="M${ddx} ${dcy - 5} l-3 2 l6 2 l-6 2 l6 2 l-3 2" fill="none" stroke="${rs.stroke}" stroke-width="1.3"/>`;
+            svg += `<text x="${ddx - 7}" y="${dcy + 3}" font-size="7" text-anchor="end" fill="${rs.stroke}">R</text>`;
+          } else {
+            svg += `<path d="M${ddx - 4} ${dcy + 5} L${ddx + 4} ${dcy + 5} L${ddx} ${dcy - 5} Z" fill="${rs.stroke}"/>`;
+            svg += `<line x1="${ddx - 4}" y1="${dcy - 6}" x2="${ddx + 4}" y2="${dcy - 6}" stroke="${rs.stroke}" stroke-width="1.5"/>`;
+          }
+          svg += `<line x1="${crx - 1}" y1="${cry0}" x2="${ddx}" y2="${cry0}" stroke="${rs.stroke}" stroke-width="1.1"/>`;
+          svg += `<line x1="${crx - 1}" y1="${cry0 + crH}" x2="${ddx}" y2="${cry0 + crH}" stroke="${rs.stroke}" stroke-width="1.1"/>`;
+        }
+        if (rc0.timed) svg += `<text x="${crx + crw + 4}" y="${cry0 + 10}" font-size="10" title="${escapeHtml(t('js.zuken.timedRelay'))}">⏱</text>`;
         svg += `<rect x="${crx}" y="${cry0}" width="${crw}" height="${crH}" fill="none" stroke="${rs.stroke}" stroke-width="1.4"/>`;
         const cpins = [...new Set((rc0.ends || []).map(e => e.coil_pin_name || e.coil_pin).filter(Boolean))].slice(0, 2);
         (nd._coilY || []).forEach((py, k) => {
