@@ -13666,7 +13666,10 @@ function circuitSvgForLoad(ld, connMeta, opts) {
     : h.internal === 'busbar' ? `▭ ${t('js.zuken.busbar')}${h.internal_label ? ' ' + h.internal_label : ''}`
     : h.internal === 'battery' ? `🔋 ${t('js.zuken.batteryStud')}${h.internal_label ? ' ' + h.internal_label : ''}`
     : h.internal === 'stud' ? `⏺ ${t('js.zuken.deviceStud')}${h.internal_label ? ' ' + h.internal_label : ''}`
-    : wireLabelAttrs(h).join(' · ');
+    // nazwa sygnału będąca oznaczeniem bezpiecznika ('BEZPIECZNIK
+    // AKUMULATORA AUX', 'AUX MAIN FUSE') myli przy symbolu topika —
+    // pomijamy ją na etykiecie przewodu (zostaje nr, kolor, przekrój)
+    : wireLabelAttrs(h).filter(a => !/bezpiecznik|sicherung|\bfuse\b/i.test(a)).join(' · ');
   const boxW = 210, boxH = 34, cx = 30, stubW = 250;
   // odnogi za najdłuższą etykietą przewodu — pełny opis (nr, kolor, przekrój, długość) czytelny
   const maxLbl = trunk2.concat(gndChain2).reduce((m, nd) => Math.max(m, nd.edge ? edgeLabel(nd.edge).length : 0), 0);

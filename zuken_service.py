@@ -9964,6 +9964,14 @@ def _trace_circuit_impl(ps_code, query, lang="pl"):
             for h in (e.get("path") or []):
                 if h.get("internal") == "fuse":
                     lbl = _fuse_edge_label(h.get("from") or "")
+                    if not lbl:
+                        # syntetyczne domknięcie slotu -U: etykieta to sam
+                        # kod elementu (F17) — dokładamy prąd i typ z zestawu
+                        _il = (h.get("internal_label") or "").strip()
+                        _fc0 = _il.split()[0] if _il else ""
+                        if (_FUSE_ELEM_RE.match(_fc0)
+                                and fuse_rt.get(_fc0)):
+                            lbl = f"{_fc0} {fuse_rt[_fc0]}"
                     if lbl:
                         h["internal_label"] = lbl
                 if _FUSE_HOLDER_RE.match(h.get("to_clean") or ""):
@@ -12311,12 +12319,15 @@ def _fuse_holder_fuses(cur, conn_ids, ps_code, adj, rails=None):
     ratings, hold_by_code = {}, {}
     try:
         for fr in cur.execute(
-                "SELECT device_clean, rating, holder_code"
+                "SELECT device_clean, rating, fuse_type, holder_code"
                 "  FROM zuken_ps_fuses WHERE ps_code = ?",
                 (ps_code or "",)):
             fc = (fr["device_clean"] or "").strip()
             if fc:
-                ratings.setdefault(fc, (fr["rating"] or "").strip())
+                _rt = " ".join(x for x in ((fr["rating"] or "").strip(),
+                                           (fr["fuse_type"] or "").strip())
+                               if x and x.upper() != "UNI")
+                ratings.setdefault(fc, _rt)
             hc = (fr["holder_code"] or "").strip()
             if hc and fc:
                 hold_by_code.setdefault(hc, fc)
