@@ -13806,7 +13806,7 @@ function circuitSvgForLoad(ld, connMeta, opts) {
   if (downPin) (downPin.ends || []).forEach(e => { if (e !== downEnd) addStub(e); });
   if (g) (gndPin.ends || []).forEach(e => { if (e !== g) addStub(e); });
 
-  const wireNum = h => h.wire_number || (/^\d+[A-Za-z]?(_\d+)?$/.test(h.signal || '') ? h.signal : '');
+  const wireNum = h => h.wire_number || (/^\d+[A-Za-z]?\d*(_\d+[A-Za-z]?\d*)?$/.test(h.signal || '') ? h.signal : '');
   const edgeLabel = h => h.patched ? `🩹 ${t('js.audit.patchedEdgeShort')}`
     : (h.internal === 'fuse' || h.internal === 'relay')
     ? `⚡ ${h.internal_label || h.internal}`
