@@ -206,6 +206,16 @@ Wersja wielojęzykowa: `SUPPORTED_LANGS = ("pl", "en", "de")`, tłumaczenia w
   dostaje w `trace_circuit` post-pass rozdzielający końce na piny
   '1'/'2' wg kołka slotu pierwszego przeskoku 'fuse' (inaczej diagram
   rysuje jedną grupę ~11 odnóg zamiast dwóch stron jak przy F49).
+  Krawędzie u_split (szyna↔kołek, kołek↔element, element↔kołek) niosą
+  meta `_rail_*` jak model elem↔szyna; `_rail_violation` w
+  `trace_circuit` po wejściu na szynę przepuszcza tylko fizyczne
+  odczepy (kołki/terminale) i element zasilający `feed` — przejście
+  PRZEZ element innego członka = obcy obwód (gdy `feed` pusty —
+  każdy element). Członkowie szyny dostają syntetyczne końce roli
+  'fuse' (odnogi klikalne w ich obwody, jak `sibs` przy zworach);
+  frontend na węźle SZYNA przycina odnogę do przeskoku ZA kołkiem
+  -U (pokazuje przewód/zacisk albo element, `e._beyond` dopisuje
+  '→ SZYNAx/SPx' gdy tor dociera do kolejnego węzła zbiorczego).
   Banki narysowane bez etykiet -F (np. =CAB na str. 1 sch.2
   PS011871 — sloty U3–U7 = F11–F15, fabryczne bezpieczniki MAN,
   dolna szyna = akumulator pojazdu bazowego): pass w

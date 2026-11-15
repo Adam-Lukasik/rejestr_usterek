@@ -660,7 +660,8 @@ def det_device_unconnected(ctx):
         code = d["device_code"] or ""
         cl = d["device_clean"] or zs.clean_device_code(code)
         if (not cl or cl in conn or not _APP_RE.match(cl) or d["category"] in _SKIP_BOM_CATS
-                or code.startswith("=BOM") or cl not in syms):
+                or code.startswith("=BOM") or cl not in syms
+                or zs.is_block_desc(d["description"])):
             continue
         out.append(_f(f"D01|{code}", "device_unconnected", "device_unconnected",
                       {"dev": code, "art": d["article_number"] or "—",
@@ -1079,6 +1080,9 @@ def _bats(ctx):
     (_ps_device_studs). Klucze = rt_dev."""
     def f():
         out = dict(
+            zs._ps_block_studs(ctx.cur, ctx.conn_ids, ctx.ps,
+                               _wadj(ctx)) or {})
+        out.update(
             zs._ps_device_studs(ctx.cur, ctx.conn_ids, ctx.ps,
                                 _wadj(ctx)) or {})
         out.update(

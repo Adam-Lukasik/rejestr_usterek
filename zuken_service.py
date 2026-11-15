@@ -8297,6 +8297,16 @@ def _circuit_extend_adjacency(cur, adj, ps_code, dev_funcs=None, bom_names=None)
                 _link_nodes(rail_node, _feed, "busbar", label)
                 _link_nodes(_feed, elem_node, "fuse", label)
                 _link_nodes(elem_node, _out, "fuse", label)
+                # meta _rail_* jak w modelu elem<->szyna — trace_circuit
+                # wpuszcza na szynę tylko fizyczne odczepy i element
+                # zasilający, bez wchodzenia w obwody sąsiednich -F
+                for _na, _nb in ((rail_node, _feed), (_feed, elem_node),
+                                 (elem_node, _out)):
+                    _rr = adj.get(_na, {}).get(_nb)
+                    if isinstance(_rr, dict) and "_rail_rail" not in _rr:
+                        _rr["_rail_rail"] = rail_dev
+                        _rr["_rail_elem"] = m["elem"]
+                        _rr["_rail_feed"] = g["feed"] or ""
                 internal_devs.add(m["elem"])
                 continue
             _link_nodes(slot_node, elem_node, "fuse", label)
@@ -8308,6 +8318,20 @@ def _circuit_extend_adjacency(cur, adj, ps_code, dev_funcs=None, bom_names=None)
                 adj[elem_node][rail_node] = rrow
                 adj[rail_node][elem_node] = rrow
             internal_devs.add(m["elem"])
+
+    # bezpiecznik w oprawce/slocie nieobecnym w raporcie (np. F21 250A MEGA
+    # w =BOX+BF-U120: RT53 nad, RT48 pod) — raport go nie zna, ale tor
+    # prądu przechodzi przez element: dwa terminale z geometrii łączymy
+    # krawędzią 'fuse' (bez bezpieczników na szynach-zworach — te mają
+    # własny model 'bars')
+    _fbars = _rails.get("bars") or {}
+    for _fc, _tl in (_rails.get("terms") or {}).items():
+        if len(_tl) != 2 or _fc in _fbars or _tl[0] == _tl[1]:
+            continue
+        _fa = [nd for nd in adj if nd[0] == _tl[0]]
+        _fb = [nd for nd in adj if nd[0] == _tl[1]]
+        if len(_fa) == 1 and len(_fb) == 1:
+            _link_nodes(_fa[0], _fb[0], "fuse", _fc)
 
     # rozszczepiony slot spoza banku (samotny -U jak F17→=BOX+BF-U2
     # na PS011871): brak krawędzi elementu między kołkami — oba kołki
@@ -8337,6 +8361,15 @@ def _circuit_extend_adjacency(cur, adj, ps_code, dev_funcs=None, bom_names=None)
         _dstud = _ps_device_studs(cur, _rci, ps_code, adj)
     except Exception:
         _bats, _dstud = {}, {}
+    try:
+        _blocks = _ps_block_devices(cur, _ps_project_ids(cur, ps_code)[1])
+        _bstud = (_ps_block_studs(cur, _ps_project_ids(cur, ps_code)[0],
+                                  ps_code, adj) if _blocks else {})
+    except Exception:
+        _blocks, _bstud = {}, {}
+    _dstud = dict(_dstud or {})
+    for _rtd, _bv in _bstud.items():
+        _dstud.setdefault(_rtd, _bv)
     for _rtd, (_sdev, _spin, _slbl) in (_dstud or {}).items():
         if _rtd in (_bats or {}):
             continue
@@ -8453,6 +8486,20 @@ def _circuit_extend_adjacency(cur, adj, ps_code, dev_funcs=None, bom_names=None)
             _mc = clean_device_code(_md) or ""
             if not _CIRCUIT_PASS_RE.match(_mc) and not _CIRCUIT_RT_RE.match(_mc):
                 internal_devs.add(_md)
+
+    # ── bloki przyłączeniowe (BOM 'Blok …'): zwora — wszystkie piny bloku
+    # i dochodzące do nich przewody to jeden węzeł (hub (blok, ''))
+    for _bd in _blocks:
+        _bn = [nd for nd in list(adj) if nd[0] == _bd]
+        if not _bn:
+            continue
+        _hub = (_bd, "")
+        adj.setdefault(_hub, {})
+        _bl = clean_device_code(_bd) or _bd
+        for _nd in _bn:
+            if _nd != _hub:
+                _link_nodes(_nd, _hub, "busbar", _bl)
+        internal_devs.add(_bd)
 
     # ── atrybuty cewki przekaźnika z BOM: tłumienie odrzutu (dioda /
     # rezystor równoległy) i przekaźniki czasowe — diagram rysuje właściwy
@@ -8769,6 +8816,15 @@ def _trace_circuit_impl(ps_code, query, lang="pl"):
     glossary = get_glossary_dict()
     dev_funcs = _device_function_map(cur, bom_ids)
     bom_names = _device_bom_name_map(cur, bom_ids)
+    block_devs_map = _ps_block_devices(cur, bom_ids)
+    block_cleans = {clean_device_code(d) or d for d in block_devs_map}
+
+    def _is_stud_hop(h):
+        # szpilka bloku (zwora) to zwykły węzeł toru, nie szpilka aparatu
+        return (h.get("internal") == "stud"
+                and h.get("from_clean") not in block_cleans
+                and h.get("to_clean") not in block_cleans)
+
     adj, internal_devs, relay_coils = _circuit_extend_adjacency(
         cur, adj, ps_code, dev_funcs, bom_names)
     # indeksy przekaźników: nazwa -> urządzenie i węzły styków roboczych
@@ -8785,11 +8841,27 @@ def _trace_circuit_impl(ps_code, query, lang="pl"):
             node_relay.setdefault(cnd, rdev)
     rail_nodes = set()
     rail_elems = set()
-    for (rd_d, rd_p), rd_nbrs in adj.items():
+    rail_members = {}
+    for rd_node, rd_nbrs in adj.items():
         for rd_nb, rd_row in rd_nbrs.items():
-            if isinstance(rd_row, dict) and rd_row.get("_rail_rail"):
-                rail_nodes.add(rd_row["_rail_rail"])
-                rail_elems.add(rd_row["_rail_elem"])
+            if not (isinstance(rd_row, dict) and rd_row.get("_rail_rail")):
+                continue
+            rail_nodes.add(rd_row["_rail_rail"])
+            rail_elems.add(rd_row["_rail_elem"])
+            _mm = rail_members.setdefault(rd_row["_rail_rail"], {})
+            _el = rd_row["_rail_elem"]
+            if rd_node[0] == rd_row["_rail_rail"]:
+                _other = rd_nb
+            elif rd_nb[0] == rd_row["_rail_rail"]:
+                _other = rd_node
+            else:
+                _other = None
+            if _other is not None and _other[0] != _el:
+                # kołek strony szyny (slot -U) — dokładamy go do odnogi
+                # elementu, żeby widać było, przez którą szpilkę wisi
+                _mm[_el] = _other
+            else:
+                _mm.setdefault(_el, (_el, ""))
             rdv = rd_row.get("_relay_dev") if isinstance(rd_row, dict) else ""
             if rdv:
                 relay_contacts.setdefault(rdv, set()).add((rd_d, rd_p))
@@ -9323,25 +9395,25 @@ def _trace_circuit_impl(ps_code, query, lang="pl"):
             ends = _wire_net_paths(adj, node, banned=pin_ban, max_nodes=800,
                                    max_ends=32, pass_fn=pfn)
             if rail_nodes:
-                # szyna zbiorcza: po zejściu na szynę od strony odbiornika
-                # (element niebędący zasilaniem) wychodzimy tylko przez
-                # element zasilający — gałęzie sąsiednich bezpieczników
-                # nie są torem tego obwodu
+                # szyna zbiorcza: po wejściu na szynę tor może iść tylko w
+                # jej fizyczne odczepy (kołki slotów, terminale) i w element
+                # zasilający (feed) — przejście PRZEZ element innego członka
+                # to obcy obwód, a nie odnoga tej szyny
                 def _rail_violation(path):
-                    for i, (a, b, row) in enumerate(path):
+                    seen_rail = set()
+                    for a, b, row in path:
                         if not (isinstance(row, dict)
-                                and row.get("_rail_rail")
-                                and b[0] == row["_rail_rail"]):
+                                and row.get("_rail_rail")):
                             continue
+                        R = row["_rail_rail"]
                         feed = row.get("_rail_feed") or ""
-                        if not feed or row.get("_rail_elem") == feed:
+                        el = row.get("_rail_elem") or ""
+                        if b[0] == R:
+                            seen_rail.add(R)
                             continue
-                        if i + 1 < len(path):
-                            nr = path[i + 1][2]
-                            if (isinstance(nr, dict)
-                                    and nr.get("_rail_rail") == row["_rail_rail"]
-                                    and nr.get("_rail_elem") != feed):
-                                return True
+                        if (R in seen_rail and el and el != feed
+                                and b[0] == el):
+                            return True
                     return False
                 ends = [e for e in ends if not _rail_violation(e[1])]
             if len(ends) >= 32 and not any(_ground_end(ed, p) for (ed, _ep), p in ends):
@@ -9350,8 +9422,50 @@ def _trace_circuit_impl(ps_code, query, lang="pl"):
                 deep = _wire_net_paths(adj, node, banned=pin_ban,
                                        max_nodes=4000, max_ends=600,
                                        pass_fn=pfn)
+                if rail_nodes:
+                    deep = [e for e in deep if not _rail_violation(e[1])]
                 if any(_ground_end(ed, p) for (ed, _ep), p in deep):
                     ends = deep
+            if rail_members:
+                # członkowie szyny jako odnogi 'fuse' — klik w odnogę
+                # otwiera obwód sąsiedniego bezpiecznika (jak przy
+                # szynach-zworach 'bars'); ich własny tor jest przycięty
+                # regułą _rail_violation, więc dokładamy go syntetycznie
+                sib_seen = set()
+                for (ed, ep), path in list(ends):
+                    for hi, (a, b, row) in enumerate(path):
+                        if not (isinstance(row, dict) and row.get("_rail_rail")
+                                and b[0] == row["_rail_rail"]):
+                            continue
+                        rnode = b
+                        for mel, feed_nd in (rail_members.get(rnode[0])
+                                             or {}).items():
+                            if (rnode[0], mel) in sib_seen:
+                                continue
+                            en = (mel, "")
+                            extra = []
+                            if feed_nd != en:
+                                # tor szyna→kołek slotu→element — odnoga
+                                # pokazuje, przez którą szpilkę wisi
+                                rb = adj.get(rnode, {}).get(feed_nd)
+                                rf = adj.get(feed_nd, {}).get(en)
+                                if isinstance(rb, dict) and isinstance(rf, dict):
+                                    extra = [(rnode, feed_nd, rb),
+                                             (feed_nd, en, rf)]
+                            if not extra:
+                                er = adj.get(en, {}).get(rnode)
+                                if not isinstance(er, dict):
+                                    er = next(
+                                        (rr for rr
+                                         in adj.get(en, {}).values()
+                                         if isinstance(rr, dict)
+                                         and rr.get("_rail_rail") == rnode[0]),
+                                        None)
+                                if er is None:
+                                    continue
+                                extra = [(rnode, en, er)]
+                            sib_seen.add((rnode[0], mel))
+                            ends.append((en, path[:hi + 1] + extra))
             seen_e = set()
             ends_out = []
             roles = set()
@@ -9379,7 +9493,7 @@ def _trace_circuit_impl(ps_code, query, lang="pl"):
                     "path": hops,
                     "via_fuse": any(h.get("internal") == "fuse" for h in hops),
                     "via_relay": any(h.get("internal") == "relay" for h in hops),
-                    "via_stud": any(h.get("internal") == "stud" for h in hops),
+                    "via_stud": any(_is_stud_hop(h) for h in hops),
                     "batt_name": next((h.get("batt_name") for h in hops
                                        if h.get("internal") == "battery"
                                        and h.get("batt_name")), ""),
@@ -9656,7 +9770,7 @@ def _trace_circuit_impl(ps_code, query, lang="pl"):
             "path": hops,
             "via_fuse": any(h.get("internal") == "fuse" for h in hops),
             "via_relay": any(h.get("internal") == "relay" for h in hops),
-            "via_stud": any(h.get("internal") == "stud" for h in hops),
+            "via_stud": any(_is_stud_hop(h) for h in hops),
             "batt_name": next((h.get("batt_name") for h in hops
                                if h.get("internal") == "battery"
                                and h.get("batt_name")), ""),
@@ -9990,15 +10104,24 @@ def _trace_circuit_impl(ps_code, query, lang="pl"):
     # ── 4. Metadane złączy: liczba pinów, nr katalogowy, dostawca ─
     conn_meta = {}
     cleans = set()
+    used_by_clean = {}
+
+    def _used(dev, cl):
+        if dev and cl:
+            used_by_clean.setdefault(cl, set()).add(dev)
     for ld in loads_out:
         cleans.add(ld["clean"])
+        _used(ld.get("device"), ld["clean"])
         # piny odbiornika + gałęzie obwodu cewki przekaźnika (relay_coils)
         for p in list(ld["pins"]) + list(ld.get("relay_coils") or []):
             for e in p["ends"]:
                 cleans.add(e["clean"])
+                _used(e.get("device"), e["clean"])
                 for h in e["path"]:
                     cleans.add(h.get("from_clean") or "")
                     cleans.add(h.get("to_clean") or "")
+                    _used(h.get("from"), h.get("from_clean"))
+                    _used(h.get("to"), h.get("to_clean"))
     cleans.discard("")
     if cleans:
         try:
@@ -10036,6 +10159,11 @@ def _trace_circuit_impl(ps_code, query, lang="pl"):
                   AND (? = '' OR p.ps_codes LIKE '%' || ? || '%')
                 ORDER BY p.revision_date DESC
             """, (*cleans, ps_code or "", ps_code or "")):
+                # ten sam numer w innym systemie (=RLF-X303 obok =BOX+TWR-X303)
+                # to inne urządzenie — bierzemy tylko aparaty z toru
+                _ud = used_by_clean.get(r["device_clean"])
+                if _ud and r["device_code"] not in _ud:
+                    continue
                 halves = conn_meta.setdefault(r["device_clean"], {}).setdefault("halves", {})
                 sfx = (r["device_code"] or "").split("-")[-1]
                 if sfx not in halves:
@@ -10203,6 +10331,17 @@ def _trace_circuit_impl(ps_code, query, lang="pl"):
             if _is_ground(c[0]) and sum(1 for s in sel if _is_ground(s[0])) < 3:
                 sel.append(c)
 
+        if block_cleans:
+            # gałąź nie przez blok (np. przewód 207A → FH7 → U2) ginie w
+            # górnej dwunastce wśród odnóg bloku — dołóż ją do pary
+            _via_blk = lambda c: bool(c[0]["path"]) and (
+                c[0]["path"][0].get("to_clean") in block_cleans)
+            if any(_via_blk(s) for s in sel):
+                for c in cands[12:]:
+                    if not _via_blk(c) and sum(
+                            1 for s in sel if not _via_blk(s)) < 3:
+                        sel.append(c)
+
         found = []
         for i, ca0 in enumerate(sel):
             for cb0 in sel[i + 1:]:
@@ -10211,6 +10350,10 @@ def _trace_circuit_impl(ps_code, query, lang="pl"):
                 if _is_ground(ca[0]) and not _is_ground(cb[0]):
                     ca, cb = cb, ca
                 a, b = ca[0], cb[0]
+                # para na tym samym punkcie (dwa końce na tym samym
+                # biegunie baterii / zacisku) to pętla, nie obwód
+                if (a["clean"], a.get("pin")) == (b["clean"], b.get("pin")):
+                    continue
                 na, nb = _path_nodes(a), _path_nodes(b)
                 if not na or not nb:
                     continue
@@ -10238,7 +10381,12 @@ def _trace_circuit_impl(ps_code, query, lang="pl"):
                 else:
                     hops = [_rev_hop(h) for h in reversed(a["path"][L - 1:])]
                     hops.extend(b["path"][L - 1:])
-                score = (_anchor_rank(a) + _anchor_rank(b),
+                # tory rozchodzące się dopiero na bloku (zwora) to odnogi
+                # sąsiednich obwodów — przelot zapytanego elementu
+                # (zasilanie ↔ odbiornik) ma pierwszeństwo
+                blk_split = int(L > 1 and (clean_device_code(na[L - 1][0])
+                                           or na[L - 1][0]) in block_cleans)
+                score = (blk_split, _anchor_rank(a) + _anchor_rank(b),
                          len(a["path"]) + len(b["path"]))
                 found.append((score, hops, ca, cb))
         found.sort(key=lambda f: f[0])
@@ -10343,8 +10491,49 @@ def _trace_circuit_impl(ps_code, query, lang="pl"):
         except Exception:
             pass
 
+    # odnogi bloków (zwor): tylko elementy przykręcone bezpośrednio do bloku
+    # (końcówka -RT + jej przewód na drugą stronę) — diagram rysuje je
+    # zamiast pełnych torów za blokiem
+    block_taps = {}
+    for _bd in block_devs_map:
+        _hub = (_bd, "")
+        if _hub not in adj:
+            continue
+        _taps = []
+        for _nb, _row in adj[_hub].items():
+            _ent = _nb
+            _hrow = _row
+            if _nb[0] == _bd:
+                _cands = [(p, r) for p, r in adj.get(_nb, {}).items()
+                          if p != _hub and p[0] != _bd
+                          and not (isinstance(r, dict) and r.get("_internal"))]
+                if not _cands:
+                    continue
+                _ent, _hrow = _cands[0]
+                _wire = None
+                _peer = None
+            else:
+                _wire = _peer = None
+                for _p, _r in adj.get(_nb, {}).items():
+                    if _p == _hub or (isinstance(_r, dict)
+                                      and _r.get("_internal")):
+                        continue
+                    _peer, _wire = _p, _wire_hop(_nb[0], _nb[1], _p[0], _p[1], _r)
+                    break
+            _pdev = _peer[0] if _peer else ""
+            _taps.append({
+                "device": _ent[0], "pin": _ent[1],
+                "clean": clean_device_code(_ent[0]) or _ent[0],
+                "function": ((dev_funcs.get(_pdev) or dev_funcs.get(_ent[0])
+                              or "") if _pdev else (dev_funcs.get(_ent[0]) or "")),
+                "hop": _wire_hop(_bd, "", _ent[0], _ent[1], _hrow),
+                "wire": _wire})
+        _taps.sort(key=lambda t: _natural_sort_key(t["device"]))
+        block_taps[_bd] = _taps
+
     return {"ok": True, "query": q, "resolved": resolved, "ps_code": ps_code,
             "evpss": evpss_out, "loads": loads_out, "main_path": main_path, "main_candidates": main_candidates,
+            "block_taps": block_taps,
             "more_signals": more_signals, "conn_meta": conn_meta,
             "reworks": reworks, "alternates": alternates[:8]}
 
@@ -11146,6 +11335,12 @@ def _ps_fuse_rails_raw(cur, conn_ids, ps_code, adj):
         for d in cands:
             if pref and d.startswith(pref):
                 return d
+        if pref and cands:
+            # slot z obcego systemu (=CAB+BSI-U120 'Generic splice' dla
+            # -F21 w =BOX+BF-U120) to inne urządzenie o tym samym numerze
+            psys = pref.split("+")[0]
+            cands = [d for d in cands if not d.startswith("=")
+                     or d.split("+")[0].split("-")[0] == psys]
         return cands[0] if cands else ""
 
     def _fh_dev(hsuffix, pref=""):
@@ -12305,6 +12500,163 @@ def _ps_battery_studs(cur, conn_ids, ps_code, adj):
             pol = '-' if gnd else '+'
             out.setdefault(rdev, (hit[1]["dev"], pol, hit[1]["label"]))
     _BAT_STUDS_CACHE[key] = out
+    return out
+
+
+_BLOCK_DESC_RE = re.compile(
+    r"^\s*(blok|block|klemmblock|verteilerblock)\b", re.IGNORECASE)
+
+
+def is_block_desc(desc):
+    """Blok przyłączeniowy/masowy (BOM: 'Blok podłączenia 2xM8') — zwora:
+    wszystkie przewody dochodzące do bloku są jednym węzłem (splice)."""
+    return bool(_BLOCK_DESC_RE.match(desc or ""))
+
+
+def _ps_block_devices(cur, bom_ids):
+    """{device_code: opis} aparatów-bloków z BOM projektów PS."""
+    out = {}
+    if not bom_ids:
+        return out
+    try:
+        ph = ",".join("?" for _ in bom_ids)
+        for dc, desc in cur.execute(
+                "SELECT DISTINCT d.device_code, i.description"
+                " FROM zuken_bom_devices d JOIN zuken_bom_items i"
+                f"  ON i.id = d.bom_item_id WHERE i.project_id IN ({ph});",
+                list(bom_ids)):
+            if dc and is_block_desc(desc):
+                out[dc] = desc
+    except sqlite3.OperationalError:
+        pass
+    return out
+
+
+_BLOCK_STUDS_CACHE = {}
+
+
+def _pdf_page_boxes(filepath, page_num):
+    """Prostokąty strony (pary poziomych odcinków o tym samym zasięgu x
+    + pionowe ścianki): [(x1, y1, x2, y2)], współrzędne PDF (y w górę)."""
+    hseg, vseg = _pdf_page_line_segments(filepath, page_num)
+    by_x = {}
+    for a, b, y in hseg:
+        if b - a >= 30:
+            by_x.setdefault((round(a), round(b)), []).append(y)
+    boxes = []
+    for (xa, xb), ys in by_x.items():
+        ys = sorted(set(round(y, 1) for y in ys))
+        for i in range(len(ys)):
+            for j in range(i + 1, len(ys)):
+                y1, y2 = ys[i], ys[j]
+                if y2 - y1 < 15:
+                    continue
+                if all(any(abs(vx - x) <= 2 and vy1 <= y1 + 2
+                           and vy2 >= y2 - 2 for vx, vy1, vy2 in vseg)
+                       for x in (xa, xb)):
+                    boxes.append((xa, y1, xb, y2))
+    return boxes
+
+
+def _ps_block_studs(cur, conn_ids, ps_code, adj):
+    """Końcówki -RT przykręcone do bloków przyłączeniowych (BOM: 'Blok
+    podłączenia'), odtworzone z geometrii schematu: etykieta bloku leży
+    w obrysie (prostokąt), końcówki -RT tuż pod/nad jego krawędzią w
+    zasięgu x obrysu. Raport nie wiąże oczka z blokiem, więc końcówka
+    wygląda na wiszącą. Dokładamy tylko oczka wiszące (stopień 1).
+
+    Zwraca {rt_dev: (block_dev, '', label)}."""
+    row = _ps_fuse_schematic_row(cur, ps_code)
+    key = ((ps_code or "").upper(), tuple(conn_ids or ()),
+           row["id"] if row else 0,
+           row["file_mtime"] if row else 0.0, len(adj or {}))
+    if key in _BLOCK_STUDS_CACHE:
+        return _BLOCK_STUDS_CACHE[key]
+    out = {}
+    schem_path = resolve_kb_filepath(row["filepath"], heal_db=True) \
+        if row else ""
+    _bci, _bbi = _ps_project_ids(cur, ps_code)
+    blocks = _ps_block_devices(cur, _bbi)
+    if not (row and adj and blocks and schem_path
+            and os.path.exists(schem_path)):
+        _BLOCK_STUDS_CACHE[key] = out
+        return out
+    schem_id, schem_mtime = row["id"], row["file_mtime"]
+    blk_by_clean = {}
+    for bd in blocks:
+        blk_by_clean.setdefault(clean_device_code(bd) or bd, set()).add(bd)
+    pages = set()
+    for pg, sc in cur.execute(
+            "SELECT page_number, symbol_clean FROM zuken_pdf_symbols"
+            " WHERE schematic_id = ?;", (schem_id,)):
+        if (sc or "") in blk_by_clean:
+            pages.add(pg)
+    devs_by_clean = {}
+    for (d, _p) in adj:
+        devs_by_clean.setdefault(clean_device_code(d) or "", set()).add(d)
+    _PREF = re.compile(r"(=[A-Z0-9]+)(\+[A-Z0-9]+)?-")
+
+    def _score(code, pools, tx, ty, lim):
+        m = _PREF.match(code or "")
+        if not m:
+            return 0
+        return sum(1 for tok, pool in zip((m.group(1), m.group(2)), pools)
+                   if tok and any(t2 == tok and (x - tx) ** 2
+                                  + (y - ty) ** 2 <= lim * lim
+                                  for x, y, t2 in pool))
+
+    for pg in sorted(pages):
+        toks = _pdf_page_text_positions(schem_id, schem_path, pg,
+                                        schem_mtime)
+        if not toks:
+            continue
+        boxes = _pdf_page_boxes(schem_path, pg)
+        syss = [(x, y, t) for x, y, t in toks
+                if re.fullmatch(r"=[A-Z0-9]+", t or "")]
+        locs = [(x, y, t) for x, y, t in toks
+                if re.fullmatch(r"\+[A-Z0-9]+", t or "")]
+        pools = (syss, locs)
+        rts = [(x, y, t) for x, y, t in toks
+               if re.fullmatch(r"-RT\d+[A-Za-z']*", t or "")]
+        placed = []   # (box, block_dev, clean)
+        for lx, ly, lt in toks:
+            cl = (lt or "").lstrip("-")
+            if not lt.startswith("-") or cl not in blk_by_clean:
+                continue
+            inside = [b for b in boxes
+                      if b[0] <= lx <= b[2] and b[1] <= ly <= b[3]]
+            if not inside:
+                continue
+            box = min(inside, key=lambda b: (b[2] - b[0]) * (b[3] - b[1]))
+            if (box[2] - box[0]) * (box[3] - box[1]) > 400000:
+                continue
+            bdev = max(sorted(blk_by_clean[cl]), key=lambda c: _score(
+                c, pools, lx, ly, 300))
+            placed.append((box, bdev, cl))
+        for rx, ry, rt in rts:
+            hit = None
+            for box, bdev, cl in placed:
+                if not (box[0] <= rx <= box[2]):
+                    continue
+                dist = (box[1] - ry) if ry < box[1] else (
+                    (ry - box[3]) if ry > box[3] else None)
+                if dist is None or dist > 90:
+                    continue
+                if hit is None or dist < hit[0]:
+                    hit = (dist, bdev, cl)
+            if not hit:
+                continue
+            cands = sorted(devs_by_clean.get(rt.lstrip("-").rstrip("'"))
+                           or ())
+            if not cands:
+                continue
+            rdev = max(cands, key=lambda c: _score(c, pools, rx, ry, 220))
+            nodes = [nd for nd in adj if nd[0] == rdev]
+            if not nodes or not all(len(adj.get(nd, {})) <= 1
+                                    for nd in nodes):
+                continue
+            out.setdefault(rdev, (hit[1], "", hit[2]))
+    _BLOCK_STUDS_CACHE[key] = out
     return out
 
 
