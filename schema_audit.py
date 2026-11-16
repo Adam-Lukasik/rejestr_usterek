@@ -651,17 +651,32 @@ def _f(fp, category, msg_key, params, devices=(), loc_dev=None, location=None,
             "severity": severity or CATEGORIES[category][1], "workaround": workaround}
 
 
+_SPLICE_DESC_RE = re.compile(
+    r"splice|rozgał[eę]ź|spleiß|verzweig", re.IGNORECASE)
+
+
 def det_device_unconnected(ctx):
     """D01: aparat z BOM narysowany na schemacie, bez żadnego pinu w raporcie."""
     out = []
     conn = ctx.conn_cleans
     syms = ctx.symbol_pages
+    # styczniki mocy spoza raportu (WM V231): szpilki -RT są wykrywane
+    # geometrią schematu — urządzenie jest "podłączone", tylko nie w
+    # raporcie
+    try:
+        k_cov = set(_kmap(ctx))
+    except Exception:
+        k_cov = set()
     for d in ctx.bom_devices:
         code = d["device_code"] or ""
         cl = d["device_clean"] or zs.clean_device_code(code)
         if (not cl or cl in conn or not _APP_RE.match(cl) or d["category"] in _SKIP_BOM_CATS
-                or code.startswith("=BOM") or cl not in syms
-                or zs.is_block_desc(d["description"])):
+                or code.startswith("=BOM") or cl not in syms or cl in k_cov
+                or zs.is_block_desc(d["description"])
+                # splice 0/1-przewodowy = przygotowanie pod okablowanie
+                # klienta (np. =CAB+MIK-U1..U7) — zamierzony "kikut",
+                # nie brak danych
+                or _SPLICE_DESC_RE.search(d["description"] or "")):
             continue
         out.append(_f(f"D01|{code}", "device_unconnected", "device_unconnected",
                       {"dev": code, "art": d["article_number"] or "—",
@@ -725,6 +740,14 @@ def det_dangling_terminal(ctx):
     # z założenia; połączenie odtwarza geometria schematu (_bats)
     try:
         fuse_terms |= set(_bats(ctx) or ())
+    except Exception:
+        pass
+    # szpilki -RT styczników mocy spoza raportu (WM V231): oczka na stykach
+    # 5/5b parowane geometrią — to poprawne punkty montażu, nie końcówki
+    # bez podłączenia
+    try:
+        for _ki in _kmap(ctx).values():
+            fuse_terms |= set(_ki.get("studs") or ())
     except Exception:
         pass
     floating = [x for x in _floating_terminals(ctx) if x[0][0] not in fuse_terms]
@@ -1090,6 +1113,14 @@ def _bats(ctx):
                                  _wadj(ctx)) or {})
         return out
     return ctx._memo("bats", f)
+
+
+def _kmap(ctx):
+    """Styczniki mocy spoza raportu (WM V231): {k_clean: {device, studs,
+    coil_dev...}} — szpilki -RT parowane są z geometrii schematu."""
+    return ctx._memo(
+        "kmap", lambda: zs._relay_geometry_map(
+            ctx.cur, _wadj(ctx), ctx.ps, {}, {}) or {})
 
 
 def _loc_for_devices(ctx, devs, pad=40):

@@ -118,9 +118,9 @@ ZS_MSG = {
     "kbNoFiles": {"pl": "Folder projektu nie zawiera plików do przetworzenia (.xlsx, .pdf).", "en": "The project folder contains no files to process (.xlsx, .pdf).", "de": "Der Projektordner enthält keine zu verarbeitenden Dateien (.xlsx, .pdf)."},
     "kbBadPs": {"pl": "Niepoprawny numer projektu PS: {v}", "en": "Invalid PS project number: {v}", "de": "Ungültige PS-Projektnummer: {v}"},
     "kbNoUpload": {"pl": "Nie przesłano żadnego pliku.", "en": "No file was uploaded.", "de": "Es wurde keine Datei hochgeladen."},
-    "kbBadExt": {"pl": "Niedozwolony typ pliku: {v}. Dozwolone: .xlsx, .pdf, .e3s, .html", "en": "Unsupported file type: {v}. Allowed: .xlsx, .pdf, .e3s, .html", "de": "Nicht unterstützter Dateityp: {v}. Erlaubt: .xlsx, .pdf, .e3s, .html"},
+    "kbBadExt": {"pl": "Niedozwolony typ pliku: {v}. Dozwolone: .xlsx, .pdf, .e3s, .html, .xml, .csv, .json, .txt, .msg, .png, .jpg, .actp, .app, .docx", "en": "Unsupported file type: {v}. Allowed: .xlsx, .pdf, .e3s, .html, .xml, .csv, .json, .txt, .msg, .png, .jpg, .actp, .app, .docx", "de": "Nicht unterstützter Dateityp: {v}. Erlaubt: .xlsx, .pdf, .e3s, .html, .xml, .csv, .json, .txt, .msg, .png, .jpg, .actp, .app, .docx"},
     "e3sRegistered": {"pl": "Plik projektu E3 obecny — schemat można otwierać w Zuken E3.", "en": "E3 project file present — the schematic can be opened in Zuken E3.", "de": "E3-Projektdatei vorhanden — der Schaltplan kann in Zuken E3 geöffnet werden."},
-    "ctrlRegistered": {"pl": "Raport sterownika obecny — używany przy analizie ścieżki sygnału (parsowanie: Carnation HTML, Acetech PDF).", "en": "Controller report present — used for signal path analysis (parsing: Carnation HTML, Acetech PDF).", "de": "Steuergerätebericht vorhanden — wird für die Signalpfadanalyse verwendet (Parsing: Carnation HTML, Acetech PDF)."},
+    "ctrlRegistered": {"pl": "Raport/plik sterownika obecny — używany przy analizie ścieżki sygnału (parsowanie: Carnation HTML, Acetech PDF; Inomatic .app tylko rejestracja).", "en": "Controller report/file present — used for signal path analysis (parsing: Carnation HTML, Acetech PDF; Inomatic .app registration only).", "de": "Steuergerätebericht/-datei vorhanden — wird für die Signalpfadanalyse verwendet (Parsing: Carnation HTML, Acetech PDF; Inomatic .app nur Registrierung)."},
     "wireLong": {"pl": "wiązka długa / wzdłużna", "en": "long harness / longitudinal", "de": "langer Kabelbaum / längs"},
     "wireMid": {"pl": "wiązka średnia", "en": "medium harness", "de": "mittlerer Kabelbaum"},
     "wireLocal": {"pl": "odcinek lokalny", "en": "local segment", "de": "lokales Segment"},
@@ -3632,9 +3632,17 @@ def _kb_iter_files(base_dir):
 
 
 def _extract_doc_text(filepath):
-    """Wyciąga czysty tekst z dokumentu projektu (.txt, .msg, .xlsx)."""
+    """Wyciąga czysty tekst z dokumentu projektu (.txt, .msg, .xlsx, .docx)."""
     ext = os.path.splitext(filepath)[1].lower()
     try:
+        if ext == ".docx":
+            # DOCX = zip z word/document.xml — tekst w węzłach <w:t>
+            with zipfile.ZipFile(filepath) as zf:
+                xml = zf.read("word/document.xml").decode("utf-8", "ignore")
+            xml = re.sub(r"</w:p>", "\n", xml)
+            xml = re.sub(r"</w:tr>", "\n", xml)
+            xml = re.sub(r"</w:tc>", " | ", xml)
+            return re.sub(r"<[^>]+>", "", xml)
         if ext == ".txt":
             for enc in ("utf-8", "cp1250", "latin-1"):
                 try:
@@ -3782,13 +3790,16 @@ def _kb_process_file(full_path, rel_path, ps_code, category, lang="pl", has_wire
         if ftype == "e3s":
             return {"type": "e3s", "file": rel_path, "message": zsmsg("e3sRegistered", lang)}
         if ftype == "ctrl":
-            # PDF-owy raport konfiguracyjny (np. Acetech) dodatkowo indeksujemy jako dokumentację
+            # PDF-owy raport konfiguracyjny (np. Acetech) dodatkowo indeksujemy jako dokumentację;
+            # raport .docx (np. Inomatic) indeksujemy tekstowo jak dokument.
             if f.lower().endswith(".pdf"):
                 index_zuken_pdf(full_path, ps_code=ps_code, doc_kind="manual", category=category, lang=lang)
+            elif f.lower().endswith((".docx", ".doc")):
+                index_kb_document(full_path, ps_code=ps_code, category=category, lang=lang)
             return {"type": "ctrl", "file": rel_path, "message": zsmsg("ctrlRegistered", lang)}
         if ftype == "doc":
             ext = os.path.splitext(f)[1].lower()
-            if ext in (".txt", ".msg", ".xlsx"):
+            if ext in (".txt", ".msg", ".xlsx", ".docx"):
                 doc_id, msg = index_kb_document(full_path, ps_code=ps_code, category=category, lang=lang)
                 return {"type": "doc", "file": rel_path, "schematic_id": doc_id, "message": msg}
             return {"type": "doc", "file": rel_path, "message": zsmsg("docRegistered", lang)}
@@ -3824,15 +3835,16 @@ def sync_all_knowledge_base(lang="pl"):
 
 # Typy plików rozpoznawane w folderze Bazy wiedzy projektu PS.
 # Kolejność = kolejność wyświetlania na liście kontrolnej w UI.
-# "ctrl" = raport konfiguracyjny sterownika (Carnation HTML, docelowo Acetech — format TBD).
+# "ctrl" = raport konfiguracyjny sterownika (Carnation HTML, Acetech PDF,
+# Inomatic .app — binarny, bez parsowania).
 KB_FILE_TYPES = ("conn", "wires", "bom", "pdf", "e3s", "ctrl")
 KB_REQUIRED_TYPES = ("conn", "bom", "pdf")
 KB_ALLOWED_EXTENSIONS = (".xlsx", ".pdf", ".e3s", ".html", ".htm", ".xml", ".json", ".csv", ".txt",
-                         ".msg", ".png", ".jpg", ".jpeg", ".actp")
+                         ".msg", ".png", ".jpg", ".jpeg", ".actp", ".app", ".docx", ".doc")
 
 # Wzorce w nazwach plików wskazujące na raport konfiguracyjny sterownika
 # (używane m.in. by PDF-y Acetech nie lądowały w slocie „schemat PDF").
-_KB_CTRL_NAME_RE = re.compile(r"(acetech|carnation|genesis|evpss|config|konfigurac|controller|sterownik)", re.I)
+_KB_CTRL_NAME_RE = re.compile(r"(acetech|carnation|genesis|evpss|inomatic|config|konfigurac|controller|sterownik)", re.I)
 
 
 def _kb_classify_file(filename):
@@ -3854,9 +3866,13 @@ def _kb_classify_file(filename):
         return "ctrl" if _KB_CTRL_NAME_RE.search(f_lower) else "pdf"
     if f_lower.endswith(".e3s"):
         return "e3s"
-    if f_lower.endswith((".html", ".htm", ".xml", ".json", ".csv")):
+    # .app = plik konfiguracyjny sterownika Inomatic (binarny, bez parsowania);
+    # raportem sterownika bywa też .docx z nazwą sterownika (np. instrukcja_Inomatic).
+    if f_lower.endswith((".html", ".htm", ".xml", ".json", ".csv", ".app")):
         return "ctrl"
-    if f_lower.endswith((".txt", ".msg", ".png", ".jpg", ".jpeg", ".actp")):
+    if f_lower.endswith((".docx", ".doc")) and _KB_CTRL_NAME_RE.search(f_lower):
+        return "ctrl"
+    if f_lower.endswith((".txt", ".msg", ".png", ".jpg", ".jpeg", ".actp", ".docx", ".doc")):
         return "doc"
     return None
 
@@ -4738,7 +4754,7 @@ def kb_controller_candidates(ps_code):
         return []
     out = []
     for full, rel, _cat in _kb_iter_files(base):
-        if full.lower().endswith((".html", ".htm", ".pdf")):
+        if full.lower().endswith((".html", ".htm", ".pdf", ".app", ".docx", ".doc")):
             out.append(rel.replace("\\", "/"))
     return out
 
@@ -4750,7 +4766,7 @@ def _controller_report_files(ps_code=None):
         return []
     out = []
     for full, _rel, _cat in _kb_iter_files(base):
-        if full.lower().endswith((".html", ".htm", ".pdf")):
+        if full.lower().endswith((".html", ".htm", ".pdf", ".app")):
             out.append(full)
     return out
 
@@ -4893,7 +4909,8 @@ def _controller_parsed(ps_code=None):
             if p:
                 return ct, _CTRL_TYPE_NAMES[ct], p
         # wskazany plik nieparsowalny — honoruj deklarację bez I/O
-        return (forced_type or "declared"), decl or "", None
+        name = decl or ("Inomatic" if forced_file.lower().endswith(".app") else "")
+        return (forced_type or "declared"), name, None
 
     best = None
     for f in _controller_report_files(ps_code):
@@ -5336,8 +5353,10 @@ def _get_controller_diagnostic_info_impl(ps_code=None, query_text="", lang="pl")
         return None
     st = get_controller_settings(ps_code)
     decl = (st.get("controller_type") or "").strip()
+    fn = (st.get("controller_file") or "").strip()
+    if not decl and fn.lower().endswith(".app"):
+        decl = "Inomatic"  # plik aplikacji Inomatic — typ nieparsowany, ale rozpoznawany
     if decl and decl.upper() not in ("AUTO", "BRAK", "NONE"):
-        fn = (st.get("controller_file") or "").strip()
         return {
             "controller": decl,
             "version": "",
@@ -7220,6 +7239,31 @@ def _device_bom_name_map(cur, bom_proj_ids):
     return out
 
 
+_SPLICE_BOM_RE = re.compile(
+    r"splice|rozgał[eę]ź|spleiß|verzweig", re.IGNORECASE)
+
+
+def _splice_bom_devices(cur, bom_proj_ids):
+    """Zbiór device_code urządzeń-łączeń (splice) z BOM projektu."""
+    out = set()
+    if not bom_proj_ids:
+        return out
+    ph = ",".join("?" for _ in bom_proj_ids)
+    for r in cur.execute(f"""
+        SELECT d.device_code
+        FROM zuken_bom_devices d
+        JOIN zuken_bom_items i ON d.bom_item_id = i.id
+        WHERE i.project_id IN ({ph})
+          AND (i.description LIKE '%splice%' OR i.article_number LIKE '%splice%'
+               OR i.description LIKE '%rozgał%' OR i.description LIKE '%spleiß%'
+               OR i.description LIKE '%verzweig%');
+    """, bom_proj_ids):
+        code = (r["device_code"] or "").strip()
+        if code:
+            out.add(code)
+    return out
+
+
 def _wire_hop(fdev, fpin, tdev, tpin, row):
     """Jeden przeskok ścieżki sygnału z atrybutami przewodu z krawędzi grafu."""
     def _g(k):
@@ -7853,6 +7897,15 @@ def _circuit_evpss_for_signal(signal, carn, signal_names=()):
     return outs[0] if len(outs) == 1 else None
 
 
+def _dev_sl(d):
+    """(system, lokalizacja-baza) z kodu '=SYS+LOK-DEV' — 'DPL4' i 'DPL'
+    traktujemy jak jedno miejsce."""
+    m = re.match(r"^=([^+]+)\+([^-]*)-", d or "")
+    if not m:
+        return ("", "")
+    return (m.group(1), re.sub(r"\d+$", "", m.group(2)))
+
+
 def _relay_geometry_map(cur, adj, ps_code, dev_funcs, bom_names):
     """Styczniki mocy nieobecne w raporcie połączeń (WM V231: zaciski
     śrubowe na stykach 5/5b + osobne złącze cewki) parowane wg pozycji
@@ -7883,13 +7936,10 @@ def _relay_geometry_map(cur, adj, ps_code, dev_funcs, bom_names):
     if not relays:
         return out
 
-    # główny schemat PDF projektu (największy) — tam są etykiety z pozycjami
+    # główny schemat E3 projektu — _ps_fuse_schematic_row (największy
+    # PDF bywa podręcznikiem, nie schematem: u Walii brał Mercedes BEG)
     try:
-        schem = cur.execute("""
-            SELECT id, filepath, file_mtime FROM zuken_pdf_schematics
-            WHERE ps_code = ? AND total_pages > 20
-            ORDER BY total_pages DESC LIMIT 1;
-        """, (ps_code,)).fetchone()
+        schem = _ps_fuse_schematic_row(cur, ps_code)
     except Exception:
         schem = None
     if not schem or not schem["filepath"] or not os.path.exists(schem["filepath"]):
@@ -7962,7 +8012,7 @@ def _relay_geometry_map(cur, adj, ps_code, dev_funcs, bom_names):
                 wired_devs.add(d)
                 break
 
-    def _pick_dev(clean, prefer_func=""):
+    def _pick_dev(clean, prefer_func="", near_dev=""):
         """Nazwa etykiety -> kod urządzenia z raportu połączeń."""
         cands = sorted(clean2devs.get(clean) or ())
         if not cands:
@@ -7976,16 +8026,30 @@ def _relay_geometry_map(cur, adj, ps_code, dev_funcs, bom_names):
                 if df and (df in fu or fu in df or
                            fu.split("(")[0].strip()[:8] in df):
                     return d
+        if near_dev and len(pool) > 1:
+            # numer złącza bywa powtórzony w kilku miejscach (-X187 to i
+            # cewka przekaźnika, i mikrofon interkomu) — wygrywa ten sam
+            # system/zbliżona lokalizacja co urządzenie obok etykiety
+            ns, nl = _dev_sl(near_dev)
+            def _aff(d):
+                ds, dl = _dev_sl(d)
+                return ((4 if ds and ds == ns else 0)
+                        + (3 if dl and dl == nl else 0)
+                        + (1 if nl and (dl.startswith(nl)
+                                        or nl.startswith(dl)) else 0))
+            return max(pool, key=_aff)
         return pool[0]
 
     for kc, cand in votes.items():
         (rt_hi, rt_lo), x_name = max(cand.items(), key=lambda kv: kv[1])[0]
 
         rfunc = relays[kc]["function"] or ""
-        stud_devs = [_pick_dev(rt_hi), _pick_dev(rt_lo)]
+        stud_devs = [_pick_dev(rt_hi, near_dev=relays[kc]["device_code"]),
+                     _pick_dev(rt_lo, near_dev=relays[kc]["device_code"])]
         if not all(stud_devs):
             continue
-        coil_dev = _pick_dev(x_name, prefer_func=rfunc) if x_name else ""
+        coil_dev = _pick_dev(x_name, prefer_func=rfunc,
+                             near_dev=relays[kc]["device_code"]) if x_name else ""
         coil_pins = sorted({p for (dd, p) in adj if dd == coil_dev},
                            key=_natural_sort_key)[:2] if coil_dev else []
         out[kc] = {
@@ -8053,6 +8117,9 @@ def _circuit_extend_adjacency(cur, adj, ps_code, dev_funcs=None, bom_names=None)
             for i in range(len(ps)):
                 for j in range(i + 1, len(ps)):
                     _link(dev, ps[i], ps[j], "fuse", c)
+                    _fr = adj.get((dev, ps[i]), {}).get((dev, ps[j]))
+                    if isinstance(_fr, dict):
+                        _fr["_fuse_dev"] = dev
 
     try:
         if ps_code:
@@ -8232,11 +8299,29 @@ def _circuit_extend_adjacency(cur, adj, ps_code, dev_funcs=None, bom_names=None)
     for c, dlist in by_clean.items():
         if len(dlist) < 2:
             continue
-        for i in range(len(dlist)):
-            for j in range(i + 1, len(dlist)):
-                da, db = dlist[i], dlist[j]
-                for p in dev_pins[da] & dev_pins[db]:
-                    _link_nodes((da, p), (db, p), "mate", f"{c} \u21c4")
+        # numery -X powtarzają się na obcych złączach projektu (X187: wtyk
+        # cewki K7, mikrofon interkomu, gniazda w innych wiązkach) — para
+        # wtyk-gniazdo istnieje tylko między wersją z primem (-X187') a
+        # bazową; bez primu łączymy tylko jednoznaczną parę dwóch
+        primed = [d for d in dlist if "'" in d]
+        plain = [d for d in dlist if "'" not in d]
+        pairs = []
+        if primed:
+            for dp in primed:
+                _ps, _pl = _dev_sl(dp)
+                def _aff2(u, _ps=_ps, _pl=_pl):
+                    _us, _ul = _dev_sl(u)
+                    return ((_us == _ps) + (_ul == _pl) * 2
+                            + bool(_ul and _pl and (_ul.startswith(_pl)
+                                                    or _pl.startswith(_ul))))
+                _best = max(plain, key=_aff2) if plain else None
+                if _best is not None and (_aff2(_best) or len(plain) == 1):
+                    pairs.append((dp, _best))
+        elif len(dlist) == 2:
+            pairs = [tuple(dlist)]
+        for da, db in pairs:
+            for p in dev_pins[da] & dev_pins[db]:
+                _link_nodes((da, p), (db, p), "mate", f"{c} \u21c4")
 
     # ── szyny zbiorcze skrzynek Mega/MIDI: raport okablowuje tylko
     # jednopinowe uchwyty -U; elementy topikowe -F i listwę zbiorczą
@@ -8307,9 +8392,15 @@ def _circuit_extend_adjacency(cur, adj, ps_code, dev_funcs=None, bom_names=None)
                         _rr["_rail_rail"] = rail_dev
                         _rr["_rail_elem"] = m["elem"]
                         _rr["_rail_feed"] = g["feed"] or ""
+                    if (isinstance(_rr, dict) and "_fuse_dev" not in _rr
+                            and (elem_node in (_na, _nb))):
+                        _rr["_fuse_dev"] = m["elem"]
                 internal_devs.add(m["elem"])
                 continue
             _link_nodes(slot_node, elem_node, "fuse", label)
+            _se = adj.get(slot_node, {}).get(elem_node)
+            if isinstance(_se, dict):
+                _se["_fuse_dev"] = m["elem"]
             if rail_node not in adj.get(elem_node, {}):
                 rrow = _mark("fuse", label)
                 rrow["_rail_rail"] = rail_dev
@@ -8332,6 +8423,10 @@ def _circuit_extend_adjacency(cur, adj, ps_code, dev_funcs=None, bom_names=None)
         _fb = [nd for nd in adj if nd[0] == _tl[1]]
         if len(_fa) == 1 and len(_fb) == 1:
             _link_nodes(_fa[0], _fb[0], "fuse", _fc)
+            _te = adj.get(_fa[0], {}).get(_fb[0])
+            if isinstance(_te, dict):
+                _te["_fuse_clean"] = _fc
+                _te["_fuse_dev"] = clean2dev.get(_fc) or ""
 
     # rozszczepiony slot spoza banku (samotny -U jak F17→=BOX+BF-U2
     # na PS011871): brak krawędzi elementu między kołkami — oba kołki
@@ -8351,6 +8446,10 @@ def _circuit_extend_adjacency(cur, adj, ps_code, dev_funcs=None, bom_names=None)
             continue
         _link_nodes(_n1, _n2, "fuse",
                     _slot_fc.get(_ud) or _ud.rsplit("-", 1)[-1])
+        _ue = adj.get(_n1, {}).get(_n2)
+        if isinstance(_ue, dict):
+            _ue["_fuse_clean"] = _slot_fc.get(_ud) or ""
+            _ue["_fuse_dev"] = clean2dev.get(_ue["_fuse_clean"]) or ""
         internal_devs.add(_ud)
 
     # ── bieguny akumulatorów: oczka -RT na szpilkach +/- nie mają
@@ -8386,7 +8485,7 @@ def _circuit_extend_adjacency(cur, adj, ps_code, dev_funcs=None, bom_names=None)
             for _r in adj.get(_nd, {}).values():
                 _sn = ((_r.get("signal_name") if isinstance(_r, dict)
                         else (_r["signal_name"] if _r else "")) or "").upper()
-                for _m in re.findall(r"(AUX|COMMS?|CHASS)", _sn):
+                for _m in re.findall(r"(AUX|COMMS?|CHASS|LIFT)", _sn):
                     _k = {"COMM": "COMMS", "CHASS": "CHASSIS"}.get(_m, _m)
                     _bnames.setdefault(_bdev, {}).setdefault(_k, 0)
                     _bnames[_bdev][_k] += 1
@@ -8827,6 +8926,18 @@ def _trace_circuit_impl(ps_code, query, lang="pl"):
 
     adj, internal_devs, relay_coils = _circuit_extend_adjacency(
         cur, adj, ps_code, dev_funcs, bom_names)
+    splice_devs = _splice_bom_devices(cur, bom_ids)
+    _deg_by_dev = {}
+    for (_dn, _nn) in adj.items():
+        _deg_by_dev[_dn[0]] = _deg_by_dev.get(_dn[0], 0) + len(_nn)
+
+    def _is_cust_splice(ed):
+        # splice z co najwyżej jednym przewodem: przygotowanie pod
+        # okablowanie dokładane przez klienta (np. =CAB+MIK-U1..U7).
+        # Sloty bezpieczników (też 'Generic splice' w BOM) odpadają, bo
+        # rozszerzenie grafu dokłada im krawędzie wewnętrzne.
+        return (ed in splice_devs and ed not in internal_devs
+                and _deg_by_dev.get(ed, 0) <= 1)
     # indeksy przekaźników: nazwa -> urządzenie i węzły styków roboczych
     # (końce krawędzi wewnętrznych 'relay') — do zapytań 'K1', 'K3' itd.
     relay_clean2dev = {}
@@ -9426,6 +9537,17 @@ def _trace_circuit_impl(ps_code, query, lang="pl"):
                     deep = [e for e in deep if not _rail_violation(e[1])]
                 if any(_ground_end(ed, p) for (ed, _ep), p in deep):
                     ends = deep
+            # tor nie może wracać przez własną krawędź elementu (RT64 ->
+            # [fuse F18] -> RT5 przy pytaniu o F18): końce po drugiej stronie
+            # zapytanego elementu należą do drugiego pinu, nie do tego
+            ends = [e for e in ends
+                    if not any(
+                        isinstance(_row, dict)
+                        and ((_row.get("_fuse_dev") or "") == ndev
+                             or ((_row.get("_fuse_clean") or "")
+                                 and (_row.get("_fuse_clean") or "") == clean))
+                        and _a[0] != ndev and _b[0] != ndev
+                        for _a, _b, _row in e[1])]
             if rail_members:
                 # członkowie szyny jako odnogi 'fuse' — klik w odnogę
                 # otwiera obwód sąsiedniego bezpiecznika (jak przy
@@ -9443,6 +9565,17 @@ def _trace_circuit_impl(ps_code, query, lang="pl"):
                             if (rnode[0], mel) in sib_seen:
                                 continue
                             en = (mel, "")
+                            # element już leży na ścieżce (tor przechodzi
+                            # przez niego jak przez aparat) — odnoga to
+                            # ścieżka ucięta na jego pierwszym wystąpieniu
+                            _ei = next(
+                                (i for i, (_a, _b, _r)
+                                 in enumerate(path[:hi + 1])
+                                 if _b == en), None)
+                            if _ei is not None:
+                                sib_seen.add((rnode[0], mel))
+                                ends.append((en, path[:_ei + 1]))
+                                continue
                             extra = []
                             if feed_nd != en:
                                 # tor szyna→kołek slotu→element — odnoga
@@ -9450,6 +9583,28 @@ def _trace_circuit_impl(ps_code, query, lang="pl"):
                                 rb = adj.get(rnode, {}).get(feed_nd)
                                 rf = adj.get(feed_nd, {}).get(en)
                                 if isinstance(rb, dict) and isinstance(rf, dict):
+                                    # kołek elementu może już leżeć na
+                                    # ścieżce (wejście na hub szyny przez
+                                    # tę samą szpilkę) — skracamy tor
+                                    # zamiast rysować pętlę
+                                    # kołek→SZYNA→kołek→element
+                                    _cut = next(
+                                        (i for i, (_a, _b, _r)
+                                         in enumerate(path[:hi + 1])
+                                         if _a == feed_nd or _b == feed_nd),
+                                        None)
+                                    if _cut is not None:
+                                        # ścieżka ma kończyć się NA
+                                        # kołku: gdy jest 'a' ogniwa,
+                                        # odcinamy przed nim
+                                        _pre = (path[:_cut + 1]
+                                                if path[_cut][1] == feed_nd
+                                                else path[:_cut])
+                                        ends.append(
+                                            (en, _pre
+                                             + [(feed_nd, en, rf)]))
+                                        sib_seen.add((rnode[0], mel))
+                                        continue
                                     extra = [(rnode, feed_nd, rb),
                                              (feed_nd, en, rf)]
                             if not extra:
@@ -9487,6 +9642,7 @@ def _trace_circuit_impl(ps_code, query, lang="pl"):
                 eclean = clean_device_code(ed) or ed
                 ends_out.append({
                     "device": ed, "pin": ep, "clean": eclean, "role": role,
+                    "cust": _is_cust_splice(ed),
                     "function": dev_funcs.get(ed) or dev_funcs.get(eclean)
                                 or bom_names.get(eclean) or "",
                     "desc": explain_device_code(ed, glossary, lang=lang) or "",
@@ -9536,6 +9692,7 @@ def _trace_circuit_impl(ps_code, query, lang="pl"):
                         eclean = clean_device_code(ed) or ed
                         ends_out.insert(0, {
                             "device": ed, "pin": ep, "clean": eclean, "role": "gnd",
+                            "cust": _is_cust_splice(ed),
                             "function": dev_funcs.get(ed) or dev_funcs.get(eclean)
                                         or bom_names.get(eclean) or "",
                             "desc": explain_device_code(ed, glossary, lang=lang) or "",
@@ -9641,6 +9798,17 @@ def _trace_circuit_impl(ps_code, query, lang="pl"):
             pin_no = {ordered_t[0]: "1" if feeds else "2"}
         else:
             pin_no = {d: str(i + 1) for i, d in enumerate(ordered_t)}
+        def _own_fuse_cross(path):
+            # koniec osiągnięty przez własną krawędź zapytanego elementu
+            # (terminal A -> [fuse F18] -> terminal B) należy do drugiej
+            # strony bezpiecznika — tu dublowałby końce obu pinów
+            return any(
+                h.get("internal") == "fuse"
+                and (h.get("internal_label") or "").split()
+                and (h.get("internal_label") or "").split()[0] == fclean
+                and h.get("from") != fdev and h.get("to") != fdev
+                for h in path)
+
         pins_syn = []
         for d in sorted(ordered_t,
                         key=lambda d: _natural_sort_key(pin_no.get(d) or "1")):
@@ -9658,7 +9826,8 @@ def _trace_circuit_impl(ps_code, query, lang="pl"):
                 lbl = bar.get("label") or ""
                 bh = bar.get("holder") or ""
                 h_pin = _wire_hop(fdev, fpn, bdev, "",
-                                  {"_bar_holder": bh,
+                                  {"_internal": "stub",
+                                   "_bar_holder": bh,
                                    "patch_id": bar.get("patch_id") or 0})
                 for tap in bar.get("taps") or ():
                     tl = tloads.get(tap)
@@ -9672,6 +9841,8 @@ def _trace_circuit_impl(ps_code, query, lang="pl"):
                              "_bar_holder": bh,
                              "patch_id": bar.get("patch_id") or 0})
                         for e in p["ends"]:
+                            if _own_fuse_cross(e.get("path") or []):
+                                continue
                             e2 = dict(e)
                             e2["path"] = [h_pin, h_bar] \
                                 + list(e["path"] or [])
@@ -9691,13 +9862,30 @@ def _trace_circuit_impl(ps_code, query, lang="pl"):
                         "shared": 0})
             else:
                 for p in tloads[d]["pins"]:
-                    pref_path = [_wire_hop(fdev, fpn, d, p["pin"], {})]
+                    pref_path = [_wire_hop(
+                        fdev, fpn, d, p["pin"],
+                        {"_internal": "stub",
+                         "_internal_label": "przylącze"})]
                     for e in p["ends"]:
+                        if _own_fuse_cross(e.get("path") or []):
+                            continue
                         e2 = dict(e)
                         e2["path"] = pref_path + list(e["path"] or [])
                         ends2.append(e2)
             if ends2:
-                pins_syn.append({"pin": fpn, "role": "feed",
+                # strona z samymi odbiornikami (np. F18:2 -> RT17 winda)
+                # to nie 'feed' — tylko strona z kotwicą (biegun/stud/
+                # źródło) jest zasilaniem
+                _prole = ("gnd" if all(
+                    e.get("role") == "gnd" or e.get("batt") == "-"
+                    for e in ends2)
+                    else "feed" if any(
+                        e.get("batt") or e.get("via_stud")
+                        or e.get("role") in ("source", "terminal", "fuse",
+                                             "relay", "gnd")
+                        for e in ends2)
+                    else "other")
+                pins_syn.append({"pin": fpn, "role": _prole,
                                  "ends": ends2})
         if pins_syn:
             first_idx = min(i for i, ld in enumerate(loads_out)
@@ -9764,6 +9952,7 @@ def _trace_circuit_impl(ps_code, query, lang="pl"):
         out = {
             "device": ed, "pin": ep, "clean": eclean,
             "role": _circuit_end_role(ed, last, dev_funcs, bom_names),
+            "cust": _is_cust_splice(ed),
             "function": (dev_funcs.get(ed) or dev_funcs.get(eclean)
                          or bom_names.get(eclean) or ""),
             "desc": explain_device_code(ed, glossary, lang=lang) or "",
@@ -9871,6 +10060,24 @@ def _trace_circuit_impl(ps_code, query, lang="pl"):
         coil_ends = [x for x in coil_ends if not any(
             h.get("internal") == "relay" and h.get("relay_dev") in _own
             for h in x["path"])] or coil_ends
+        # sieć masy: jeśli pin cewki wychodzi przez przewód masowy
+        # (sygnał pierwszego przeskoku: 'GND BIR Relay' 999_135) albo
+        # wśród jego końców jest punkt masy — cała ta strona to masa,
+        # nie obwód sterowania (końce za splice'em masy X25:2/X40:2/
+        # X61a:3 są minusem modułów, nie odbiornikami cewki)
+        _by_pin = {}
+        for _ce in coil_ends:
+            _by_pin.setdefault(_ce.get("coil_pin") or "", []).append(_ce)
+        for _ces in _by_pin.values():
+            _first = (_ces[0].get("path") or [{}])[0]
+            _gnd_net = any(e["role"] == "gnd" or e.get("batt") == "-"
+                           for e in _ces) or bool(_GROUND_POINT_FUNC_RE.search(
+                f'{_first.get("signal") or ""} {_first.get("signal_name") or ""}'))
+            if not _gnd_net:
+                continue
+            for e in _ces:
+                e["role"] = "gnd"
+                e["cls"] = _end_cls(e)
         # najpierw masa, potem bateria +, potem zasilanie sterowania
         def _coil_rk(x):
             if x["role"] == "gnd":
@@ -9882,12 +10089,19 @@ def _trace_circuit_impl(ps_code, query, lang="pl"):
                                       _natural_sort_key(x["clean"])))
         if not coil_ends:
             return None
+        # limit per pin cewki (masa / sterowanie to osobne strony —
+        # liczna sieć masy nie może wypchnąć końców drugiego pinu)
+        _per_pin = {}
+        for _ce in coil_ends:
+            _per_pin.setdefault(_ce.get("coil_pin") or "", []).append(_ce)
+        coil_ends = [_ce for _ces in _per_pin.values()
+                     for _ce in _ces[:6]]
         return {"device": rd, "clean": _relay_label(rd),
                 "function": _relay_func(rd),
                 "coil_label": info.get("coil_label") or "",
                 "suppression": info.get("suppression") or "",
                 "timed": bool(info.get("timed")),
-                "ends": coil_ends[:6]}
+                "ends": coil_ends}
 
     def _coils_cascade(rds, limit=6):
         """Obwody cewek + cewki przekaźników, przez których styki idzie
@@ -10530,6 +10744,38 @@ def _trace_circuit_impl(ps_code, query, lang="pl"):
                 "wire": _wire})
         _taps.sort(key=lambda t: _natural_sort_key(t["device"]))
         block_taps[_bd] = _taps
+
+    # końcówka -RT, która nie jest szpilką żadnego aparatu/bieguna/szyny
+    # (brak syntetycznej krawędzi stud/battery/busbar na jej węźle), to
+    # zwykły koniec przewodu — pokazujemy ją jako odbiornik/odnogę, nie
+    # jako 'zasilanie' (RT17 przy F18 = przewód do windy, nie punkt
+    # dystrybucji). Role 'terminal' zużyły już wcześniejsze przebiegi
+    # (dobór strony zasilania elementów -F), więc degradacja na końcu.
+    for _ld in loads_out:
+        for _p in _ld.get("pins") or ():
+            _degraded = False
+            for _e in _p.get("ends") or ():
+                if _e.get("role") != "terminal":
+                    continue
+                _nd = (_e.get("device") or "", _e.get("pin") or "")
+                if any(isinstance(_rr, dict)
+                       and _rr.get("_internal") in ("stud", "battery",
+                                                  "busbar")
+                       for _rr in adj.get(_nd, {}).values()):
+                    continue
+                _e["role"] = "load"
+                _degraded = True
+            if _degraded and _p.get("role") == "feed":
+                # rola pinu liczona na rolach sprzed degradacji — strona
+                # z samymi ślepymi końcówkami to odbiornik, nie zasilanie
+                if all(e.get("role") == "gnd" or e.get("batt") == "-"
+                       for e in _p["ends"]):
+                    _p["role"] = "gnd"
+                elif not any(e.get("batt") or e.get("via_stud")
+                             or e.get("role") in ("source", "terminal",
+                                                  "fuse", "relay", "gnd")
+                             for e in _p["ends"]):
+                    _p["role"] = "other"
 
     return {"ok": True, "query": q, "resolved": resolved, "ps_code": ps_code,
             "evpss": evpss_out, "loads": loads_out, "main_path": main_path, "main_candidates": main_candidates,
@@ -11341,6 +11587,13 @@ def _ps_fuse_rails_raw(cur, conn_ids, ps_code, adj):
             psys = pref.split("+")[0]
             cands = [d for d in cands if not d.startswith("=")
                      or d.split("+")[0].split("-")[0] == psys]
+        if pref and "+" in pref and cands:
+            # ten sam numer -U w innej lokalizacji tego samego systemu
+            # (=BOX+ACT-U160 splice dla -F18 w =BOX+DPL) — to nie ten
+            # slot; bez kandydata terminale odtworzy geometria
+            ploc = "+" + pref.split("+", 1)[1].split("-")[0]
+            cands = [d for d in cands
+                     if ploc in d.split("-")[0] or "+" not in d.split("-")[0]]
         return cands[0] if cands else ""
 
     def _fh_dev(hsuffix, pref=""):

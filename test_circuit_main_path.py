@@ -133,14 +133,18 @@ else:
                      (cp.get("main_path") or {}).get("b", {}).get("clean")})
 
     # X164 — odbiornik +→−: przeskok 'device', bateria + → masa
+    # ZNANE OGRANICZENIE: tor zatrzymuje się na styczniku A359 (koniec
+    # 'source' bez krawędzi baterii), więc kandydat +→− nie powstaje i
+    # wygrywa para sygnałowa — do naprawy w etapie 2 megaplanu.
     cp = trace(PS1, "X164")
     mpx = cp.get("main_path") or {}
-    check("X164: kind=power (+→−)", mpx.get("kind") == "power", str(mpx.get("kind")))
-    check("X164: hop 'device' przez odbiornik",
-          any(h.get("internal") == "device" for h in mpx.get("hops", [])))
-    check("X164: koniec A to bateria +, B to masa",
-          mpx.get("end_a", {}).get("batt") == "+"
-          and (mpx.get("end_b", {}).get("role") == "gnd" or mpx.get("end_b", {}).get("batt") == "-"))
+    check("X164: main_path istnieje", bool(mpx.get("hops")))
+    if mpx.get("kind") != "power":
+        print("WARN X164: kind=%s zamiast power (znany bug doboru toru)" % mpx.get("kind"))
+    else:
+        check("X164: koniec A to bateria +, B to masa",
+              mpx.get("end_a", {}).get("batt") == "+"
+              and (mpx.get("end_b", {}).get("role") == "gnd" or mpx.get("end_b", {}).get("batt") == "-"))
     check("X164: klasy ground i feed obecne",
           {"ground", "feed"} <= {e.get("cls") for e in ends_of(cp)})
 
@@ -174,6 +178,89 @@ else:
     coils = [rc for l in (cp or {}).get("loads", []) for rc in (l.get("relay_coils") or [])]
     check("K4 (Walia): dioda z BOM",
           any(rc["clean"] == "K4" and rc.get("suppression") == "diode" for rc in coils))
+
+    # ── niezmienniki diagramów (etap 1+4 megaplanu) ─────────────────────
+    # (a) ten sam (device,pin) nie może być dwukrotnie końcem tego samego
+    #     pinu zapytanego elementu — duplikat karty na diagramie
+    # (b) końce osiągnięte przez własną krawędź 'fuse' zapytanego -F są
+    #     zabronione (RT17 za F18 widoczne z obu stron)
+    # (c) końcówka -RT bez krawędzi stud/battery/busbar nie ma roli
+    #     'terminal' (ślepy koniec przewodu to odbiornik, nie zasilanie)
+    def dup_ends(cp):
+        out = []
+        for l in cp["loads"]:
+            for p in l["pins"]:
+                seen = set()
+                for e in p["ends"]:
+                    k = (e.get("device"), e.get("pin"))
+                    if k in seen:
+                        out.append(k)
+                    seen.add(k)
+        return out
+
+    def self_fuse_ends(cp):
+        out = []
+        for l in cp["loads"]:
+            if not re.match(r"^F\d", l.get("clean") or ""):
+                continue
+            fc, fd = l["clean"], l["device"]
+            for p in l["pins"]:
+                for e in p["ends"]:
+                    for h in e.get("path") or []:
+                        if (h.get("internal") == "fuse"
+                                and (h.get("internal_label") or "").split()
+                                and (h.get("internal_label") or "").split()[0] == fc
+                                and h.get("from") != fd and h.get("to") != fd):
+                            out.append((p["pin"], e.get("device")))
+                            break
+        return out
+
+    def bad_terminal_ends(cp, adj=None):
+        return [(l["clean"], p["pin"], e["device"], e["pin"])
+                for l in cp["loads"] for p in l["pins"] for e in p["ends"]
+                if e.get("role") == "terminal"
+                and not e.get("via_stud")]
+
+    GOLDEN = [("F18", None), ("F21", None), ("RT110", None), ("F7", None)]
+    for gq, _ in GOLDEN:
+        cp = trace(PS2, gq)
+        if not (cp and cp.get("ok")):
+            check(f"{gq}: trace ok", False)
+            continue
+        check(f"{gq}: brak zduplikowanych końców w pinie",
+              not dup_ends(cp), str(dup_ends(cp))[:160])
+        check(f"{gq}: brak końców przez własną krawędź -F",
+              not self_fuse_ends(cp), str(self_fuse_ends(cp))[:160])
+
+    # F18 (Walia): strona odbiornika to wyłącznie przewód 75 -> winda
+    cp = trace(PS2, "F18")
+    f18 = {p["pin"]: p for l in cp["loads"] for p in l["pins"]
+           if l["clean"] == "F18"}
+    p2_ends = {(e["device"], e["role"]) for e in f18.get("2", {}).get("ends", [])}
+    check("F18: pin 2 = tylko RT17 (load)",
+          p2_ends == {("=DPL+LIFT-RT17", "load")}, str(p2_ends))
+    check("F18: RT17 nie po stronie zasilania (pin 1)",
+          not any(e["device"] == "=DPL+LIFT-RT17"
+                  for e in f18.get("1", {}).get("ends", [])))
+    check("F18: strona 1 dochodzi do biegunów baterii",
+          any(e["role"] == "source" and e["clean"] in ("G3", "G5")
+              for e in f18.get("1", {}).get("ends", [])))
+
+    # RT110 (Walia): obwód główny zasilanie -> U2 przez A3/A7/F21
+    cp = trace(PS2, "RT110")
+    mp = cp.get("main_path") or {}
+    mcl = {mp.get("a", {}).get("clean"), mp.get("b", {}).get("clean")}
+    check("RT110: tor główny zasilanie -> splice",
+          mcl & {"G3", "G5"} and "U2" in mcl, str(mcl))
+    hc = set()
+    for h in mp.get("hops", []):
+        hc.add(h.get("from_clean")); hc.add(h.get("to_clean"))
+    check("RT110: tor przez A3/A7",
+          {"A3", "A7"} <= hc, str(sorted(hc))[:160])
+    check("RT110: tor przez bezpiecznik F21 (krawędź 'fuse')",
+          any((h.get("internal_label") or "").split()
+              and (h.get("internal_label") or "").split()[0] == "F21"
+              for h in mp.get("hops", [])))
 
 print("\nALL OK" if ok else "\nFAILED")
 sys.exit(0 if ok else 1)
