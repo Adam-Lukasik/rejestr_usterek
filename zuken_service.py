@@ -6373,7 +6373,8 @@ def _populate_ps_box_fuses(cur, ps_code):
                  'high' if c['out_dev'] else 'low'))
 
 
-def _socket_relay_pinmap(cur, schem_row, sock_dev, k_clean, conts):
+def _socket_relay_pinmap(cur, schem_row, sock_dev, k_clean, conts,
+                         sock_art=""):
     """Mapowanie pinów gniazda przekaźnika (N_2 w raporcie) na styki
     przekaźnika (30/85/86/87/87a). Raport nie zna przypisania — numery
     styków są wydrukowane na schemacie przy pinach gniazda, a etykiety
@@ -6452,8 +6453,11 @@ def _socket_relay_pinmap(cur, schem_row, sock_dev, k_clean, conts):
             for sig in sigs:
                 for wx, wy in tok_by_txt.get(sig, ()):
                     for px, py, pt in rpins:
-                        d = abs(wx - px)
-                        if d <= 18 and (best is None or d < best[0]):
+                        # odległość 2D — etykieta przewodu leży wzdłuż
+                        # przewodu; samo dx myli pionowe pary styków
+                        # (85/86, 87/87a) stojące w jednej kolumnie
+                        d = (wx - px) ** 2 + (wy - py) ** 2
+                        if d <= 90 * 90 and (best is None or d < best[0]):
                             best = (d, pt.upper())
             if best:
                 out[pin] = best[1]
@@ -6479,6 +6483,23 @@ def _socket_relay_pinmap(cur, schem_row, sock_dev, k_clean, conts):
             if want:
                 out[pin] = want
                 free.discard(want)
+    # mapa komorek gniazda z bazy pinoutów (zuken_conn_pinouts,
+    # pins_map {"relay": {pin: styk}}) — weryfikowana ze schematu,
+    # nadpisuje geometrię tam, gdzie etykiet nie da się odczytać
+    # (87a drukowane graficznie) lub są mylone
+    if sock_art:
+        try:
+            _pr = cur.execute(
+                "SELECT pins_map FROM zuken_conn_pinouts"
+                " WHERE article = ?;", (sock_art,)).fetchone()
+            _pm = json.loads(_pr["pins_map"]) if _pr else None
+            _rel = (_pm.get("relay") or {}) if isinstance(_pm, dict) else {}
+            _cpins = {str(c.get("pin") or "") for c in conts}
+            for _p, _rp in _rel.items():
+                if str(_p) in _cpins:
+                    out[str(_p)] = str(_rp).upper()
+        except Exception:
+            pass
     return out
 
 
@@ -7225,7 +7246,8 @@ def generate_ps_technical_summaries(ps_code, lang="pl"):
                            if str(c.get("pin") or "").endswith("_2")]
                 _rpm = _socket_relay_pinmap(
                     cur, _schem_row, _sk["device_code"],
-                    _ek["device_clean"] or "", _sc)
+                    _ek["device_clean"] or "", _sc,
+                    sock_art=_sk["article_number"] or "")
                 _sock_rpm[_sk["device_code"]] = (_sc, _rpm)
                 _art = (_sk["article_number"] or "").strip()
                 if _art:
