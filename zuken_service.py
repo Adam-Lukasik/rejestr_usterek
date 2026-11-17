@@ -6373,24 +6373,52 @@ def _populate_ps_box_fuses(cur, ps_code):
                  'high' if c['out_dev'] else 'low'))
 
 
-def _socket_relay_pinmap(cur, schem_row, sock_clean, conts):
+def _socket_relay_pinmap(cur, schem_row, sock_dev, k_clean, conts):
     """Mapowanie pinów gniazda przekaźnika (N_2 w raporcie) na styki
     przekaźnika (30/85/86/87/87a). Raport nie zna przypisania — numery
     styków są wydrukowane na schemacie przy pinach gniazda, a etykiety
-    przewodów stoją w ich kolumnach. Zwraca {pin: relay_pin}."""
+    przewodów stoją w ich kolumnach. Zwraca {pin: relay_pin}.
+
+    Strony-kandydaci: arkusz, gdzie gniazdo i symbol -K występują razem,
+    a gdy gniazdo jest na innym arkuszu niż przekaźnik (K3/X319) — sam
+    arkusz symbolu -K (etykiety styków stoją przy jego obrysie, przewody
+    gniazda prowadzą do niego przez sieć)."""
     if not (schem_row and conts):
         return {}
     schem_path = resolve_kb_filepath(schem_row["filepath"], heal_db=True)
     if not schem_path or not os.path.exists(schem_path):
         return {}
     schem_id, schem_mtime = schem_row["id"], schem_row["file_mtime"]
+    sock_clean = clean_device_code(sock_dev) or sock_dev
     pin_tok = re.compile(r"^(30|85|86|87|87a|87b)$", re.IGNORECASE)
-    pages = [r[0] for r in cur.execute(
+    sock_pages = {r[0] for r in cur.execute(
         "SELECT page_number FROM zuken_pdf_symbols WHERE schematic_id = ?"
-        " AND symbol_clean = ?;", (schem_id, sock_clean)).fetchall()]
+        " AND symbol_clean = ?;", (schem_id, sock_clean)).fetchall()}
     k_pages = {r[0] for r in cur.execute(
         "SELECT page_number FROM zuken_pdf_symbols WHERE schematic_id = ?"
         " AND symbol_clean GLOB 'K[0-9]*';", (schem_id,)).fetchall()}
+    pages = sorted(sock_pages & k_pages)
+    if k_clean:
+        pages += [r[0] for r in cur.execute(
+            "SELECT page_number FROM zuken_pdf_symbols"
+            " WHERE schematic_id = ? AND symbol_clean = ?;",
+            (schem_id, k_clean)).fetchall() if r[0] not in pages]
+    # sygnały przewodów na pinach gniazda z raportu — rekord styku
+    # przechowuje je w 'signal', ale część gniazd ma je puste
+    pin_sigs = {}
+    for _r in cur.execute("""
+            SELECT from_device, from_pin, to_device, to_pin, signal,
+                   signal_name, wire_number
+            FROM zuken_connections
+            WHERE from_device = ? OR to_device = ?;
+            """, (sock_dev, sock_dev)).fetchall():
+        if _r["from_device"] == sock_dev:
+            _p = _r["from_pin"]
+        else:
+            _p = _r["to_pin"]
+        if _p:
+            pin_sigs.setdefault(_p, set()).update(
+                s for s in (_r["signal"], _r["wire_number"]) if s)
     out = {}
     for pg in pages:
         if pg not in k_pages:
@@ -6414,15 +6442,19 @@ def _socket_relay_pinmap(cur, schem_row, sock_clean, conts):
             tok_by_txt.setdefault(t, []).append((x, y))
         for c in conts:
             pin = str(c.get("pin") or "")
-            sig = (c.get("signal") or c.get("wire_number") or "").strip()
-            if pin in out or not sig or sig not in tok_by_txt:
+            sigs = set(pin_sigs.get(pin) or ())
+            s0 = (c.get("signal") or c.get("wire_number") or "").strip()
+            if s0:
+                sigs.add(s0)
+            if pin in out or not sigs:
                 continue
             best = None
-            for wx, wy in tok_by_txt[sig]:
-                for px, py, pt in rpins:
-                    d = abs(wx - px)
-                    if d <= 18 and (best is None or d < best[0]):
-                        best = (d, pt.upper())
+            for sig in sigs:
+                for wx, wy in tok_by_txt.get(sig, ()):
+                    for px, py, pt in rpins:
+                        d = abs(wx - px)
+                        if d <= 18 and (best is None or d < best[0]):
+                            best = (d, pt.upper())
             if best:
                 out[pin] = best[1]
         if out:
@@ -7152,11 +7184,14 @@ def generate_ps_technical_summaries(ps_code, lang="pl"):
             """, (ps_code,)).fetchall()
         if _empty_k:
             _socks = cur.execute("""
-                SELECT device_code, device_clean, function, location, contacts_json
+                SELECT device_code, device_clean, function, location,
+                       article_number, contacts_json
                 FROM zuken_ps_relays
                 WHERE ps_code = ? AND device_clean LIKE 'X%'
                   AND contacts_json NOT IN ('', '[]') AND contacts_json IS NOT NULL;
                 """, (ps_code,)).fetchall()
+            # przebieg 1: parowanie -K -> gniazdo
+            _pairs = []
             _used_socks = set()
             for _ek in sorted(_empty_k,
                               key=lambda r: -len(_func_toks(r["function"]))):
@@ -7172,64 +7207,95 @@ def generate_ps_technical_summaries(ps_code, lang="pl"):
                     if best is None or score > best[0]:
                         best = (score, _sk)
                 if best:
-                    _sk = best[1]
-                    _used_socks.add(_sk["device_code"])
-                    try:
-                        _scont = json.loads(_sk["contacts_json"] or "[]")
-                    except (ValueError, TypeError):
-                        _scont = []
-                    # piny gniazda N_1/N_2: _1 = strona wiązki (przelotka),
-                    # _2 = styk przekaźnika (np. X155/K5: 4 przewody _2)
-                    if any(str(c.get("pin") or "").endswith("_2")
-                           for c in _scont):
-                        _scont = [c for c in _scont
-                                  if str(c.get("pin") or "").endswith("_2")]
-                    # styki przekaźnika z etykiet na schemacie (30/85/86/87)
-                    if _scont:
-                        _rpm = _socket_relay_pinmap(
-                            cur, _ps_fuse_schematic_row(cur, ps_code),
-                            _sk["device_clean"] or "", _scont)
-                        for c in _scont:
-                            rp = _rpm.get(str(c.get("pin") or ""))
-                            if not rp:
-                                continue
-                            c["relay_pin"] = rp
-                            if rp in ("85", "86"):
-                                c["role"] = "Cewka (Coil 85/86)"
-                            elif rp == "30":
-                                c["role"] = "Zasilanie (Common 30)"
-                            elif rp == "87":
-                                c["role"] = "Styk zwierny (NO 87)"
-                            elif rp in ("87A", "87B"):
-                                c["role"] = "Styk rozwierny (NC 87a)"
-                        # domknięcie cewki: pin z masą (GND/999_) bez
-                        # etykiety na schemacie dostaje wolny biegun
-                        # cewki (85/86) — bez niego obwód cewki nie
-                        # powstanie (np. X318/K4 pin 6 → RT119)
-                        _coil_used = {
-                            str(c.get("relay_pin") or "")
-                            for c in _scont} & {"85", "86"}
-                        _coil_free = sorted({"85", "86"} - _coil_used)
-                        if _coil_free:
-                            for c in _scont:
-                                if str(c.get("relay_pin") or ""):
-                                    continue
-                                _cs = (str(c.get("signal") or "") + " "
-                                       + str(c.get("signal_name") or "")).lower()
-                                if (str(c.get("signal") or "").startswith("999")
-                                        or "gnd" in _cs or "masa" in _cs):
-                                    c["relay_pin"] = _coil_free.pop(0)
-                                    c["role"] = "Cewka (Coil 85/86)"
-                                if not _coil_free:
-                                    break
-                    if _scont:
-                        cur.execute(
-                            "UPDATE zuken_ps_relays SET contacts_json = ?, "
-                            "socket_code = ? "
-                            "WHERE ps_code = ? AND device_code = ?",
-                            (json.dumps(_scont, ensure_ascii=False),
-                             _sk["device_code"],
-                             ps_code, _ek["device_code"]))
+                    _pairs.append((_ek, best[1]))
+                    _used_socks.add(best[1]["device_code"])
+            # przebieg 2: mapa pin->styk per gniazdo z geometrii, potem
+            # scalanie po artykule gniazda (komora = ten sam styk
+            # przekaźnika — X318/X319/X363 to wszystkie 8JA 003 526-002)
+            _schem_row = _ps_fuse_schematic_row(cur, ps_code)
+            _sock_rpm, _art_rpm = {}, {}
+            for _ek, _sk in _pairs:
+                try:
+                    _sc = json.loads(_sk["contacts_json"] or "[]")
+                except (ValueError, TypeError):
+                    _sc = []
+                if any(str(c.get("pin") or "").endswith("_2")
+                       for c in _sc):
+                    _sc = [c for c in _sc
+                           if str(c.get("pin") or "").endswith("_2")]
+                _rpm = _socket_relay_pinmap(
+                    cur, _schem_row, _sk["device_code"],
+                    _ek["device_clean"] or "", _sc)
+                _sock_rpm[_sk["device_code"]] = (_sc, _rpm)
+                _art = (_sk["article_number"] or "").strip()
+                if _art:
+                    _m = _art_rpm.setdefault(_art, {})
+                    for _p, _rp in _rpm.items():
+                        _m.setdefault(_p, _rp)
+            for _ek, _sk in _pairs:
+                _scont, _rpm0 = _sock_rpm[_sk["device_code"]]
+                _rpm = dict(_art_rpm.get(
+                    (_sk["article_number"] or "").strip()) or {})
+                _rpm.update(_rpm0)   # geometria własna > mapa artykułu
+                if _scont:
+                    for c in _scont:
+                        rp = _rpm.get(str(c.get("pin") or ""))
+                        if not rp:
+                            continue
+                        c["relay_pin"] = rp
+                        if rp in ("85", "86"):
+                            c["role"] = "Cewka (Coil 85/86)"
+                        elif rp == "30":
+                            c["role"] = "Zasilanie (Common 30)"
+                        elif rp == "87":
+                            c["role"] = "Styk zwierny (NO 87)"
+                        elif rp in ("87A", "87B"):
+                            c["role"] = "Styk rozwierny (NC 87a)"
+                    # domknięcie cewki: pin z masą (GND/999_) bez
+                    # etykiety na schemacie dostaje wolny biegun
+                    # cewki (85/86) — bez niego obwód cewki nie
+                    # powstanie (np. X318/K4 pin 6 → RT119)
+                    _coil_used = {
+                        str(c.get("relay_pin") or "")
+                        for c in _scont} & {"85", "86"}
+                    _coil_free = sorted({"85", "86"} - _coil_used)
+                    for c in _scont:
+                        if not _coil_free:
+                            break
+                        if str(c.get("relay_pin") or ""):
+                            continue
+                        _cs = (str(c.get("signal") or "") + " "
+                               + str(c.get("signal_name") or "")).lower()
+                        if (str(c.get("signal") or "").startswith("999")
+                                or "gnd" in _cs or "masa" in _cs):
+                            c["relay_pin"] = _coil_free.pop(0)
+                            c["role"] = "Cewka (Coil 85/86)"
+                    # domknięcie styku: gdy cewka i 30 znane, jedyny
+                    # wolny pin roboczy to wyjście 87 (1NO) lub 87a
+                    _free_r = {"30", "85", "86", "87", "87A"} - {
+                        str(c.get("relay_pin") or "")
+                        for c in _scont}
+                    for c in _scont:
+                        if str(c.get("relay_pin") or ""):
+                            continue
+                        for _want in ("87", "87A", "30"):
+                            if _want in _free_r:
+                                c["relay_pin"] = _want
+                                _free_r.discard(_want)
+                                c["role"] = ("Styk zwierny (NO 87)"
+                                             if _want == "87" else
+                                             "Styk rozwierny (NC 87a)"
+                                             if _want == "87A" else
+                                             "Zasilanie (Common 30)")
+                                break
+                if _scont:
+                    cur.execute(
+                        "UPDATE zuken_ps_relays SET contacts_json = ?, "
+                        "socket_code = ? "
+                        "WHERE ps_code = ? AND device_code = ?",
+                        (json.dumps(_scont, ensure_ascii=False),
+                         _sk["device_code"],
+                         ps_code, _ek["device_code"]))
 
     # ═══════════════════════════════════════════════════════════════
     # 4. ZAPIS W ZUKEN_PS_SUMMARIES
