@@ -262,5 +262,30 @@ else:
               and (h.get("internal_label") or "").split()[0] == "F21"
               for h in mp.get("hops", [])))
 
+    # styki przekaźników (Walia): fizyczne przewody, nie rekordy gniazda —
+    # K5: cewka 156/92D na 85/86, styki 999_37 na 30 i 257 na 87
+    import json as _json
+    import sqlite3 as _sq
+    _db = _sq.connect(z.DB_PATH)
+    def _relay_wires(dev):
+        r = _db.execute(
+            "SELECT contacts_json FROM zuken_ps_relays"
+            " WHERE ps_code = ? AND device_code = ?",
+            (PS2, dev)).fetchone()
+        return {(c.get("relay_pin") or ""): (c.get("wire_number") or "")
+                for c in _json.loads((r and r[0]) or "[]")}
+    check("K5: 4 przewody, styki wg schematu",
+          _relay_wires("=KKK+ACT-K5") ==
+          {"30": "999_37", "85": "156", "86": "92D", "87": "257"},
+          str(_relay_wires("=KKK+ACT-K5")))
+    check("K4: NC 87a (pinout 8JA 003 526-002)",
+          _relay_wires("=CAB+BSI-K4").get("87A") != ""
+          and "86" in _relay_wires("=CAB+BSI-K4"),
+          str(_relay_wires("=CAB+BSI-K4")))
+    check("K7: 4 przewody (cewka 999_135/221)",
+          {rp: w for rp, w in _relay_wires("=BOX+DPL-K7").items()} ==
+          {"5": "224", "5b": "225", "85": "999_135", "86": "221"},
+          str(_relay_wires("=BOX+DPL-K7")))
+
 print("\nALL OK" if ok else "\nFAILED")
 sys.exit(0 if ok else 1)
