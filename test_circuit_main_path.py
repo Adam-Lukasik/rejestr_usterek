@@ -272,7 +272,8 @@ else:
             "SELECT contacts_json FROM zuken_ps_relays"
             " WHERE ps_code = ? AND device_code = ?",
             (PS2, dev)).fetchone()
-        return {(c.get("relay_pin") or ""): (c.get("wire_number") or "")
+        return {(c.get("relay_pin") or ""): (c.get("wire_number")
+                                            or c.get("signal") or "")
                 for c in _json.loads((r and r[0]) or "[]")}
     check("K5: 4 przewody, styki wg schematu",
           _relay_wires("=KKK+ACT-K5") ==
