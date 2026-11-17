@@ -1,5 +1,5 @@
 -- Wygenerowano automatycznie przez tools/export_migrations.py
--- Data: 2026-11-15T16:57:34
+-- Data: 2026-11-16T21:19:25
 -- UWAGA: DELETE+INSERT — tabele systemowe są zarządzane centralnie,
 -- ich stan po migracji jest identyczny jak w dev-bazie.
 
@@ -1538,6 +1538,7 @@ INSERT OR REPLACE INTO zuken_data_patches (ps_code, kind, payload, status, sourc
 INSERT OR REPLACE INTO zuken_data_patches (ps_code, kind, payload, status, source, issue_id, note, created_by, created_at, updated_at, uid) VALUES ('PS011871', 'device_link', '{"device": "=CAB+ARR-FR24", "pin_a": "1", "device_b": "=CAB+ARR-FR25", "pin_b": "1", "label": "S300 RAFI TASTER"}', 'active', 'core', NULL, 'Przełącznik -S300 (RAFI TASTER, =BOM): NOT_START (FR24) ⟷ TEMP_SENS_OUT (FR25); E3 nie eksportuje urządzenia', 'Devin', '2026-11-14T09:24:24', '2026-11-14T09:24:24', '750060286f964e28b25a191e711c1d12');
 INSERT OR REPLACE INTO zuken_data_patches (ps_code, kind, payload, status, source, issue_id, note, created_by, created_at, updated_at, uid) VALUES ('PS011871', 'connection', '{"from_device": "=CAB+TWR-RT3", "from_pin": "1", "to_device": "=BOX+TWR-U9", "to_pin": "2", "signal": "34163", "wire_number": "34163", "link": "stud"}', 'active', 'core', NULL, 'przewód 34163: szpilka szyny U9:2 (jak RT111) -> RT3 ISOLATOR SWITCH FEED; odtworzone — poprzednia łatka zagubiona', 'Devin', '2026-11-15T15:22:03', '2026-11-15T15:22:03', '287e54ad677f43859799742959db8c68');
 INSERT OR REPLACE INTO zuken_data_patches (ps_code, kind, payload, status, source, issue_id, note, created_by, created_at, updated_at, uid) VALUES ('PS011871', 'connection', '{"from_device": "=CAB+TWR-RT3", "from_pin": "1", "to_device": "=BOX+TWR-U9", "to_pin": "2", "signal": "34163", "wire_number": "34163", "link": "stud"}', 'active', 'core', NULL, 'przewód 34163: szpilka szyny U9:2 (jak RT111) -> RT3 ISOLATOR SWITCH FEED; odtworzone — poprzednia łatka zagubiona', 'Devin', '2026-11-15T15:22:03', '2026-11-15T15:22:03', 'e3e46a6bab3b4dbf9e068b00814a5f79');
+INSERT OR REPLACE INTO zuken_data_patches (ps_code, kind, payload, status, source, issue_id, note, created_by, created_at, updated_at, uid) VALUES ('PS012732', 'connection', '{"from_device": "=CAB+FSI-RT51", "from_pin": "1", "link": "stud", "to_device": "-A22", "to_pin": "1"}', 'active', 'core', 181, '', 'Adam Łukasik', '2026-11-16T07:12:27', '2026-11-16T07:12:27', '52b666d1fba34406abe872fab36eb9e0');
 
 CREATE TABLE IF NOT EXISTS zuken_ps_meta (
             ps_code TEXT PRIMARY KEY,
@@ -1549,6 +1550,7 @@ CREATE TABLE IF NOT EXISTS zuken_ps_meta (
 DELETE FROM zuken_ps_meta;
 INSERT OR REPLACE INTO zuken_ps_meta (ps_code, base_vehicle, engineer_name, engineer_email, updated_at) VALUES ('PS012732', 'MB_SPRINTER', 'Marceli Koska', 'm.koska@was.pl', '2026-11-08T10:45:47');
 INSERT OR REPLACE INTO zuken_ps_meta (ps_code, base_vehicle, engineer_name, engineer_email, updated_at) VALUES ('PS011871', 'MAN_TGE', 'Klaudia Sarzyńska', 'k.sarzynska@was.pl', '2026-11-09T08:33:01');
+INSERT OR REPLACE INTO zuken_ps_meta (ps_code, base_vehicle, engineer_name, engineer_email, updated_at) VALUES ('PS012055', 'MB_SPRINTER', 'Marceli Koska', 'm.koska@was.pl', '2026-11-16T10:14:21');
 
 CREATE TABLE IF NOT EXISTS zuken_platform_terms (
             term TEXT PRIMARY KEY COLLATE NOCASE,

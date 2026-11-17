@@ -6290,9 +6290,9 @@ def _populate_ps_box_fuses(cur, ps_code):
     _bschems = cur.execute("""
         SELECT s.id, s.filepath, s.file_mtime FROM zuken_pdf_schematics s
         WHERE COALESCE(s.doc_kind,'schematic')='schematic' AND s.ps_code=?
-          AND EXISTS (SELECT 1 FROM zuken_pdf_symbols y
-                      WHERE y.schematic_id=s.id
-                        AND y.symbol_name LIKE '-F%')
+          AND (SELECT COUNT(*) FROM zuken_pdf_symbols y
+               WHERE y.schematic_id=s.id
+                 AND y.symbol_name GLOB '-F[0-9]*') >= 10
         ORDER BY s.is_active DESC, s.id DESC""", (ps_code,)).fetchall()
     if not _bschems:
         return
@@ -6791,6 +6791,11 @@ def generate_ps_technical_summaries(ps_code, lang="pl"):
                 continue
             if d_code.startswith("=BOM") and _dev_suffix(d_code) in non_bom_suffixes:
                 continue
+            # splice z kodem -K (np. =CAB+FSI-Kl.15 "Kl.15 EK1 Splice")
+            # to rozgałęźnik, nie przekaźnik
+            if re.search(r"splice|rozga", (rr["description"] or ""),
+                         re.IGNORECASE):
+                continue
 
             func = rr["function"] or ""
             desc = rr["description"] or ""
@@ -6946,6 +6951,103 @@ def generate_ps_technical_summaries(ps_code, lang="pl"):
                 supplier, description, socket_code, system, location, contacts_json
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
         """, relay_inserts)
+
+        # styczniki mocy bez styków w raporcie (WM V231: szpilki -RT na
+        # stykach 5/5b + złącze cewki -X) — kontakty z geometrii etykiet
+        # PDF; mapa czyta dopiero co wstawione wiersze z pustymi stykami
+        try:
+            _adj0 = _wire_adjacency(cur, conn_proj_ids or [])
+            _rel_geo = _relay_geometry_map(
+                cur, _adj0, ps_code,
+                _device_function_map(cur, bom_proj_ids),
+                _device_bom_name_map(cur, bom_proj_ids))
+        except Exception:
+            _rel_geo = {}
+        for _rgd in cur.execute("""
+                SELECT device_code, device_clean, contacts_json
+                FROM zuken_ps_relays
+                WHERE ps_code = ?
+                  AND (contacts_json IS NULL OR contacts_json IN ('', '[]'));
+                """, (ps_code,)).fetchall():
+            _rg = _rel_geo.get(_rgd["device_clean"] or "") or {}
+            _gcont = []
+            _pins = _rg.get("pins") or ("5", "5b")
+            for _si, _rt in enumerate(_rg.get("studs") or []):
+                if not _rt:
+                    continue
+                _gcont.append({
+                    "pin": "",
+                    "relay_pin": _pins[_si] if _si < len(_pins) else "5",
+                    "role": "Styk roboczy",
+                    "signal": "", "signal_name": "", "wire_number": "",
+                    "wire_color": "", "cross_section": "",
+                    "wire_type": "", "length": "",
+                    "target_device": _rt, "target_pin": "1",
+                    "target_desc": explain_device_code(
+                        _rt, glossary, lang=lang)})
+            if _rg.get("coil_dev"):
+                _gcont.append({
+                    "pin": "", "relay_pin": "85/86",
+                    "role": "Cewka (Coil 85/86)",
+                    "signal": "", "signal_name": "", "wire_number": "",
+                    "wire_color": "", "cross_section": "",
+                    "wire_type": "", "length": "",
+                    "target_device": _rg["coil_dev"], "target_pin": "",
+                    "target_desc": explain_device_code(
+                        _rg["coil_dev"], glossary, lang=lang)})
+            if _gcont:
+                cur.execute(
+                    "UPDATE zuken_ps_relays SET contacts_json = ? "
+                    "WHERE ps_code = ? AND device_code = ?",
+                    (json.dumps(_gcont, ensure_ascii=False),
+                     ps_code, _rgd["device_code"]))
+
+        # Przekaźniki -K bez styków w raporcie i bez symbolu na schemacie
+        # (WM V231: okablowane jest gniazdo -X, nie sam wkład -K) —
+        # dobierz styki gniazda po wspólnym wyróżniającym tokenie funkcji
+        # (K4 'Horning' → X318 'Horning', K5 '…Door contact…' → X155
+        # 'Contact Door Relay'). Preferowana ta sama lokalizacja.
+        _gen_toks = {"relay", "przekaznik", "przekaźnik", "sterujacy",
+                     "sterujący", "socket", "relais"}
+        def _func_toks(s):
+            return {t for t in re.findall(r"[a-zà-ž]+", (s or "").lower())
+                    if len(t) >= 3 and t not in _gen_toks}
+        _empty_k = cur.execute("""
+            SELECT device_code, device_clean, function, location
+            FROM zuken_ps_relays
+            WHERE ps_code = ? AND device_clean LIKE 'K%'
+              AND (contacts_json IS NULL OR contacts_json IN ('', '[]'));
+            """, (ps_code,)).fetchall()
+        if _empty_k:
+            _socks = cur.execute("""
+                SELECT device_code, device_clean, function, location, contacts_json
+                FROM zuken_ps_relays
+                WHERE ps_code = ? AND device_clean LIKE 'X%'
+                  AND contacts_json NOT IN ('', '[]') AND contacts_json IS NOT NULL;
+                """, (ps_code,)).fetchall()
+            _used_socks = set()
+            for _ek in sorted(_empty_k,
+                              key=lambda r: -len(_func_toks(r["function"]))):
+                _et = _func_toks(_ek["function"])
+                best = None
+                for _sk in _socks:
+                    if _sk["device_code"] in _used_socks:
+                        continue
+                    common = _et & _func_toks(_sk["function"])
+                    if not common:
+                        continue
+                    score = (len(common), _sk["location"] == _ek["location"])
+                    if best is None or score > best[0]:
+                        best = (score, _sk)
+                if best:
+                    _sk = best[1]
+                    _used_socks.add(_sk["device_code"])
+                    cur.execute(
+                        "UPDATE zuken_ps_relays SET contacts_json = ?, "
+                        "socket_code = ? "
+                        "WHERE ps_code = ? AND device_code = ?",
+                        (_sk["contacts_json"], _sk["device_code"],
+                         ps_code, _ek["device_code"]))
 
     # ═══════════════════════════════════════════════════════════════
     # 4. ZAPIS W ZUKEN_PS_SUMMARIES
@@ -8413,11 +8515,13 @@ def _circuit_extend_adjacency(cur, adj, ps_code, dev_funcs=None, bom_names=None)
     # bezpiecznik w oprawce/slocie nieobecnym w raporcie (np. F21 250A MEGA
     # w =BOX+BF-U120: RT53 nad, RT48 pod) — raport go nie zna, ale tor
     # prądu przechodzi przez element: dwa terminale z geometrii łączymy
-    # krawędzią 'fuse' (bez bezpieczników na szynach-zworach — te mają
-    # własny model 'bars')
+    # krawędzią 'fuse'. Bezpieczniki na szynach-zworach ('bars') też
+    # dostają krawędź — model ZW materializuje się tylko przy zapytaniu
+    # o ten bezpiecznik, a tor przechodzący (X378: A2 -> F10 -> +COMMS)
+    # potrzebuje ogniwa RT19 -> [F10] -> RT134 w grafie
     _fbars = _rails.get("bars") or {}
     for _fc, _tl in (_rails.get("terms") or {}).items():
-        if len(_tl) != 2 or _fc in _fbars or _tl[0] == _tl[1]:
+        if len(_tl) != 2 or _tl[0] == _tl[1]:
             continue
         _fa = [nd for nd in adj if nd[0] == _tl[0]]
         _fb = [nd for nd in adj if nd[0] == _tl[1]]
@@ -8973,12 +9077,18 @@ def _trace_circuit_impl(ps_code, query, lang="pl"):
                 _mm[_el] = _other
             else:
                 _mm.setdefault(_el, (_el, ""))
+    # styki/cewki przekaźników: mapa węzeł -> przekaźnik i lista krawędzi
+    # styków (osobny przebieg — wcześniej siedziało w pętli _rail_rail
+    # po `continue` i nigdy się nie wypełniało)
+    for (rd_d, rd_p), rd_nbrs in adj.items():
+        for rd_nb, rd_row in rd_nbrs.items():
             rdv = rd_row.get("_relay_dev") if isinstance(rd_row, dict) else ""
-            if rdv:
-                relay_contacts.setdefault(rdv, set()).add((rd_d, rd_p))
-                node_relay.setdefault((rd_d, rd_p), rdv)
-                if (rd_d, rd_p) < rd_nb:
-                    relay_edges.setdefault(rdv, []).append(((rd_d, rd_p), rd_nb, rd_row))
+            if not rdv:
+                continue
+            relay_contacts.setdefault(rdv, set()).add((rd_d, rd_p))
+            node_relay.setdefault((rd_d, rd_p), rdv)
+            if (rd_d, rd_p) < rd_nb:
+                relay_edges.setdefault(rdv, []).append(((rd_d, rd_p), rd_nb, rd_row))
     sig_nodes = _signal_node_map(cur, conn_ids)
     # grupy tokenów zapytania z aliasami firmowymi (NAK, zapalniczka…)
     groups = _query_token_groups(q, cur)
@@ -9505,6 +9615,7 @@ def _trace_circuit_impl(ps_code, query, lang="pl"):
                             or bool(re.match(r"^U\d", c2)))
             ends = _wire_net_paths(adj, node, banned=pin_ban, max_nodes=800,
                                    max_ends=32, pass_fn=pfn)
+            _hit_cap = len(ends) >= 32
             if rail_nodes:
                 # szyna zbiorcza: po wejściu na szynę tor może iść tylko w
                 # jej fizyczne odczepy (kołki slotów, terminale) i w element
@@ -9527,15 +9638,26 @@ def _trace_circuit_impl(ps_code, query, lang="pl"):
                             return True
                     return False
                 ends = [e for e in ends if not _rail_violation(e[1])]
-            if len(ends) >= 32 and not any(_ground_end(ed, p) for (ed, _ep), p in ends):
-                # sieć masy z rozgałęźnikami (U31 łączy ~40 odbiorników):
-                # punkty masy leżą za limitem pierwszego przebiegu
+            def _batt_end(ed, path):
+                row = path[-1][2] if path else None
+                return (isinstance(row, dict)
+                        and bool(row.get("_batt_pin")))
+
+            _miss_gnd = not any(
+                _ground_end(ed, p) for (ed, _ep), p in ends)
+            _miss_batt = not any(
+                _batt_end(ed, p) for (ed, _ep), p in ends)
+            if _hit_cap and (_miss_gnd or _miss_batt):
+                # sieci z rozgałęźnikami (U31 łączy ~40 odbiorników masy,
+                # SP1052 ~30 odbiorników EJECT): punkty masy i bieguny
+                # baterii leżą za limitem pierwszego przebiegu
                 deep = _wire_net_paths(adj, node, banned=pin_ban,
                                        max_nodes=4000, max_ends=600,
                                        pass_fn=pfn)
                 if rail_nodes:
                     deep = [e for e in deep if not _rail_violation(e[1])]
-                if any(_ground_end(ed, p) for (ed, _ep), p in deep):
+                if (any(_ground_end(ed, p) for (ed, _ep), p in deep)
+                        or any(_batt_end(ed, p) for (ed, _ep), p in deep)):
                     ends = deep
             # tor nie może wracać przez własną krawędź elementu (RT64 ->
             # [fuse F18] -> RT5 przy pytaniu o F18): końce po drugiej stronie
@@ -9649,7 +9771,8 @@ def _trace_circuit_impl(ps_code, query, lang="pl"):
                     "path": hops,
                     "via_fuse": any(h.get("internal") == "fuse" for h in hops),
                     "via_relay": any(h.get("internal") == "relay" for h in hops),
-                    "via_stud": any(_is_stud_hop(h) for h in hops),
+                    "via_stud": (any(_is_stud_hop(h) for h in hops)
+                                 or eclean in block_cleans),
                     "batt_name": next((h.get("batt_name") for h in hops
                                        if h.get("internal") == "battery"
                                        and h.get("batt_name")), ""),
@@ -9959,7 +10082,8 @@ def _trace_circuit_impl(ps_code, query, lang="pl"):
             "path": hops,
             "via_fuse": any(h.get("internal") == "fuse" for h in hops),
             "via_relay": any(h.get("internal") == "relay" for h in hops),
-            "via_stud": any(_is_stud_hop(h) for h in hops),
+            "via_stud": (any(_is_stud_hop(h) for h in hops)
+                         or eclean in block_cleans),
             "batt_name": next((h.get("batt_name") for h in hops
                                if h.get("internal") == "battery"
                                and h.get("batt_name")), ""),
@@ -10556,6 +10680,13 @@ def _trace_circuit_impl(ps_code, query, lang="pl"):
                             1 for s in sel if not _via_blk(s)) < 3:
                         sel.append(c)
 
+        # cokoły przekaźników (X132: wewnętrzna krawędź 'relay' między
+        # własnymi pinami): tor 'power' przez własne styki to nie
+        # zasilanie odbiornika — zostają pary sygnałowe
+        _relay_sock = {li: (ld.get("device") or "")
+                       for li, ld in enumerate(loads_out[:3])
+                       if (ld.get("device") or "") in set(relay_edges)}
+
         found = []
         for i, ca0 in enumerate(sel):
             for cb0 in sel[i + 1:]:
@@ -10589,6 +10720,16 @@ def _trace_circuit_impl(ps_code, query, lang="pl"):
                             continue
                         row = {"_internal": "device",
                                "_internal_label": clean_device_code(sa[0]) or sa[0]}
+                    # sklejenie końców z dwóch pinów własnego cokołu
+                    # przekaźnika krawędzią 'relay' — to nie jest
+                    # zasilanie odbiornika, tylko styki zapytanego
+                    # urządzenia; pary sygnałowe zostają
+                    if (isinstance(row, dict)
+                            and row.get("_internal") == "relay"
+                            and sa[0] == sb[0]
+                            and sa[0] in set(_relay_sock.values())
+                            and _pair_kind(a, b) != "signal"):
+                        continue
                     hops = [_rev_hop(h) for h in reversed(a["path"])]
                     hops.append(_wire_hop(sa[0], sa[1], sb[0], sb[1], row))
                     hops.extend(b["path"])

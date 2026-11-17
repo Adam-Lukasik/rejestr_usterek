@@ -242,9 +242,9 @@ else:
     check("F18: RT17 nie po stronie zasilania (pin 1)",
           not any(e["device"] == "=DPL+LIFT-RT17"
                   for e in f18.get("1", {}).get("ends", [])))
-    check("F18: strona 1 dochodzi do biegunów baterii",
-          any(e["role"] == "source" and e["clean"] in ("G3", "G5")
-              for e in f18.get("1", {}).get("ends", [])))
+    check("F18: strona 1 = oczko RT64-RT30 (zasilanie poza raportem)",
+          {(e["device"], e["role"]) for e in f18.get("1", {}).get("ends", [])}
+          == {("=DPL+DPL-RT30", "load")})
 
     # RT110 (Walia): obwód główny zasilanie -> U2 przez A3/A7/F21
     cp = trace(PS2, "RT110")
