@@ -150,7 +150,8 @@ Wersja wielojęzykowa: `SUPPORTED_LANGS = ("pl", "en", "de")`, tłumaczenia w
 ## Workflow (Adam, 2 komputery, bez OneDrive)
 
 - **Kod** — git/GitHub: repo `Adam-Lukasik/rejestr_usterek`, aktywny branch
-  `feature/v2.0-bilingual`. Przed pracą `git pull`, po `commit` + `push`.
+  `develop` (linia główna rozwoju; `main` = wydania, scalane przy release).
+  Przed pracą `git pull`, po `commit` + `push`.
 - **Cały katalog** (z db, Bazą wiedzy, backupami) — Adam przenosi na pendrive
   między pracą a domem: na docelowym kompie zmienia nazwę starego katalogu na
   `..._old`, kopiuje całość z pendrive. Rutyna, nie optymalizować bez pytania.
