@@ -84,7 +84,53 @@ Wersja wielojęzykowa: `SUPPORTED_LANGS = ("pl", "en", "de")`, tłumaczenia w
 ## Struktura danych / katalogi poza gitem
 
 - `rejestr_usterek.db` — baza SQLite (gitignored)
-- `Baza wiedzy/` — PDF-y schematów Zuken, dokumenty projektu (~658 MB, gitignored)
+- `Baza wiedzy/` — PDF-y schematów Zuken, dokumenty projektu (~658 MB, gitignored).
+  Schemat E3 = PDF na poziomie głównym folderu PS lub z kodem PS w nazwie
+  (`doc_kind='schematic'`); PDF w podfolderze bez kodu PS = `doc_kind='manual'`
+  (slot „Dokumentacja urządzeń" w checkliście KB, upload trafia do
+  podfolderu `Dokumentacje urzadzen` przez parametr `subdir` w
+  `/api/zuken/kb/<ps>/upload`). Reguła: `_kb_pdf_is_schematic` w zuken_service.
+  Stan plików KB: tabela `zuken_kb_files` (manifest rozmiar+mtime po przetworzeniu,
+  zapis w `_kb_manifest_mark`; jednorazowe zasianie z istniejącego indeksu w
+  `_kb_manifest_load`). `get_ps_kb_files_status` zwraca `documents[].state`
+  (new/changed/ok), `sync` (new/changed/removed/relocated/needs_processing) i
+  `next_steps`. `kb_cleanup_orphans` (wołane z `process_ps_knowledge_base`) kasuje
+  wpisy indeksu/importów plików nieobecnych w folderze PS (dopasowanie po NAZWIE,
+  nie ścieżce) i poprawia stare ścieżki; nic nie robi przy pustym/nieobecnym folderze.
+  `Baza wiedzy/Komponenty/` — dokumentacja komponentów (katalogi TE, rysunki, specyfikacje),
+  stała `KB_COMPONENTS_DIR`; NIE jest projektem PS (pominięty w liście projektów), PDF-y
+  indeksowane przez `sync_all_knowledge_base` jako `doc_kind='manual'`, category 'Komponenty',
+  bez PS. `index_zuken_pdf` przy trafieniu w cache odświeża metadane (typ/kategoria/ścieżka/PS).
+  Modal „Baza wiedzy projektu” (`modal-kb-files`): baner statusu u góry (`renderKbBanner`:
+  stan, chipy nowe/zmienione/usunięte, kroki z `next_steps`, akcje Wgraj brakujące /
+  Przetwórz (N) / Odśwież / Otwórz folder), zwinięte wiersze typów (`renderKbChecklist`),
+  zwinięta lista wszystkich plików z badge NOWY/ZMIENIONY. Auto-odświeżenie na `focus` okna
+  (zmiany z Eksploratora). Przetwarzanie ręczne — baner tylko informuje i podpowiada.
+  Długości przewodów: slot `wires` uznaje też kolumnę „Lenght” w liście połączeń
+  (`_conn_xlsx_has_lengths` → `via_conn` w statusie); osobny plik „Właściwości
+  przewodu” potrzebny tylko gdy kolumna pusta/nieobecna — `import_wire_lengths_xlsx`.
+  Globalny status KB: `GET /api/zuken/kb/status-all` (`get_kb_sync_overview`, lekki skan bez PDF),
+  front `refreshKbAlerts`/`renderKbAlerts`: kropka `ps-status-dot` przy wyborze projektu +
+  baner `kb-alert-banner` nad widokami (Przetwórz teraz / Baza wiedzy / Później — ukrycie do
+  zmiany stanu, sessionStorage `ru_kb_alert_dismissed`). Odświeżany przy loadUserPS, focus, kbRefreshStatus.
+  Pliki główne projektu: `main_schematic` / `main_e3s` w `zuken_controller_settings` (nazwa pliku);
+  `_apply_active_schematic` (wybór aktywnego schematu: wskazany albo najnowsza rewizja),
+  `resolve_main_e3s` (wskazany → ta sama nazwa co aktywny PDF → jedyny → najnowszy),
+  `kb_move_file` (przeniesienie do `Dokumentacje urzadzen`, czyści wskazania), `open_main_file`.
+  Pliki z podfolderu `Dokumentacje urzadzen` nie zajmują slotów pdf/e3s/ctrl.
+  Menu: 3 sekcje (Codzienne/Projekt/Ustawienia). Widok `project-hub` = Panel projektu
+  (kafelki: Pliki KB → `openKbManager`, Dokumenty, Spis, Kontrola, Reworki + status
+  z `KB_ALERT.data`, `renderProjectHub`); podwidoki projektu bez własnych pozycji
+  w menu — `PROJECT_VIEWS` trzyma `nav-project-hub` aktywnym. Baner KB tylko otwiera
+  modal (`kbAlertProcess`), przetwarzanie wyłącznie przyciskiem w modalu.
+  Tabele funkcji paneli dotykowych Acetech (DOCX, np. `Funkcje_paneli_*_tabela.docx`):
+  `parse_acetech_panel_docx` (rozpoznanie po nagłówku „Wyjście Acetech”, zipfile+XML),
+  `_ps_panel_functions` + `_panel_function_matches` dokładają `panel_functions`/`panel_file`
+  do `controller_logic` w odpowiedzi asystenta — warstwa „klawisz panelu → wyjścia O.x +
+  warunek działania”, niezależna od wyboru pliku logiki. UI: wiersze plików
+  `kbFileRow` (Główny / Użyj jako logiki / Do dokumentacji / Otwórz), przyciski Zuken/Schemat w
+  panelu bocznym (`ps-quick-open`, endpoint `/api/zuken/kb/<ps>/open-main`).
+  FK w SQLite są wyłączone — kasowanie dzieci jest jawne.
 - `backups/` — paczki backupu (~1.3 GB, gitignored)
 - `python-embed/` — przenośny WinPython (~303 MB, gitignored, per maszyna)
 - `sumatrapdfcache/`, `SumatraPDF*` — podgląd PDF (gitignored)

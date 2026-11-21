@@ -145,11 +145,11 @@ app = Flask(__name__)
 # Limit uploadu dla paczek synchronizacyjnych / backupów (baza + Baza wiedzy)
 app.config["MAX_CONTENT_LENGTH"] = 2 * 1024 * 1024 * 1024
 
-VERSION = "2.3.8"
+VERSION = "3.0.0"
 # Epoka danych Zuken: podbić, gdy wydanie wymaga ponownej generacji
 # zestawień + skanu kontroli schematów (nowe/zmienione detektory,
 # format cache PDF, łatki itd.). Zwykłe poprawki UI/tekstów -> bez zmiany.
-DATA_VERSION = 2
+DATA_VERSION = 3
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # STATIC_DIR — zasoby kodu (UI, migracje, narzędzia); DATA_DIR — dane użytkownika
@@ -2745,6 +2745,15 @@ def api_zuken_kb_files(ps_code):
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/zuken/kb/status-all", methods=["GET"])
+def api_zuken_kb_status_all():
+    """Lekki stan synchronizacji Bazy wiedzy wszystkich projektów PS (baner/kropka statusu w UI)."""
+    try:
+        return jsonify({"projects": zuken_service.get_kb_sync_overview()})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/api/zuken/kb/<ps_code>/upload", methods=["POST"])
 def api_zuken_kb_upload(ps_code):
     """Zapisuje przesłany plik (.xlsx/.pdf/.e3s/.html) do folderu Bazy wiedzy danego PS."""
@@ -2764,8 +2773,16 @@ def api_zuken_kb_upload(ps_code):
     if ext not in zuken_service.KB_ALLOWED_EXTENSIONS:
         return jsonify({"error": zuken_service.zsmsg("kbBadExt", lang, v=filename)}), 400
 
+    # Opcjonalny podfolder-kategoria (np. 'Dokumentacje urzadzen' dla manuali).
+    # Sanityzacja: tylko jeden poziom, bez separatorów i '..'.
+    subdir = (request.form.get("subdir") or "").strip()
+    if subdir and (subdir in (".", "..") or "/" in subdir or "\\" in subdir):
+        return jsonify({"error": zuken_service.zsmsg("kbBadSubdir", lang, v=subdir)}), 400
+
     try:
         kb_dir = zuken_service._kb_dir_for_ps(ps)
+        if subdir:
+            kb_dir = os.path.join(kb_dir, subdir)
         os.makedirs(kb_dir, exist_ok=True)
         dest = os.path.join(kb_dir, filename)
         f.save(dest)
@@ -2777,6 +2794,69 @@ def api_zuken_kb_upload(ps_code):
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/zuken/kb/<ps_code>/move", methods=["POST"])
+def api_zuken_kb_move(ps_code):
+    """Przenosi plik projektu do podfolderu (domyślnie dokumentacja urządzeń) bez usuwania."""
+    lang = _app_lang()
+    ps = (ps_code or "").strip().upper()
+    if not _valid_ps_code(ps):
+        return jsonify({"error": zuken_service.zsmsg("kbBadPs", lang, v=ps_code)}), 400
+    data = request.get_json(silent=True) or {}
+    try:
+        res = zuken_service.kb_move_file(ps, data.get("path") or "",
+                                         data.get("subdir") or zuken_service.KB_MANUAL_SUBDIR, lang=lang)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    return (jsonify(res), 200) if res.get("status") == "success" else (jsonify(res), 400)
+
+
+@app.route("/api/zuken/kb/<ps_code>/main-schematic", methods=["POST"])
+def api_zuken_kb_main_schematic(ps_code):
+    """Wskazuje główny schemat projektu spośród kilku PDF-ów w folderze."""
+    lang = _app_lang()
+    ps = (ps_code or "").strip().upper()
+    if not _valid_ps_code(ps):
+        return jsonify({"error": zuken_service.zsmsg("kbBadPs", lang, v=ps_code)}), 400
+    data = request.get_json(silent=True) or {}
+    try:
+        res = zuken_service.set_main_schematic(ps, data.get("path") or "", lang=lang)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    return (jsonify(res), 200) if res.get("status") == "success" else (jsonify(res), 400)
+
+
+@app.route("/api/zuken/kb/<ps_code>/main-e3s", methods=["POST"])
+def api_zuken_kb_main_e3s(ps_code):
+    """Wskazuje główny plik projektu Zuken (.e3s) spośród kilku w folderze."""
+    lang = _app_lang()
+    ps = (ps_code or "").strip().upper()
+    if not _valid_ps_code(ps):
+        return jsonify({"error": zuken_service.zsmsg("kbBadPs", lang, v=ps_code)}), 400
+    data = request.get_json(silent=True) or {}
+    try:
+        res = zuken_service.set_main_e3s(ps, data.get("path") or "", lang=lang)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    return (jsonify(res), 200) if res.get("status") == "success" else (jsonify(res), 400)
+
+
+@app.route("/api/zuken/kb/<ps_code>/open-main", methods=["POST"])
+def api_zuken_kb_open_main(ps_code):
+    """Otwiera główny plik projektu: kind='e3s' (Zuken E3) lub 'pdf' (aktywny schemat)."""
+    if _is_server_mode():
+        return jsonify({"error": smsg("srvLocalOnly")}), 400
+    lang = _app_lang()
+    ps = (ps_code or "").strip().upper()
+    if not _valid_ps_code(ps):
+        return jsonify({"error": zuken_service.zsmsg("kbBadPs", lang, v=ps_code)}), 400
+    kind = ((request.get_json(silent=True) or {}).get("kind") or "e3s").lower()
+    try:
+        res = zuken_service.open_main_file(ps, "pdf" if kind == "pdf" else "e3s", lang=lang)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    return (jsonify(res), 200) if res.get("status") == "success" else (jsonify(res), 400)
 
 
 @app.route("/api/zuken/kb/<ps_code>/controller", methods=["GET"])

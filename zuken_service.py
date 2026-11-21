@@ -11,6 +11,7 @@ import csv
 import json
 import sqlite3
 import zipfile
+import shutil
 import urllib.parse
 import urllib.request
 import urllib.error
@@ -48,6 +49,9 @@ DATA_DIR = os.environ.get("RU_DATA_DIR") or BASE_DIR
 BAZA_WIEDZY_DIR = os.path.join(DATA_DIR, "Baza wiedzy")
 BOM_IMAGES_DIR = os.path.join(BAZA_WIEDZY_DIR, "zdjecia_komponentow")
 os.makedirs(BOM_IMAGES_DIR, exist_ok=True)
+# Folder dokumentacji komponentów (katalogi, rysunki, specyfikacje producentów) —
+# nie jest projektem PS; pliki indeksowane jako dokumentacja bez przypisania do PS.
+KB_COMPONENTS_DIR = "Komponenty"
 # Zdjęcia komponentów spakowane z aplikacją (build kopiuje tam zawartość
 # BOM_IMAGES_DIR) — fallback, gdy lokalne zdjęcie nie istnieje w danych.
 PACKAGED_IMAGES_DIR = os.path.join(STATIC_DIR, "zdjecia_komponentow")
@@ -118,6 +122,10 @@ ZS_MSG = {
     "kbNoFiles": {"pl": "Folder projektu nie zawiera plików do przetworzenia (.xlsx, .pdf).", "en": "The project folder contains no files to process (.xlsx, .pdf).", "de": "Der Projektordner enthält keine zu verarbeitenden Dateien (.xlsx, .pdf)."},
     "kbBadPs": {"pl": "Niepoprawny numer projektu PS: {v}", "en": "Invalid PS project number: {v}", "de": "Ungültige PS-Projektnummer: {v}"},
     "kbNoUpload": {"pl": "Nie przesłano żadnego pliku.", "en": "No file was uploaded.", "de": "Es wurde keine Datei hochgeladen."},
+    "kbMoveExists": {"pl": "W folderze docelowym istnieje już plik o nazwie: {v}", "en": "A file with this name already exists in the target folder: {v}", "de": "Im Zielordner existiert bereits eine Datei mit dem Namen: {v}"},
+    "kbNotSchematic": {"pl": "Ten plik nie może być głównym schematem: {v}", "en": "This file cannot be the main schematic: {v}", "de": "Diese Datei kann nicht der Hauptschaltplan sein: {v}"},
+    "kbNoMainFile": {"pl": "Brak głównego pliku do otwarcia dla projektu {v}.", "en": "No main file to open for project {v}.", "de": "Keine Hauptdatei zum Öffnen für Projekt {v}."},
+    "kbBadSubdir": {"pl": "Niepoprawna nazwa podfolderu: {v}", "en": "Invalid subfolder name: {v}", "de": "Ungültiger Unterordnername: {v}"},
     "kbBadExt": {"pl": "Niedozwolony typ pliku: {v}. Dozwolone: .xlsx, .pdf, .e3s, .html, .xml, .csv, .json, .txt, .msg, .png, .jpg, .actp, .app, .docx", "en": "Unsupported file type: {v}. Allowed: .xlsx, .pdf, .e3s, .html, .xml, .csv, .json, .txt, .msg, .png, .jpg, .actp, .app, .docx", "de": "Nicht unterstützter Dateityp: {v}. Erlaubt: .xlsx, .pdf, .e3s, .html, .xml, .csv, .json, .txt, .msg, .png, .jpg, .actp, .app, .docx"},
     "e3sRegistered": {"pl": "Plik projektu E3 obecny — schemat można otwierać w Zuken E3.", "en": "E3 project file present — the schematic can be opened in Zuken E3.", "de": "E3-Projektdatei vorhanden — der Schaltplan kann in Zuken E3 geöffnet werden."},
     "ctrlRegistered": {"pl": "Raport/plik sterownika obecny — używany przy analizie ścieżki sygnału (parsowanie: Carnation HTML, Acetech PDF; Inomatic .app tylko rejestracja).", "en": "Controller report/file present — used for signal path analysis (parsing: Carnation HTML, Acetech PDF; Inomatic .app registration only).", "de": "Steuergerätebericht/-datei vorhanden — wird für die Signalpfadanalyse verwendet (Parsing: Carnation HTML, Acetech PDF; Inomatic .app nur Registrierung)."},
@@ -581,6 +589,20 @@ def init_zuken_tables():
     cur.execute("CREATE INDEX IF NOT EXISTS idx_zuken_bom_dev_clean ON zuken_bom_devices (device_clean);")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_zuken_bom_dev_item ON zuken_bom_devices (bom_item_id);")
 
+    # Manifest Bazy wiedzy: stan pliku (rozmiar, mtime) w chwili ostatniego
+    # przetworzenia — pozwala wykryć nowe/zmienione pliki (także o tej samej nazwie).
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS zuken_kb_files (
+            ps_code TEXT NOT NULL,
+            rel_path TEXT NOT NULL,
+            kind TEXT,
+            size INTEGER DEFAULT 0,
+            mtime REAL DEFAULT 0,
+            processed_at TEXT,
+            PRIMARY KEY (ps_code, rel_path)
+        );
+    """)
+
     # Tabele dla zestawień technicznych per projekt PS (złącza z pinoutem, bezpieczniki, przekaźniki)
     cur.execute("""
         CREATE TABLE IF NOT EXISTS zuken_ps_summaries (
@@ -670,6 +692,14 @@ def init_zuken_tables():
             controller_file TEXT DEFAULT ''
         );
     """)
+    cur.execute("PRAGMA table_info(zuken_controller_settings)")
+    if "main_schematic" not in [r[1] for r in cur.fetchall()]:
+        # plik wskazany przez użytkownika jako główny schemat projektu (nazwa pliku)
+        cur.execute("ALTER TABLE zuken_controller_settings ADD COLUMN main_schematic TEXT DEFAULT '';")
+    cur.execute("PRAGMA table_info(zuken_controller_settings)")
+    if "main_e3s" not in [r[1] for r in cur.fetchall()]:
+        # plik .e3s wskazany przez użytkownika jako główny projekt Zuken (nazwa pliku)
+        cur.execute("ALTER TABLE zuken_controller_settings ADD COLUMN main_e3s TEXT DEFAULT '';")
 
     # Reworki wiązek per projekt PS (poprawki produkcyjne — np. zamiana pinów
     # w złączu po znalezieniu błędu na pilocie). pin_changes: JSON
@@ -2315,6 +2345,35 @@ def start_batch_image_download(ps_code=None, category=None, scope=None, only_mis
 # INDEKSOWANIE SCHEMATÓW PDF Z ZUKEN E3
 # ═══════════════════════════════════════════════════════════════════
 
+def _apply_active_schematic(cur, ps_code):
+    """
+    Ustawia is_active wśród schematów E3 projektu: plik wskazany przez użytkownika
+    (zuken_controller_settings.main_schematic, po nazwie) albo najnowsza rewizja.
+    """
+    cur.execute("""
+        SELECT id, filename FROM zuken_pdf_schematics
+        WHERE UPPER(TRIM(ps_code)) = ? AND COALESCE(doc_kind, 'schematic') = 'schematic'
+        ORDER BY revision_date DESC, id DESC;
+    """, (ps_code,))
+    rows = cur.fetchall()
+    if not rows:
+        return
+    pick = rows[0][0]
+    try:
+        cur.execute("SELECT main_schematic FROM zuken_controller_settings WHERE ps_code = ?", (ps_code,))
+        row = cur.fetchone()
+        main = os.path.basename((row[0] if row else "") or "").lower()
+    except sqlite3.OperationalError:
+        main = ""
+    if main:
+        for r in rows:
+            if (r[1] or "").lower() == main:
+                pick = r[0]
+                break
+    cur.execute("UPDATE zuken_pdf_schematics SET is_active = 0 WHERE UPPER(TRIM(ps_code)) = ? AND COALESCE(doc_kind, 'schematic') = 'schematic'", (ps_code,))
+    cur.execute("UPDATE zuken_pdf_schematics SET is_active = 1 WHERE id = ?", (pick,))
+
+
 def index_zuken_pdf(filepath, ps_code=None, doc_kind="schematic", category="", lang="pl"):
     """
     Indeksuje wektorowy plik PDF ze schematem wyeksportowanym z Zuken E3.
@@ -2339,11 +2398,26 @@ def index_zuken_pdf(filepath, ps_code=None, doc_kind="schematic", category="", l
 
     # Sprawdź czy plik był już zaindeksowany i nie uległ modyfikacji
     cur.execute("""
-        SELECT id, total_pages FROM zuken_pdf_schematics
+        SELECT id, total_pages, filepath, ps_code, COALESCE(doc_kind, 'schematic') AS doc_kind,
+               COALESCE(category, '') AS category
+        FROM zuken_pdf_schematics
         WHERE (filepath = ? OR filename = ?) AND file_size = ? AND abs(file_mtime - ?) < 1
     """, (filepath, filename, file_size, file_mtime))
     cached = cur.fetchone()
     if cached:
+        # Treść bez zmian — nie indeksujemy ponownie, ale odświeżamy metadane
+        # (typ, kategoria, ścieżka, PS), gdy plik przeniesiono lub zmieniła się klasyfikacja.
+        new_ps = cached["ps_code"]
+        if ps_code:
+            new_ps = ps_code
+        elif category == KB_COMPONENTS_DIR:
+            new_ps = ""
+        if (cached["filepath"], cached["doc_kind"], cached["category"], cached["ps_code"]) != (filepath, doc_kind, category or "", new_ps):
+            # dokumentacja (nie-schemat) nie podlega logice rewizji — zawsze aktywna
+            cur.execute("""UPDATE zuken_pdf_schematics SET filepath = ?, doc_kind = ?, category = ?, ps_code = ?,
+                           is_active = CASE WHEN ? = 'schematic' THEN is_active ELSE 1 END WHERE id = ?;""",
+                        (filepath, doc_kind, category or "", new_ps, doc_kind, cached["id"]))
+            conn.commit()
         conn.close()
         return cached["id"], 0, zsmsg("alreadyIndexed", lang, v=filename)
 
@@ -2484,16 +2558,7 @@ def index_zuken_pdf(filepath, ps_code=None, doc_kind="schematic", category="", l
     # instrukcje i dokumenty projektu są zawsze aktywne i nie wpływają na rewizje.
     ps_val = info["ps_codes"]
     if ps_val and doc_kind == "schematic":
-        cur.execute("""
-            SELECT id FROM zuken_pdf_schematics
-            WHERE ps_code = ? AND COALESCE(doc_kind, 'schematic') = 'schematic'
-            ORDER BY revision_date DESC, id DESC;
-        """, (ps_val,))
-        rows = cur.fetchall()
-        if rows:
-            newest_id = rows[0][0]
-            cur.execute("UPDATE zuken_pdf_schematics SET is_active = 0 WHERE ps_code = ? AND COALESCE(doc_kind, 'schematic') = 'schematic'", (ps_val,))
-            cur.execute("UPDATE zuken_pdf_schematics SET is_active = 1 WHERE id = ?", (newest_id,))
+        _apply_active_schematic(cur, ps_val)
 
     conn.commit()
     conn.close()
@@ -3784,7 +3849,7 @@ def _kb_process_file(full_path, rel_path, ps_code, category, lang="pl", has_wire
         if ftype == "pdf":
             # Schemat E3 = PDF na poziomie głównym lub z kodem PS w nazwie;
             # PDF-y w podfolderach-kategoriach bez kodu PS = dokumentacja urządzeń.
-            doc_kind = "schematic" if (not category or (ps_code and ps_code in f.upper())) else "manual"
+            doc_kind = "schematic" if _kb_pdf_is_schematic(f, category, ps_code) else "manual"
             sch_id, sym_count, msg = index_zuken_pdf(full_path, ps_code=ps_code, doc_kind=doc_kind, category=category, lang=lang)
             return {"type": "pdf", "file": rel_path, "schematic_id": sch_id, "symbols": sym_count, "message": msg}
         if ftype == "e3s":
@@ -3801,6 +3866,10 @@ def _kb_process_file(full_path, rel_path, ps_code, category, lang="pl", has_wire
             ext = os.path.splitext(f)[1].lower()
             if ext in (".txt", ".msg", ".xlsx", ".docx"):
                 doc_id, msg = index_kb_document(full_path, ps_code=ps_code, category=category, lang=lang)
+                if doc_id is None:
+                    # brak tekstu do zaindeksowania (np. pusty plik) — traktujemy jak zarejestrowany,
+                    # inaczej plik wisiałby w statusie jako „nowy” w nieskończoność
+                    return {"type": "doc", "file": rel_path, "message": msg}
                 return {"type": "doc", "file": rel_path, "schematic_id": doc_id, "message": msg}
             return {"type": "doc", "file": rel_path, "message": zsmsg("docRegistered", lang)}
     except Exception as ex:
@@ -3822,9 +3891,16 @@ def sync_all_knowledge_base(lang="pl"):
             # Pierwszy poziom = folder projektu PS; głębiej = kategoria dokumentu.
             if parts[0].lower() == "zdjecia_komponentow":
                 continue
+            if parts[0].lower() == KB_COMPONENTS_DIR.lower():
+                if len(parts) > 1 and _kb_classify_file(f) in ("pdf", "doc"):
+                    results.append(_kb_process_file(full_path, rel, None, KB_COMPONENTS_DIR, lang))
+                continue
             ps_hint = parts[0].upper() if len(parts) > 1 and re.match(r"^PS\d+", parts[0], re.I) else None
             category = parts[1] if len(parts) > 2 else ""
-            results.append(_kb_process_file(full_path, rel, ps_hint, category, lang))
+            res = _kb_process_file(full_path, rel, ps_hint, category, lang)
+            if ps_hint and re.match(r"^PS\d+$", ps_hint) and len(parts) > 1:
+                _kb_manifest_mark(ps_hint, os.path.join(*parts[1:]), full_path, res)
+            results.append(res)
 
     return {"status": "success", "results": results}
 
@@ -3837,7 +3913,7 @@ def sync_all_knowledge_base(lang="pl"):
 # Kolejność = kolejność wyświetlania na liście kontrolnej w UI.
 # "ctrl" = raport konfiguracyjny sterownika (Carnation HTML, Acetech PDF,
 # Inomatic .app — binarny, bez parsowania).
-KB_FILE_TYPES = ("conn", "wires", "bom", "pdf", "e3s", "ctrl")
+KB_FILE_TYPES = ("conn", "wires", "bom", "pdf", "manual", "e3s", "ctrl")
 KB_REQUIRED_TYPES = ("conn", "bom", "pdf")
 KB_ALLOWED_EXTENSIONS = (".xlsx", ".pdf", ".e3s", ".html", ".htm", ".xml", ".json", ".csv", ".txt",
                          ".msg", ".png", ".jpg", ".jpeg", ".actp", ".app", ".docx", ".doc")
@@ -3845,6 +3921,15 @@ KB_ALLOWED_EXTENSIONS = (".xlsx", ".pdf", ".e3s", ".html", ".htm", ".xml", ".jso
 # Wzorce w nazwach plików wskazujące na raport konfiguracyjny sterownika
 # (używane m.in. by PDF-y Acetech nie lądowały w slocie „schemat PDF").
 _KB_CTRL_NAME_RE = re.compile(r"(acetech|carnation|genesis|evpss|inomatic|config|konfigurac|controller|sterownik)", re.I)
+
+
+def _kb_pdf_is_schematic(filename, category, ps_code):
+    """
+    Schemat E3 = PDF na poziomie głównym folderu projektu lub z kodem PS
+    w nazwie. PDF w podfolderze-kategorii bez kodu PS = dokumentacja
+    urządzenia (doc_kind 'manual').
+    """
+    return not category or bool(ps_code and ps_code in (filename or "").upper())
 
 
 def _kb_classify_file(filename):
@@ -3877,33 +3962,558 @@ def _kb_classify_file(filename):
     return None
 
 
+# Rozszerzenia, których treść jest indeksowana tekstowo (zuken_pdf_sheets) —
+# plik bez wpisu w indeksie nie może być uznany za przetworzony.
+_KB_TEXT_INDEXED_EXT = (".pdf", ".txt", ".msg", ".docx")
+
+
+def _kb_scan_entries(kb_dir):
+    """Skan folderu PS: [(rel, category, name, ftype, size, mtime)] (ftype=None → plik ignorowany)."""
+    entries = []
+    if not kb_dir or not os.path.isdir(kb_dir):
+        return entries
+    for full, rel, category in _kb_iter_files(kb_dir):
+        try:
+            st = os.stat(full)
+        except OSError:
+            continue
+        name = os.path.basename(full)
+        entries.append((rel, category, name, _kb_classify_file(name), st.st_size, st.st_mtime))
+    return entries
+
+
+def _kb_manifest_mark(ps_code, rel, full_path, result):
+    """Zapisuje w manifeście stan pliku (rozmiar, mtime) po udanym przetworzeniu."""
+    if not ps_code or not result or result.get("type") in ("error", "skip"):
+        return
+    if "schematic_id" in result and result["schematic_id"] is None:
+        return
+    try:
+        st = os.stat(full_path)
+    except OSError:
+        return
+    conn = get_db()
+    try:
+        conn.execute("""
+            INSERT INTO zuken_kb_files (ps_code, rel_path, kind, size, mtime, processed_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(ps_code, rel_path) DO UPDATE SET
+                kind=excluded.kind, size=excluded.size, mtime=excluded.mtime,
+                processed_at=excluded.processed_at;
+        """, (ps_code, rel, _kb_classify_file(os.path.basename(full_path)),
+              st.st_size, st.st_mtime, datetime.now().isoformat()))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _kb_manifest_load(ps_code, entries, has_summaries):
+    """
+    Wczytuje manifest PS ({rel: (size, mtime)}). Gdy manifest jest pusty, a projekt
+    był już przetworzony przed wprowadzeniem manifestu — jednorazowo go zasiewa
+    z istniejących wpisów (indeks PDF/dokumentów, import XLSX), by wszystkie
+    dotychczasowe pliki nie pojawiły się jako „nowe".
+    """
+    conn = get_db()
+    try:
+        rows = conn.execute("SELECT rel_path, size, mtime FROM zuken_kb_files WHERE ps_code = ?;", (ps_code,)).fetchall()
+        if rows:
+            return {r["rel_path"]: (r["size"], r["mtime"]) for r in rows}
+        now = datetime.now().isoformat()
+        manifest = {}
+        for rel, _cat, name, ftype, size, mtime in entries:
+            if not ftype:
+                continue
+            ext = os.path.splitext(name)[1].lower()
+            ok = bool(conn.execute(
+                "SELECT 1 FROM zuken_pdf_schematics WHERE filename = ? AND file_size = ? AND abs(file_mtime - ?) < 1;",
+                (name, size, mtime)).fetchone())
+            if not ok and ftype in ("conn", "bom"):
+                row = conn.execute("SELECT imported_at FROM zuken_projects WHERE filename = ? AND UPPER(TRIM(ps_codes)) = ?;",
+                                   (name, ps_code)).fetchone()
+                try:
+                    ok = bool(row and row["imported_at"] and datetime.fromisoformat(row["imported_at"]).timestamp() >= mtime)
+                except ValueError:
+                    ok = False
+            if not ok and has_summaries and ftype not in ("conn", "bom"):
+                ok = not (ext in _KB_TEXT_INDEXED_EXT or (ftype == "doc" and ext == ".xlsx"))
+            if ok:
+                manifest[rel] = (size, mtime)
+                conn.execute("""
+                    INSERT OR IGNORE INTO zuken_kb_files (ps_code, rel_path, kind, size, mtime, processed_at)
+                    VALUES (?, ?, ?, ?, ?, ?);
+                """, (ps_code, rel, ftype, size, mtime, now))
+        conn.commit()
+        return manifest
+    finally:
+        conn.close()
+
+
+def _kb_find_orphans(ps_code, kb_dir, entries):
+    """
+    Wpisy bazy wskazujące na pliki, których nie ma już w folderze PS. Dopasowanie
+    po NAZWIE pliku (ścieżki absolutne zmieniają się przy przenoszeniu katalogu):
+    - pdfs: wpisy indeksu PDF/dokumentów bez pliku o tej nazwie w folderze,
+    - projects: importy XLSX (połączenia/BOM) bez pliku o tej nazwie,
+    - relocated: plik jest, rozmiar i mtime się zgadzają, ale zapisana ścieżka jest stara.
+    """
+    by_name = {}
+    for rel, _cat, name, _ft, size, mtime in entries:
+        by_name.setdefault(name.lower(), []).append((rel, size, mtime))
+    res = {"pdfs": [], "projects": [], "relocated": []}
+    if not entries:
+        return res
+    conn = get_db()
+    try:
+        for r in conn.execute("""
+            SELECT id, filename, filepath, file_size, file_mtime, COALESCE(doc_kind, 'schematic') AS doc_kind
+            FROM zuken_pdf_schematics WHERE UPPER(TRIM(ps_code)) = ?;
+        """, (ps_code,)):
+            cands = by_name.get((r["filename"] or "").lower())
+            if not cands:
+                res["pdfs"].append({"id": r["id"], "filename": r["filename"], "doc_kind": r["doc_kind"]})
+                continue
+            match = next((c for c in cands if c[1] == r["file_size"] and abs(c[2] - (r["file_mtime"] or 0)) < 1), None)
+            if match:
+                new_path = os.path.join(kb_dir, match[0])
+                if os.path.normcase(os.path.normpath(r["filepath"] or "")) != os.path.normcase(os.path.normpath(new_path)):
+                    res["relocated"].append({"id": r["id"], "filename": r["filename"], "filepath": new_path})
+        for r in conn.execute("SELECT id, filename FROM zuken_projects WHERE UPPER(TRIM(ps_codes)) = ?;", (ps_code,)):
+            if (r["filename"] or "").lower() not in by_name:
+                res["projects"].append({"id": r["id"], "filename": r["filename"]})
+    finally:
+        conn.close()
+    return res
+
+
+def kb_cleanup_orphans(ps_code):
+    """
+    Usuwa z bazy wpisy plików, których nie ma już w folderze PS (indeks PDF/dokumentów
+    wraz z arkuszami i symbolami, importy XLSX wraz z połączeniami i BOM, wiersze
+    manifestu) oraz poprawia stare ścieżki przeniesionych plików. Nie robi nic,
+    gdy folder PS nie istnieje lub jest pusty (nie kasujemy danych przy odpiętym dysku).
+    """
+    ps_code = str(ps_code or "").strip().upper()
+    kb_dir = _kb_dir_for_ps(ps_code)
+    entries = _kb_scan_entries(kb_dir)
+    out = {"pdfs": [], "projects": [], "relocated": [], "manifest": 0}
+    if not entries:
+        return out
+    orph = _kb_find_orphans(ps_code, kb_dir, entries)
+    current = {e[0] for e in entries}
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        schematic_removed = False
+        for p in orph["pdfs"]:
+            for tbl in ("zuken_pdf_symbols", "zuken_pdf_sheets", "zuken_pdf_labelpos", "zuken_pdf_textpos"):
+                cur.execute(f"DELETE FROM {tbl} WHERE schematic_id = ?;", (p["id"],))
+            cur.execute("DELETE FROM zuken_pdf_schematics WHERE id = ?;", (p["id"],))
+            schematic_removed = schematic_removed or p["doc_kind"] == "schematic"
+            out["pdfs"].append(p["filename"])
+        if schematic_removed:
+            _apply_active_schematic(cur, ps_code)
+        for p in orph["projects"]:
+            cur.execute("DELETE FROM zuken_bom_devices WHERE bom_item_id IN (SELECT id FROM zuken_bom_items WHERE project_id = ?);", (p["id"],))
+            cur.execute("DELETE FROM zuken_bom_items WHERE project_id = ?;", (p["id"],))
+            cur.execute("DELETE FROM zuken_connections WHERE project_id = ?;", (p["id"],))
+            cur.execute("DELETE FROM zuken_projects WHERE id = ?;", (p["id"],))
+            out["projects"].append(p["filename"])
+        for p in orph["relocated"]:
+            cur.execute("UPDATE zuken_pdf_schematics SET filepath = ? WHERE id = ?;", (p["filepath"], p["id"]))
+            out["relocated"].append(p["filename"])
+        for (rel,) in cur.execute("SELECT rel_path FROM zuken_kb_files WHERE ps_code = ?;", (ps_code,)).fetchall():
+            if rel not in current:
+                cur.execute("DELETE FROM zuken_kb_files WHERE ps_code = ? AND rel_path = ?;", (ps_code, rel))
+                out["manifest"] += 1
+        conn.commit()
+    finally:
+        conn.close()
+    return out
+
+
+def get_ps_kb_sync_summary(ps_code):
+    """
+    Lekkie podsumowanie stanu synchronizacji Bazy wiedzy jednego PS (bez listy
+    dokumentów, kandydatów sterownika itp.) — do banera/kropki statusu w UI.
+    """
+    init_zuken_tables()
+    ps_code = str(ps_code or "").strip().upper()
+    kb_dir = _kb_dir_for_ps(ps_code)
+    entries = _kb_scan_entries(kb_dir)
+    out = {"ps_code": ps_code, "has_files": bool(entries), "has_e3s": False, "has_pdf": False, "new": 0, "changed": 0, "removed": 0, "relocated": 0,
+           "required_missing": list(KB_REQUIRED_TYPES), "needs_processing": False}
+    if not entries:
+        return out
+    conn = get_db()
+    try:
+        has_summaries = bool(conn.execute("SELECT 1 FROM zuken_ps_summaries WHERE ps_code = ?;", (ps_code,)).fetchone())
+    finally:
+        conn.close()
+    manifest = _kb_manifest_load(ps_code, entries, has_summaries)
+    present = set()
+    for rel, category, name, ftype, size, mtime in entries:
+        if not ftype:
+            continue
+        present.add(ftype)
+        prev = manifest.get(rel)
+        if prev is None:
+            out["new"] += 1
+        elif prev[0] != size or abs((prev[1] or 0) - mtime) >= 1:
+            out["changed"] += 1
+    out["required_missing"] = [k for k in KB_REQUIRED_TYPES if k not in present]
+    out["has_e3s"] = "e3s" in present
+    out["has_pdf"] = "pdf" in present
+    current = {e[0] for e in entries}
+    gone = {os.path.basename(r) for r in manifest if r not in current}
+    orph = _kb_find_orphans(ps_code, kb_dir, entries)
+    gone |= {o["filename"] for o in orph["pdfs"]} | {o["filename"] for o in orph["projects"]}
+    out["removed"] = len(gone)
+    out["relocated"] = len(orph["relocated"])
+    out["needs_processing"] = bool(out["new"] or out["changed"] or out["removed"] or out["relocated"] or not has_summaries)
+    return out
+
+
+def get_kb_sync_overview():
+    """Podsumowanie synchronizacji Bazy wiedzy dla wszystkich folderów projektów PS ({ps: summary})."""
+    result = {}
+    if not os.path.isdir(BAZA_WIEDZY_DIR):
+        return result
+    for entry in sorted(os.listdir(BAZA_WIEDZY_DIR)):
+        if not os.path.isdir(os.path.join(BAZA_WIEDZY_DIR, entry)):
+            continue
+        m = re.search(r"PS\d{4,}", entry, re.I)
+        if not m:
+            continue
+        ps = m.group(0).upper()
+        try:
+            summ = get_ps_kb_sync_summary(ps)
+        except Exception:
+            continue
+        if summ["has_files"]:
+            result[ps] = summ
+    return result
+
+
+KB_MANUAL_SUBDIR = "Dokumentacje urzadzen"
+
+
+def _active_schematic_name(cur, ps_code):
+    row = cur.execute("""SELECT filename FROM zuken_pdf_schematics WHERE UPPER(TRIM(ps_code)) = ? AND is_active = 1
+                         AND COALESCE(doc_kind, 'schematic') = 'schematic';""", (ps_code,)).fetchone()
+    return (row[0] if row else "") or ""
+
+
+def _kb_flag_stale(cur, ps_code, filename):
+    """Oznacza plik w manifeście jako zmieniony (rozmiar -1), żeby status podpowiedział „Przetwórz”
+    — używane, gdy zmiana aktywnego schematu unieważnia wygenerowane zestawienia."""
+    for (rel,) in cur.execute("SELECT rel_path FROM zuken_kb_files WHERE ps_code = ?;", (ps_code,)).fetchall():
+        if os.path.basename(rel).lower() == (filename or "").lower():
+            cur.execute("UPDATE zuken_kb_files SET size = -1 WHERE ps_code = ? AND rel_path = ?;", (ps_code, rel))
+
+
+def get_main_e3s_setting(ps_code):
+    init_zuken_tables()
+    conn = get_db()
+    try:
+        row = conn.execute("SELECT main_e3s FROM zuken_controller_settings WHERE ps_code = ?;",
+                           (str(ps_code or "").strip().upper(),)).fetchone()
+        return (row[0] if row else "") or ""
+    finally:
+        conn.close()
+
+
+def resolve_main_e3s(ps_code):
+    """
+    Główny plik .e3s projektu (ścieżka względna w folderze PS, '' gdy brak):
+    1) wskazany przez użytkownika, 2) o tej samej nazwie co aktywny schemat PDF,
+    3) jedyny, 4) najnowszy.
+    """
+    ps = str(ps_code or "").strip().upper()
+    kb_dir = _kb_dir_for_ps(ps)
+    items = []
+    for full, rel, _cat in _kb_iter_files(kb_dir) if os.path.isdir(kb_dir) else []:
+        if _cat != KB_MANUAL_SUBDIR and full.lower().endswith(".e3s"):
+            items.append((rel, os.path.getmtime(full)))
+    if not items:
+        return ""
+    setting = get_main_e3s_setting(ps).lower()
+    if setting:
+        for rel, _m in items:
+            if os.path.basename(rel).lower() == setting:
+                return rel
+    conn = get_db()
+    try:
+        active = _active_schematic_name(conn.cursor(), ps)
+    finally:
+        conn.close()
+    stem = os.path.splitext(active)[0].lower()
+    if stem:
+        for rel, _m in items:
+            if os.path.splitext(os.path.basename(rel))[0].lower() == stem:
+                return rel
+    if len(items) == 1:
+        return items[0][0]
+    return max(items, key=lambda x: x[1])[0]
+
+
+def set_main_e3s(ps_code, rel, lang="pl"):
+    init_zuken_tables()
+    ps = str(ps_code or "").strip().upper()
+    full = os.path.normpath(os.path.join(_kb_dir_for_ps(ps), rel or ""))
+    if not os.path.isfile(full) or not full.lower().endswith(".e3s"):
+        return {"status": "error", "error": zsmsg("e3sMissing", lang, v=rel)}
+    name = os.path.basename(full)
+    conn = get_db()
+    try:
+        conn.execute("""
+            INSERT INTO zuken_controller_settings (ps_code, main_e3s) VALUES (?, ?)
+            ON CONFLICT(ps_code) DO UPDATE SET main_e3s = excluded.main_e3s;
+        """, (ps, name))
+        conn.commit()
+    finally:
+        conn.close()
+    return {"status": "success", "main": name}
+
+
+def open_main_file(ps_code, kind, lang="pl"):
+    """Otwiera główny plik projektu: kind='e3s' (Zuken E3) albo 'pdf' (aktywny schemat PDF)."""
+    ps = str(ps_code or "").strip().upper()
+    kb_dir = _kb_dir_for_ps(ps)
+    if kind == "e3s":
+        rel = resolve_main_e3s(ps)
+        if not rel:
+            return {"status": "error", "error": zsmsg("kbNoMainFile", lang, v=ps)}
+        ok, msg = open_in_zuken(os.path.join(kb_dir, rel), lang=lang)
+        return {"status": "success" if ok else "error", "file": rel, "message": msg, "error": None if ok else msg}
+    conn = get_db()
+    try:
+        name = _active_schematic_name(conn.cursor(), ps)
+    finally:
+        conn.close()
+    target = ""
+    for full, rel, _cat in _kb_iter_files(kb_dir) if os.path.isdir(kb_dir) else []:
+        if os.path.basename(full).lower() == name.lower():
+            target = full
+            break
+    if not name or not target:
+        return {"status": "error", "error": zsmsg("kbNoMainFile", lang, v=ps)}
+    ok, msg = open_pdf_in_system(target, lang=lang)
+    return {"status": "success" if ok else "error", "file": os.path.basename(target), "message": msg,
+            "error": None if ok else msg}
+
+
+def _controller_effective(ps_code):
+    """Plik raportu sterownika faktycznie używany przez Asystenta (wg ustawień lub auto-detekcji)."""
+    try:
+        typ, name, parsed = _controller_parsed(ps_code)
+    except Exception:
+        return {"type": "", "name": "", "file": ""}
+    f = (parsed or {}).get("filename", "") if parsed else ""
+    rel = ""
+    kb_dir = _kb_dir_for_ps(ps_code)
+    if parsed:
+        # parser zwraca sam basename — ścieżkę ustalamy po tożsamości obiektu w cache
+        # (w folderze mogą leżeć dwa pliki o tej samej nazwie)
+        for cand in _controller_report_files(ps_code):
+            if _CONTROLLER_CACHE.get(cand) is parsed:
+                rel = os.path.relpath(cand, kb_dir)
+                break
+    if not f:
+        forced = (get_controller_settings(ps_code).get("controller_file") or "").strip()
+        f = os.path.basename(forced)
+        rel = forced.replace("/", os.sep) if forced else ""
+    return {"type": typ or "", "name": name or "", "file": f, "rel": rel}
+
+
+def get_main_schematic(ps_code):
+    """Nazwa pliku wskazanego przez użytkownika jako główny schemat projektu ('' = automat: najnowsza rewizja)."""
+    init_zuken_tables()
+    conn = get_db()
+    try:
+        row = conn.execute("SELECT main_schematic FROM zuken_controller_settings WHERE ps_code = ?;",
+                           (str(ps_code or "").strip().upper(),)).fetchone()
+        return (row[0] if row else "") or ""
+    finally:
+        conn.close()
+
+
+def set_main_schematic(ps_code, rel, lang="pl"):
+    """Wskazuje główny schemat projektu (plik PDF z folderu PS) i od razu przelicza aktywną rewizję."""
+    init_zuken_tables()
+    ps = str(ps_code or "").strip().upper()
+    kb_dir = _kb_dir_for_ps(ps)
+    full = os.path.normpath(os.path.join(kb_dir, rel or ""))
+    name = os.path.basename(full)
+    if not os.path.isfile(full) or not name.lower().endswith(".pdf"):
+        return {"status": "error", "error": zsmsg("kbNotSchematic", lang, v=name or rel)}
+    # plik musi być zaindeksowany jako schemat E3 — przy nowym zlecamy indeksację
+    category = rel.split(os.sep)[0] if os.sep in rel else ""
+    res = _kb_process_file(full, rel, ps, category, lang)
+    _kb_manifest_mark(ps, rel, full, res)
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        prev = _active_schematic_name(cur, ps)
+        cur.execute("""
+            INSERT INTO zuken_controller_settings (ps_code, main_schematic) VALUES (?, ?)
+            ON CONFLICT(ps_code) DO UPDATE SET main_schematic = excluded.main_schematic;
+        """, (ps, name))
+        _apply_active_schematic(cur, ps)
+        if prev.lower() != name.lower():
+            _kb_flag_stale(cur, ps, name)
+        conn.commit()
+    finally:
+        conn.close()
+    return {"status": "success", "main": name}
+
+
+def kb_move_file(ps_code, rel, subdir=KB_MANUAL_SUBDIR, lang="pl"):
+    """
+    Przenosi plik w obrębie folderu projektu do podfolderu (domyślnie dokumentacja
+    urządzeń), po czym od razu odświeża jego wpis w indeksie i manifeście — plik przestaje
+    być traktowany jako schemat E3. Nic nie usuwa.
+    """
+    init_zuken_tables()
+    ps = str(ps_code or "").strip().upper()
+    kb_dir = _kb_dir_for_ps(ps)
+    src = os.path.normpath(os.path.join(kb_dir, rel or ""))
+    root = os.path.normcase(os.path.abspath(kb_dir)) + os.sep
+    if not os.path.normcase(os.path.abspath(src)).startswith(root) or not os.path.isfile(src):
+        return {"status": "error", "error": zsmsg("fileMissing", lang, v=rel)}
+    subdir = (subdir or KB_MANUAL_SUBDIR).strip()
+    if subdir in (".", "..") or "/" in subdir or "\\" in subdir:
+        return {"status": "error", "error": zsmsg("kbBadSubdir", lang, v=subdir)}
+    dest_dir = os.path.join(kb_dir, subdir)
+    dest = os.path.join(dest_dir, os.path.basename(src))
+    if os.path.exists(dest):
+        return {"status": "error", "error": zsmsg("kbMoveExists", lang, v=os.path.basename(src))}
+    os.makedirs(dest_dir, exist_ok=True)
+    shutil.move(src, dest)
+    new_rel = os.path.relpath(dest, kb_dir)
+    name = os.path.basename(dest)
+    conn = get_db()
+    try:
+        conn.execute("DELETE FROM zuken_kb_files WHERE ps_code = ? AND rel_path = ?;", (ps, rel))
+        row = conn.execute("SELECT main_schematic, main_e3s, controller_file FROM zuken_controller_settings WHERE ps_code = ?;", (ps,)).fetchone()
+        if row:
+            if (row[0] or "").lower() == name.lower():
+                conn.execute("UPDATE zuken_controller_settings SET main_schematic = '' WHERE ps_code = ?;", (ps,))
+            if (row[1] or "").lower() == name.lower():
+                conn.execute("UPDATE zuken_controller_settings SET main_e3s = '' WHERE ps_code = ?;", (ps,))
+            if (row[2] or "").replace("\\", "/").lower() == rel.replace("\\", "/").lower():
+                conn.execute("UPDATE zuken_controller_settings SET controller_file = '' WHERE ps_code = ?;", (ps,))
+        conn.commit()
+    finally:
+        conn.close()
+    conn = get_db()
+    try:
+        prev_active = _active_schematic_name(conn.cursor(), ps)
+    finally:
+        conn.close()
+    res = _kb_process_file(dest, new_rel, ps, subdir, lang)
+    _kb_manifest_mark(ps, new_rel, dest, res)
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        _apply_active_schematic(cur, ps)
+        now_active = _active_schematic_name(cur, ps)
+        if now_active.lower() != prev_active.lower():
+            _kb_flag_stale(cur, ps, now_active)
+        conn.commit()
+    finally:
+        conn.close()
+    return {"status": "success", "rel": new_rel}
+
+
+_CONN_LEN_CACHE = {}
+
+
+def _conn_xlsx_has_lengths(filepath):
+    """True, gdy lista połączeń XLSX ma kolumnę Lenght/Length wypełnioną
+    — wtedy osobny plik długości przewodów nie jest potrzebny."""
+    try:
+        mt = os.path.getmtime(filepath)
+    except OSError:
+        return False
+    hit = _CONN_LEN_CACHE.get(filepath)
+    if hit and hit[0] == mt:
+        return hit[1]
+    ok = False
+    try:
+        len_col = ""
+        for r in parse_xlsx_fast(filepath)[:40]:
+            for col, val in r.items():
+                if "lenght" in str(val).lower() or "length" in str(val).lower():
+                    len_col = col
+                    break
+            if len_col:
+                break
+        if len_col:
+            for r in parse_xlsx_fast(filepath):
+                if str(r.get(len_col) or "").strip():
+                    ok = True
+                    break
+    except Exception:
+        ok = False
+    _CONN_LEN_CACHE[filepath] = (mt, ok)
+    return ok
+
+
 def get_ps_kb_files_status(ps_code, lang="pl"):
     """
     Zwraca szczegółową listę kontrolną plików Bazy wiedzy dla projektu PS.
     Dla każdego typu (conn/bom/pdf/e3s/html) podaje znalezione nazwy plików,
     czy typ jest wymagany oraz stan wygenerowanych zestawień Asystenta.
+    Dodatkowo: stan synchronizacji plików z bazą (`sync`: nowe/zmienione/usunięte,
+    wpisy-sieroty, `needs_processing`) i podpowiedzi kolejnych kroków (`next_steps`).
     """
     init_zuken_tables()
     ps_code = str(ps_code or "").strip().upper()
     folder_path = _kb_dir_for_ps(ps_code) if ps_code else ""
 
     # Skan rekurencyjny — podfoldery pełnią rolę kategorii dokumentów projektu
-    all_files = []  # (rel_path, category, name, size)
+    entries = []
     if ps_code and os.path.isdir(folder_path):
         try:
-            for full, rel, category in _kb_iter_files(folder_path):
-                try:
-                    size = os.path.getsize(full)
-                except OSError:
-                    size = 0
-                all_files.append((rel, category, os.path.basename(full), size))
+            entries = _kb_scan_entries(folder_path)
         except Exception:
-            all_files = []
+            entries = []
+    all_files = [(rel, category, name, size) for rel, category, name, _ft, size, _mt in entries]
+
+    has_summaries_row = False
+    try:
+        conn = get_db()
+        has_summaries_row = bool(conn.execute("SELECT 1 FROM zuken_ps_summaries WHERE ps_code = ?;", (ps_code,)).fetchone())
+        conn.close()
+    except Exception:
+        pass
+    manifest = _kb_manifest_load(ps_code, entries, has_summaries_row) if entries else {}
+    mtimes = {e[0]: e[5] for e in entries}
 
     by_type = {k: [] for k in KB_FILE_TYPES}
     documents = []
+    sync_new, sync_changed = [], []
     for rel, category, name, size in all_files:
         tkey = _kb_classify_file(name)
+        state = None
+        if tkey:
+            prev = manifest.get(rel)
+            if prev is None:
+                state = "new"
+                sync_new.append(rel)
+            elif prev[0] != size or abs((prev[1] or 0) - mtimes.get(rel, 0)) >= 1:
+                state = "changed"
+                sync_changed.append(rel)
+            else:
+                state = "ok"
+        # PDF w podfolderze-kategorii bez kodu PS w nazwie to dokumentacja
+        # urządzenia, nie schemat E3 — pokazujemy ją w osobnym slocie 'manual'.
+        if category == KB_MANUAL_SUBDIR and tkey in ("pdf", "e3s", "ctrl"):
+            # podfolder dokumentacji urządzeń: plik jest dokumentacją, a nie schematem/raportem
+            tkey = "manual" if name.lower().endswith(".pdf") else "doc"
+        elif tkey == "pdf" and not _kb_pdf_is_schematic(name, category, ps_code):
+            tkey = "manual"
         if tkey in by_type:
             by_type[tkey].append(rel)
         documents.append({
@@ -3912,6 +4522,10 @@ def get_ps_kb_files_status(ps_code, lang="pl"):
             "category": category,
             "kind": tkey or "file",
             "size": size,
+            "mtime": datetime.fromtimestamp(mtimes.get(rel, 0)).strftime("%Y-%m-%d") if mtimes.get(rel) else "",
+            "state": state,
+            "pages": 0,
+            "is_main": False,
             "indexed": False
         })
 
@@ -3919,20 +4533,48 @@ def get_ps_kb_files_status(ps_code, lang="pl"):
     try:
         conn = get_db()
         cur = conn.cursor()
-        cur.execute("SELECT filepath FROM zuken_pdf_schematics WHERE ps_code = ?", (ps_code,))
-        indexed_paths = {r[0] for r in cur.fetchall()}
+        cur.execute("""SELECT filepath, filename, total_pages, is_active, COALESCE(doc_kind, 'schematic') AS doc_kind
+                       FROM zuken_pdf_schematics WHERE ps_code = ?""", (ps_code,))
+        idx_rows = cur.fetchall()
         conn.close()
+        indexed_paths = {r[0] for r in idx_rows}
+        idx_by_name = {(r[1] or "").lower(): r for r in idx_rows}
         for d in documents:
-            d["indexed"] = os.path.join(folder_path, d["rel"]) in indexed_paths
+            hit = idx_by_name.get(d["name"].lower())
+            d["indexed"] = (os.path.join(folder_path, d["rel"]) in indexed_paths or hit is not None)
+            if hit is not None:
+                d["pages"] = hit["total_pages"] or 0
+                d["is_main"] = bool(hit["is_active"]) and hit["doc_kind"] == "schematic"
     except Exception:
         pass
 
-    types = [{
-        "key": key,
-        "required": key in KB_REQUIRED_TYPES,
-        "found": bool(by_type[key]),
-        "files": by_type[key]
-    } for key in KB_FILE_TYPES]
+    main_e3s_rel = resolve_main_e3s(ps_code) if by_type.get("e3s") else ""
+    controller_eff = _controller_effective(ps_code) if by_type.get("ctrl") else {"type": "", "name": "", "file": "", "rel": ""}
+    for d in documents:
+        if d["kind"] == "e3s" and main_e3s_rel:
+            d["is_main"] = d["rel"] == main_e3s_rel
+        if d["kind"] == "ctrl" and controller_eff["file"]:
+            d["is_main"] = (d["rel"] == controller_eff["rel"]) if controller_eff.get("rel")                 else d["name"].lower() == controller_eff["file"].lower()
+
+    # Długości przewodów mogą pochodzić wprost z listy połączeń (kolumna
+    # „Lenght" w eksporcie E3) — wtedy osobny plik „Właściwości przewodu"
+    # nie jest potrzebny, a slot pokazuje źródło zamiast „brak pliku".
+    conn_len_src = [rel for rel in by_type["conn"]
+                    if _conn_xlsx_has_lengths(os.path.join(folder_path, rel))]
+
+    types = []
+    for key in KB_FILE_TYPES:
+        entry = {
+            "key": key,
+            "required": key in KB_REQUIRED_TYPES,
+            "found": bool(by_type[key]),
+            "files": by_type[key]
+        }
+        if key == "wires" and conn_len_src:
+            entry["via_conn"] = conn_len_src
+            if not entry["found"]:
+                entry["found"] = True
+        types.append(entry)
 
     has_summaries = False
     generated_at = ""
@@ -3957,19 +4599,58 @@ def get_ps_kb_files_status(ps_code, lang="pl"):
     except Exception:
         pass
 
+    ready = all(t["found"] for t in types if t["required"])
+
+    # Stan synchronizacji plików z bazą: pliki usunięte z folderu (manifest) oraz
+    # wpisy-sieroty i stare ścieżki w indeksie — czyszczone przy „Przetwórz".
+    current_rels = {e[0] for e in entries}
+    removed_files = sorted(os.path.basename(r) for r in manifest if r not in current_rels) if entries else []
+    orph = _kb_find_orphans(ps_code, folder_path, entries) if entries else {"pdfs": [], "projects": [], "relocated": []}
+    orphan_names = sorted({o["filename"] for o in orph["pdfs"]} | {o["filename"] for o in orph["projects"]})
+    removed_all = sorted(set(removed_files) | set(orphan_names))
+    never_processed = bool(entries) and not has_summaries
+    needs_processing = bool(sync_new or sync_changed or removed_all or orph["relocated"] or never_processed)
+
+    required_missing = [t["key"] for t in types if t["required"] and not t["found"]]
+    next_steps = []
+    if not folder_path or not os.path.isdir(folder_path):
+        next_steps.append({"key": "add_files", "params": {}})
+    else:
+        if required_missing:
+            next_steps.append({"key": "upload_required", "params": {"types": required_missing}})
+        if needs_processing and (entries or removed_all):
+            next_steps.append({"key": "process", "params": {
+                "new": len(sync_new), "changed": len(sync_changed), "removed": len(removed_all),
+                "relocated": len(orph["relocated"])}})
+        if not needs_processing and not required_missing:
+            next_steps.append({"key": "done", "params": {}})
+
     return {
         "ps_code": ps_code,
         "folder_path": folder_path,
         "folder_exists": bool(ps_code) and os.path.isdir(folder_path),
         "types": types,
         "documents": documents,
-        "ready": all(t["found"] for t in types if t["required"]),
+        "ready": ready,
+        "main_schematic": get_main_schematic(ps_code),
+        "main_e3s": main_e3s_rel,
+        "sync": {
+            "new": sync_new,
+            "changed": sync_changed,
+            "removed": removed_all,
+            "relocated": [o["filename"] for o in orph["relocated"]],
+            "never_processed": never_processed,
+            "required_missing": required_missing,
+            "needs_processing": needs_processing
+        },
+        "next_steps": next_steps,
         "has_summaries": has_summaries,
         "generated_at": generated_at,
         "counts": counts,
         "controller": {
             "settings": get_controller_settings(ps_code),
-            "candidates": kb_controller_candidates(ps_code)
+            "candidates": kb_controller_candidates(ps_code),
+            "effective": controller_eff
         }
     }
 
@@ -3998,10 +4679,14 @@ def sync_ps_knowledge_base(ps_code, lang="pl"):
             if _kb_classify_file(os.path.basename(full_path)) == "wires":
                 deferred_wires.append((full_path, rel, category))
             else:
-                results.append(_kb_process_file(full_path, rel, ps_code, category, lang,
-                                                has_wire_len_src=has_wires_src))
+                res = _kb_process_file(full_path, rel, ps_code, category, lang,
+                                       has_wire_len_src=has_wires_src)
+                _kb_manifest_mark(ps_code, rel, full_path, res)
+                results.append(res)
         for full_path, rel, category in deferred_wires:
-            results.append(_kb_process_file(full_path, rel, ps_code, category, lang))
+            res = _kb_process_file(full_path, rel, ps_code, category, lang)
+            _kb_manifest_mark(ps_code, rel, full_path, res)
+            results.append(res)
     except Exception as e:
         return {"status": "error", "message": str(e), "results": results}
 
@@ -4021,6 +4706,12 @@ def process_ps_knowledge_base(ps_code, lang="pl"):
     if not sync_res["results"]:
         return {"status": "error", "message": zsmsg("kbNoFiles", lang),
                 "message_key": "kbNoFiles", "message_params": {}, "results": []}
+
+    # Wpisy plików usuniętych z folderu + poprawa starych ścieżek (przed zestawieniami)
+    try:
+        cleanup = kb_cleanup_orphans(ps_code)
+    except Exception as ex:
+        cleanup = {"pdfs": [], "projects": [], "relocated": [], "manifest": 0, "error": str(ex)}
 
     summ = generate_ps_technical_summaries(ps_code, lang=lang)
 
@@ -4053,6 +4744,7 @@ def process_ps_knowledge_base(ps_code, lang="pl"):
     return {
         "status": "success" if summ.get("status") == "success" else "partial",
         "results": sync_res["results"],
+        "cleanup": cleanup,
         "summaries": summ,
         "controller": ctrl_info,
         "images": {"started": img_started, "message": img_msg},
@@ -4754,7 +5446,7 @@ def kb_controller_candidates(ps_code):
         return []
     out = []
     for full, rel, _cat in _kb_iter_files(base):
-        if full.lower().endswith((".html", ".htm", ".pdf", ".app", ".docx", ".doc")):
+        if _cat != KB_MANUAL_SUBDIR and full.lower().endswith((".html", ".htm", ".pdf", ".app", ".docx", ".doc")):
             out.append(rel.replace("\\", "/"))
     return out
 
@@ -4766,7 +5458,7 @@ def _controller_report_files(ps_code=None):
         return []
     out = []
     for full, _rel, _cat in _kb_iter_files(base):
-        if full.lower().endswith((".html", ".htm", ".pdf", ".app")):
+        if _cat != KB_MANUAL_SUBDIR and full.lower().endswith((".html", ".htm", ".pdf", ".app")):
             out.append(full)
     return out
 
@@ -4868,6 +5560,116 @@ def parse_acetech_pdf(file_path):
 
     _CONTROLLER_CACHE[file_path] = info
     return info
+
+
+_PANEL_DOCX_CACHE = {}
+_PANEL_OUT_GROUP_RE = re.compile(
+    r"Moduł\s+(CP20-[\w-]+)\s*,\s*Wtyczka\s*(\d+)\s*:\s*([^;]+)", re.I)
+
+
+def _docx_table_rows(file_path):
+    """Wiersze tabel DOCX jako listy komórek (tekst), przez zipfile+XML."""
+    try:
+        with zipfile.ZipFile(file_path) as zf:
+            xml = zf.read("word/document.xml").decode("utf-8", "ignore")
+    except Exception:
+        return []
+    rows = []
+    for tbl in re.findall(r"<w:tbl>.*?</w:tbl>", xml, re.S):
+        for tr in re.findall(r"<w:tr\b.*?</w:tr>", tbl, re.S):
+            cells = [re.sub(r"\s+", " ", "".join(
+                re.findall(r"<w:t[^>]*>([^<]*)</w:t>", tc))).strip()
+                for tc in re.findall(r"<w:tc>.*?</w:tc>", tr, re.S)]
+            rows.append(cells)
+    return rows
+
+
+def parse_acetech_panel_docx(file_path):
+    """Parsuje tabelę funkcji paneli dotykowych Acetech (DOCX).
+    Rozpoznaje dokument po nagłówku kolumn z 'Wyjście Acetech'.
+    Zwraca {filename, functions:[{nr, function, outputs, outputs_text,
+    desc, condition, panel, tab}]} albo None."""
+    if not os.path.exists(file_path):
+        return None
+    mtime = os.path.getmtime(file_path)
+    hit = _PANEL_DOCX_CACHE.get(file_path)
+    if hit and hit.get("_mtime") == mtime:
+        return hit
+
+    rows = _docx_table_rows(file_path)
+    # Nagłówek tabeli: komórki z 'Funkcja' i 'Wyjście Acetech'
+    if not any(any("acetech" in c.lower() for c in r)
+               and any("funkcja" in c.lower() for c in r) for r in rows):
+        return None
+
+    info = {"_mtime": mtime, "filename": os.path.basename(file_path),
+            "filepath": file_path, "functions": []}
+    panel, tab = "", ""
+    for r in rows:
+        nonempty = [c for c in r if c]
+        if len(nonempty) == 1:
+            head = nonempty[0]
+            if re.match(r"(?i)panel\s+\w", head):
+                panel = head
+            elif re.match(r"(?i)zakładka\s+\d|zakladka\s+\d|tab\s+\d", head):
+                tab = head
+            continue
+        if not r or not re.match(r"^\d{1,3}$", (r[0] or "").strip()):
+            continue
+        function = (r[1] if len(r) > 1 else "").strip()
+        if not function or function.lower() == "funkcja":
+            continue
+        outs_text = (r[2] if len(r) > 2 else "").strip()
+        desc = (r[3] if len(r) > 3 else "").strip()
+        cond = (r[4] if len(r) > 4 else "").strip()
+        outs = []
+        for mg in _PANEL_OUT_GROUP_RE.finditer(outs_text):
+            # segment grupy: 'O.2 Body Blues, O.3 Fr. L''bar Blues, O.15/O.16 Fan A/C'
+            for chunk in mg.group(3).split(","):
+                cm = re.match(r"^\s*((?:O\.\d+\s*/\s*)*O\.\d+)\s*(.*)$", chunk)
+                if not cm:
+                    continue
+                name = cm.group(2).strip().rstrip(".")
+                for code in re.findall(r"O\.(\d+)", cm.group(1)):
+                    outs.append({"module": mg.group(1),
+                                 "plug": f"Wtyczka {mg.group(2)}",
+                                 "code": f"O.{code}", "function": name})
+        # kody O.x poza grupami 'Moduł ...: ...' (np. pojedyncze odniesienia)
+        if not outs:
+            for chunk in outs_text.split(","):
+                cm = re.match(r"^\s*((?:O\.\d+\s*/\s*)*O\.\d+)\s*(.*)$", chunk)
+                if not cm:
+                    continue
+                name = cm.group(2).strip().rstrip(".")
+                for code in re.findall(r"O\.(\d+)", cm.group(1)):
+                    outs.append({"module": "", "plug": "",
+                                 "code": f"O.{code}", "function": name})
+        info["functions"].append({
+            "nr": int(r[0]), "function": function, "outputs": outs,
+            "outputs_text": outs_text, "desc": desc, "condition": cond,
+            "panel": panel, "tab": tab})
+
+    if not info["functions"]:
+        return None
+    _PANEL_DOCX_CACHE[file_path] = info
+    return info
+
+
+def _ps_panel_functions(ps_code):
+    """Tabele funkcji paneli z plików DOCX w folderze projektu.
+    Zwraca [{file, functions}] — niezależne od wyboru pliku logiki."""
+    base = _kb_dir_for_ps(ps_code)
+    if not base or not os.path.isdir(base):
+        return []
+    out = []
+    for full, rel, cat in _kb_iter_files(base):
+        if not full.lower().endswith(".docx"):
+            continue
+        p = parse_acetech_panel_docx(full)
+        if p:
+            out.append({"file": rel.replace("\\", "/"),
+                        "functions": p["functions"]})
+    return out
 
 
 _CTRL_TYPE_NAMES = {"carnation": "Carnation Genesis EVPSS", "acetech": "Acetech"}
@@ -5339,6 +6141,29 @@ def _build_acetech_info(parsed, query_text="", lang="pl"):
     return result
 
 
+def _panel_function_matches(ps_code, query_text, info):
+    """Funkcje paneli dotykowych pasujące do zapytania — po słowach kluczowych
+    nazwy/opisu oraz po wyjściach pokrywających się z trafionymi wyjściami raportu."""
+    q_toks = list(dict.fromkeys(_circuit_tokens(query_text)))
+    rel_codes = {f"{(o.get('module') or '').split(' ')[0]}|{o.get('code') or ''}"
+                 for o in (info or {}).get("relevant_outputs") or []}
+    out = []
+    for doc in _ps_panel_functions(ps_code):
+        for fn in doc["functions"]:
+            # nazwa funkcji liczy podwójnie, opis jako kontekst
+            sc = (2 * _io_token_score(fn.get("function") or "", q_toks)
+                  + _io_token_score(fn.get("desc") or "", q_toks))
+            for po in fn.get("outputs") or []:
+                if any(po["code"] == rc.split("|", 1)[1]
+                       and (not po.get("module") or rc.startswith(po["module"]))
+                       for rc in rel_codes):
+                    sc += 3
+            if sc >= 2:
+                out.append({**fn, "file": doc["file"], "score": sc})
+    out.sort(key=lambda f: -f["score"])
+    return out[:6]
+
+
 def _get_controller_diagnostic_info_impl(ps_code=None, query_text="", lang="pl"):
     """Wykrywa raport sterownika w folderze projektu (Carnation HTML,
     Acetech PDF, ...) i zwraca kontekstowe informacje dla zapytania.
@@ -5346,10 +6171,18 @@ def _get_controller_diagnostic_info_impl(ps_code=None, query_text="", lang="pl")
     kartę informacyjną z nazwą i plikiem."""
     ctype, cname, parsed = _controller_parsed(ps_code)
     if parsed:
+        info = None
         if ctype == "carnation":
-            return _build_carnation_info(parsed, query_text, lang)
-        if ctype == "acetech":
-            return _build_acetech_info(parsed, query_text, lang)
+            info = _build_carnation_info(parsed, query_text, lang)
+        elif ctype == "acetech":
+            info = _build_acetech_info(parsed, query_text, lang)
+        if info is not None:
+            panels = _panel_function_matches(ps_code, query_text, info)
+            if panels:
+                info["panel_functions"] = panels
+                info["panel_file"] = ", ".join(
+                    sorted({p.get("file") or "" for p in panels if p.get("file")}))
+            return info
         return None
     st = get_controller_settings(ps_code)
     decl = (st.get("controller_type") or "").strip()
@@ -5357,7 +6190,7 @@ def _get_controller_diagnostic_info_impl(ps_code=None, query_text="", lang="pl")
     if not decl and fn.lower().endswith(".app"):
         decl = "Inomatic"  # plik aplikacji Inomatic — typ nieparsowany, ale rozpoznawany
     if decl and decl.upper() not in ("AUTO", "BRAK", "NONE"):
-        return {
+        decl_info = {
             "controller": decl,
             "version": "",
             "filename": fn,
@@ -5369,6 +6202,12 @@ def _get_controller_diagnostic_info_impl(ps_code=None, query_text="", lang="pl")
             "battery_thresholds": [],
             "diagnostic_summary": zsmsg("ctrlDeclared", lang, n=decl, f=fn or "—")
         }
+        panels = _panel_function_matches(ps_code, query_text, decl_info)
+        if panels:
+            decl_info["panel_functions"] = panels
+            decl_info["panel_file"] = ", ".join(
+                sorted({p.get("file") or "" for p in panels if p.get("file")}))
+        return decl_info
     return None
 
 
@@ -6218,7 +7057,7 @@ def get_available_ps_projects(lang="pl"):
     if os.path.exists(BAZA_WIEDZY_DIR):
         for entry in os.listdir(BAZA_WIEDZY_DIR):
             folder_path = os.path.join(BAZA_WIEDZY_DIR, entry)
-            if os.path.isdir(folder_path) and entry != "zdjecia_komponentow":
+            if os.path.isdir(folder_path) and entry.lower() not in ("zdjecia_komponentow", KB_COMPONENTS_DIR.lower()):
                 m_ps = re.search(r"PS\d{4,}", entry, re.I)
                 ps_code = (m_ps.group(0) if m_ps else entry).upper()
                 try:
@@ -6523,7 +7362,7 @@ def generate_ps_technical_summaries(ps_code, lang="pl"):
     if os.path.exists(kb_ps_dir):
         try:
             for full_path, rel, category in _kb_iter_files(kb_ps_dir):
-                _kb_process_file(full_path, rel, ps_code, category, lang)
+                _kb_manifest_mark(ps_code, rel, full_path, _kb_process_file(full_path, rel, ps_code, category, lang))
         except Exception as ex:
             print(f"[ZUKEN IMPORT WARNING] Błąd skanowania katalogu {kb_ps_dir}: {ex}")
 

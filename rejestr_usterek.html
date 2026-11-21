@@ -483,6 +483,31 @@
     color: #FFFFFF;
   }
 
+  /* Panel projektu (hub) */
+  .hub-tile {
+    display: flex;
+    gap: 14px;
+    align-items: flex-start;
+    background: var(--bg-card);
+    border: 1.5px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 16px 18px;
+    cursor: pointer;
+    transition: border-color .15s, box-shadow .15s;
+    position: relative;
+  }
+  .hub-tile:hover {
+    border-color: var(--primary);
+    box-shadow: var(--shadow-md);
+  }
+  .hub-tile .hub-tile-icon {
+    width: 42px; height: 42px; border-radius: 10px; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center; font-size: 20px;
+  }
+  .hub-tile .hub-tile-badge {
+    position: absolute; top: 10px; right: 12px;
+  }
+
   /* Stopka sidebaru */
   .sidebar-footer {
     padding: 12px 14px;
@@ -1268,6 +1293,8 @@
     padding: 20px;
     overflow-y: auto;
   }
+  #modal-kb-files summary { list-style: none; }
+  #modal-kb-files summary::-webkit-details-marker { display: none; }
 
   /* Lightbox pełnoekranowy */
   .lightbox-overlay {
@@ -1560,12 +1587,18 @@
     <div class="global-ps-wrap" id="global-ps-wrap" title="Aktualny projekt PS — wspólny dla wszystkich widoków" data-i18n-title="js.nav.currentProjectTitle">
       <label for="global-ps-select" data-i18n="nav.currentProject">Projekt:</label>
       <select id="global-ps-select" onchange="setCurrentPS(this.value)"></select>
+      <span id="ps-status-dot" onclick="openKbManager(STATE.lastSelectedPS)" style="display:none; width:10px; height:10px; border-radius:50%; cursor:pointer; flex-shrink:0; box-shadow:0 0 0 2px rgba(255,255,255,0.15);"></span>
+    </div>
+
+    <div id="ps-quick-open" style="display:none; gap:6px; margin:0 14px 8px 14px;">
+      <button type="button" id="btn-open-e3s" class="btn-secondary-action" style="flex:1; font-size:11.5px; padding:5px 6px;" onclick="openMainFile('e3s')" title="Otwórz główny projekt Zuken E3 (.e3s)" data-i18n-title="ui.kb.openE3sTitle">📐 <span data-i18n="ui.kb.openE3s">Zuken</span></button>
+      <button type="button" id="btn-open-pdf" class="btn-secondary-action" style="flex:1; font-size:11.5px; padding:5px 6px;" onclick="openMainFile('pdf')" title="Otwórz główny schemat PDF" data-i18n-title="ui.kb.openPdfTitle">📕 <span data-i18n="ui.kb.openPdf">Schemat</span></button>
     </div>
 
     <!-- Nawigacja -->
     <nav class="sidebar-nav">
-      <div class="nav-section-title" data-i18n="nav.sectionMain">Główne Menu</div>
-      
+      <div class="nav-section-title" data-i18n="nav.sectionDaily">Codzienne</div>
+
       <div class="nav-item active" data-view="dashboard" id="nav-dashboard" title="Rejestr usterek" data-i18n-title="nav.defects">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
         <span data-i18n="nav.defects">Rejestr usterek</span>
@@ -1583,27 +1616,12 @@
         <span class="nav-badge" style="background:linear-gradient(135deg, #0284c7, #2563eb); color:#fff; font-weight:700; font-size:9.5px; padding:1px 5px; border-radius:4px;">E3</span>
       </div>
 
-      <div class="nav-item" data-view="zuken-summaries" id="nav-zuken-summaries" title="Zestawienia Zuken: Spis złączy z pinoutem, zestaw bezpieczników i przekaźników (PS)" data-i18n-title="js.nav.zukenSummariesTitle">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
-        <span data-i18n="zuken.navSummaries">Spis Złączy & Bezp.</span>
-        <span class="nav-badge" style="background:linear-gradient(135deg, #10b981, #059669); color:#fff; font-weight:700; font-size:9.5px; padding:1px 5px; border-radius:4px;">PS</span>
-      </div>
+      <div class="nav-section-title" data-i18n="nav.sectionProject">Projekt</div>
 
-      <div class="nav-item" data-view="project-docs" id="nav-project-docs" title="Schematy i dokumenty projektu PS (Baza wiedzy)" data-i18n-title="nav.projectDocsTitle">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
-        <span data-i18n="nav.projectDocs">Dokumenty projektu</span>
-      </div>
-
-      <div class="nav-item" data-view="reworks" id="nav-reworks" title="Lista reworków wiązki dla projektu PS" data-i18n-title="nav.reworksTitle">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
-        <span data-i18n="nav.reworks">Reworki</span>
-        <span class="nav-badge alert" id="nav-badge-reworks" style="display:none;">0</span>
-      </div>
-
-      <div class="nav-item" data-view="schema-audit" id="nav-schema-audit" title="Kontrola schematów — błędy i braki w danych projektów Zuken" data-i18n-title="nav.auditTitle">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
-        <span data-i18n="nav.audit">Kontrola schematów</span>
-        <span class="nav-badge alert" id="nav-badge-audit" style="display:none;">0</span>
+      <div class="nav-item" data-view="project-hub" id="nav-project-hub" title="Panel projektu — pliki Bazy wiedzy, dokumenty, zestawienia, kontrola schematów i reworki" data-i18n-title="nav.projectHubTitle">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+        <span data-i18n="nav.projectHub">Panel projektu</span>
+        <span class="nav-badge alert" id="nav-badge-kb" style="display:none;">!</span>
       </div>
 
 
@@ -1675,6 +1693,7 @@
 
   <!-- ════════════ OBSZAR GŁÓWNY (MAIN VIEWPORT) ════════════ -->
   <main class="main-viewport">
+    <div id="kb-alert-banner" style="display:none; flex-shrink:0;"></div>
     
     <!-- ── WIDOK 1: REJESTR USTEREK (MASTER-DETAIL) ── -->
     <section class="view-panel active" id="view-dashboard">
@@ -1705,10 +1724,6 @@
           <button class="btn-secondary-action" id="btn-toggle-detail-pane" title="Przełącz panel boczny szczegółów / pełna szerokość tabeli" data-i18n-title="js.detail.hideSideTitle">
             <svg id="icon-toggle-detail" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="15" y1="3" x2="15" y2="21"/></svg>
             <span id="text-toggle-detail" data-i18n="detail.togglePanelHide">Ukryj panel</span>
-          </button>
-          <button class="btn-secondary-action" onclick="openAiDiagnosisModal({projekt: STATE.lastSelectedPS || ''})" style="border-color:var(--primary); color:var(--primary); font-weight:600; display:inline-flex; align-items:center; gap:6px;" title="Przeszukaj schematy, złącza, bezpieczniki i przewody" data-i18n-title="js.zuken.btnDiagnoseTitle2">
-            <span style="font-size:13px;">✨</span>
-            <span data-i18n="zuken.btnDiagnose">Asystent madA</span>
           </button>
           <button class="btn-secondary-action" id="btn-export-csv">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
@@ -2214,6 +2229,74 @@
             <p style="font-size:12px; color:var(--text-muted); margin-bottom:12px;" data-i18n="ui.backup.optDesc">Automatycznie kompresuje zdjęcia archiwalne i zmniejsza rozmiar pliku SQLite na dysku.</p>
             <button class="btn-secondary-action" id="btn-run-db-optimize" data-i18n="ui.backup.optBtn">⚡ Uruchom optymalizację</button>
           </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── WIDOK: PANEL PROJEKTU (hub) ── -->
+    <section class="view-panel" id="view-project-hub">
+      <div style="padding:20px; flex:1; overflow-y:auto; max-width:1100px; margin:0 auto; width:100%;">
+
+        <div style="background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius-lg); padding:16px 20px; margin-bottom:16px; box-shadow:var(--shadow-sm); display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:14px;">
+          <div style="display:flex; align-items:center; gap:12px; min-width:260px;">
+            <div style="width:40px; height:40px; border-radius:10px; background:linear-gradient(135deg,#4f46e5,#7c3aed); display:flex; align-items:center; justify-content:center; font-size:20px; color:#fff; flex-shrink:0;">🗂️</div>
+            <div>
+              <h2 style="font-size:17px; font-weight:700; margin:0 0 2px 0;"><span data-i18n="hub.title">Panel projektu</span> <span id="hub-ps-name" style="color:var(--primary);"></span></h2>
+              <p style="font-size:12px; color:var(--text-muted); margin:0;" id="hub-kb-status"></p>
+            </div>
+          </div>
+          <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+            <button type="button" class="btn-secondary-action" style="padding:7px 12px; font-size:12.5px;" onclick="switchView('projects')" data-i18n-title="hub.allProjectsTitle" title="Baza projektów PS — wybór i edycja">🗃️ <span data-i18n="hub.allProjects">Wszystkie projekty</span></button>
+            <button type="button" class="btn-primary-action" style="padding:7px 14px; font-size:12.5px;" onclick="openNewProjectDialog()">＋ <span data-i18n="hub.newProject">Nowy projekt</span></button>
+          </div>
+        </div>
+
+        <div id="hub-process-banner" style="display:none; margin-bottom:16px;"></div>
+
+        <div style="display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:14px;">
+
+          <div class="hub-tile" onclick="hubOpenKb()" data-i18n-title="hub.tileKbTitle" title="Wgraj, przetwórz i uporządkuj pliki projektu">
+            <div class="hub-tile-icon" style="background:rgba(245,158,11,.14);">📁</div>
+            <div style="flex:1; min-width:0;">
+              <div style="font-size:13.5px; font-weight:800; color:var(--text-main);" data-i18n="hub.tileKb">Pliki Bazy wiedzy</div>
+              <div style="font-size:11.5px; color:var(--text-muted); line-height:1.4;" data-i18n="hub.tileKbDesc">Wgrywanie, przetwarzanie, główne pliki i status projektu</div>
+            </div>
+          </div>
+
+          <div class="hub-tile" onclick="switchView('project-docs')" data-i18n-title="nav.projectDocsTitle" title="Schematy i dokumenty projektu PS (Baza wiedzy)">
+            <div class="hub-tile-icon" style="background:rgba(2,132,199,.12);">📄</div>
+            <div style="flex:1; min-width:0;">
+              <div style="font-size:13.5px; font-weight:800; color:var(--text-main);" data-i18n="nav.projectDocs">Dokumenty projektu</div>
+              <div style="font-size:11.5px; color:var(--text-muted); line-height:1.4;" data-i18n="hub.tileDocsDesc">Schematy PDF i dokumentacja urządzeń projektu</div>
+            </div>
+          </div>
+
+          <div class="hub-tile" onclick="switchView('zuken-summaries')" data-i18n-title="js.nav.zukenSummariesTitle" title="Zestawienia Zuken: Spis złączy z pinoutem, zestaw bezpieczników i przekaźników (PS)">
+            <div class="hub-tile-icon" style="background:rgba(16,185,129,.12);">⚡</div>
+            <div style="flex:1; min-width:0;">
+              <div style="font-size:13.5px; font-weight:800; color:var(--text-main);" data-i18n="zuken.navSummaries">Spis Złączy & Bezp.</div>
+              <div style="font-size:11.5px; color:var(--text-muted); line-height:1.4;" data-i18n="hub.tileSummDesc">Spis złączy z pinoutem, bezpieczniki i przekaźniki</div>
+            </div>
+          </div>
+
+          <div class="hub-tile" onclick="switchView('schema-audit')" data-i18n-title="nav.auditTitle" title="Kontrola schematów — błędy i braki w danych projektów Zuken">
+            <div class="hub-tile-icon" style="background:rgba(220,38,38,.10);">✅</div>
+            <div style="flex:1; min-width:0;">
+              <div style="font-size:13.5px; font-weight:800; color:var(--text-main);" data-i18n="nav.audit">Kontrola schematów</div>
+              <div style="font-size:11.5px; color:var(--text-muted); line-height:1.4;" data-i18n="hub.tileAuditDesc">Błędy i braki w danych schematu projektu</div>
+            </div>
+            <span class="nav-badge alert hub-tile-badge" id="nav-badge-audit" style="display:none;">0</span>
+          </div>
+
+          <div class="hub-tile" onclick="switchView('reworks')" data-i18n-title="nav.reworksTitle" title="Lista reworków wiązki dla projektu PS">
+            <div class="hub-tile-icon" style="background:rgba(124,58,237,.12);">🔧</div>
+            <div style="flex:1; min-width:0;">
+              <div style="font-size:13.5px; font-weight:800; color:var(--text-main);" data-i18n="nav.reworks">Reworki</div>
+              <div style="font-size:11.5px; color:var(--text-muted); line-height:1.4;" data-i18n="hub.tileReworksDesc">Reworki wiązki dla wybranego projektu</div>
+            </div>
+            <span class="nav-badge alert hub-tile-badge" id="nav-badge-reworks" style="display:none;">0</span>
+          </div>
+
         </div>
       </div>
     </section>
@@ -2868,50 +2951,31 @@
       <h3 id="modal-kb-title">📁 Baza wiedzy projektu</h3>
       <button class="btn-close-modal" onclick="closeModal('modal-kb-files')">✕</button>
     </div>
-    <div class="modal-body">
-      <!-- Pasek folderu projektu -->
-      <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:14px; padding:10px 12px; background:var(--bg-card-subtle); border:1px solid var(--border); border-radius:var(--radius-md);">
-        <div style="font-size:12px; color:var(--text-muted); min-width:0;">
-          <span data-i18n="ui.kb.folderLabel">Folder Bazy wiedzy:</span>
-          <code id="kb-folder-path" style="color:var(--text-main); word-break:break-all;">—</code>
-        </div>
-        <button type="button" class="btn-secondary-action" style="padding:5px 12px; font-size:12px; white-space:nowrap;" onclick="kbOpenFolder()" data-i18n-title="ui.kb.openFolderTitle" title="Otwiera folder projektu w Eksploratorze Windows">
-          <span data-i18n="ui.kb.openFolder">📂 Otwórz folder</span>
-        </button>
-      </div>
 
-      <!-- Lista kontrolna wymaganych plików -->
-      <div style="font-size:12.5px; font-weight:700; margin-bottom:6px;" data-i18n="ui.kb.checklistTitle">Pliki potrzebne Asystentowi madA:</div>
-      <div id="kb-checklist" style="display:flex; flex-direction:column; gap:8px; margin-bottom:8px;"></div>
-      <div style="font-size:11.5px; color:var(--text-muted); margin-bottom:14px;" data-i18n="ui.kb.revisionsNote">Możesz dodać kilka rewizji każdego pliku — program rozpoznaje wersje po datach w nazwach.</div>
+    <!-- Baner statusu (zawsze widoczny): stan projektu, co dalej, główna akcja -->
+    <div style="flex-shrink:0; padding:12px 20px; border-bottom:1px solid var(--border); background:var(--bg-card);">
+      <div id="kb-banner"></div>
+      <div id="kb-process-log" style="display:none; margin-top:10px; font-size:12px; max-height:150px; overflow-y:auto; padding:8px 10px; border:1px solid var(--border); border-radius:var(--radius-md); background:var(--bg-card-subtle);"></div>
+    </div>
 
-      <!-- Dokumenty projektu — podfoldery w folderze PS pełnią rolę kategorii -->
-      <div style="font-size:12.5px; font-weight:700; margin-bottom:6px;" data-i18n="ui.kb.docsTitle">📄 Dokumenty projektu (podfoldery = kategorie):</div>
-      <div id="kb-docs" style="display:flex; flex-direction:column; gap:6px; margin-bottom:14px;"></div>
-
+    <div class="modal-body" style="flex:1; min-height:0;">
       <!-- Strefa wgrywania plików -->
-      <div id="kb-dropzone" onclick="kbTriggerUpload()" ondragover="event.preventDefault(); this.style.borderColor='var(--primary)'; this.style.background='var(--bg-card-subtle)';" ondragleave="this.style.borderColor='var(--border)'; this.style.background='';" ondrop="event.preventDefault(); this.style.borderColor='var(--border)'; this.style.background=''; kbUploadFiles(Array.from(event.dataTransfer.files||[]));" style="border:2px dashed var(--border); border-radius:var(--radius-md); padding:16px; text-align:center; cursor:pointer; font-size:12.5px; color:var(--text-muted); margin-bottom:6px; transition:border-color .15s, background .15s;">
-        <span style="font-size:18px;">📥</span>
+      <div id="kb-dropzone" onclick="kbTriggerUpload()" ondragover="event.preventDefault(); this.style.borderColor='var(--primary)'; this.style.background='var(--bg-card-subtle)';" ondragleave="this.style.borderColor='var(--border)'; this.style.background='';" ondrop="event.preventDefault(); this.style.borderColor='var(--border)'; this.style.background=''; kbUploadFiles(Array.from(event.dataTransfer.files||[]));" style="border:2px dashed var(--border); border-radius:var(--radius-md); padding:10px 14px; text-align:center; cursor:pointer; font-size:12.5px; color:var(--text-muted); margin-bottom:8px; transition:border-color .15s, background .15s;">
+        <span style="font-size:16px;">📥</span>
         <span data-i18n-html="ui.kb.dropHint">Kliknij, aby wybrać pliki z dysku <b>lub przeciągnij je tutaj</b> (.xlsx, .pdf, .e3s, .html/.xml/.csv/.json, .app, .docx)</span>
       </div>
       <input type="file" id="kb-file-input" multiple accept=".xlsx,.pdf,.e3s,.html,.htm,.xml,.json,.csv,.txt,.msg,.png,.jpg,.jpeg,.actp,.app,.docx,.doc" style="display:none;" onchange="kbHandleFileInput(this)">
-      <div id="kb-upload-log" style="display:none; font-size:12px; margin:8px 0 14px 0;"></div>
+      <div id="kb-upload-log" style="display:none; font-size:12px; margin:0 0 10px 0;"></div>
 
-      <!-- Przetwarzanie po dodaniu plików -->
-      <div style="border:1px solid var(--border); border-radius:var(--radius-md); padding:12px 14px; background:var(--bg-card-subtle); margin-top:14px;">
-        <div style="font-size:12.5px; font-weight:700; margin-bottom:4px;" data-i18n="ui.kb.processTitle">⚙️ Przetwarzanie plików projektu</div>
-        <div style="font-size:12px; color:var(--text-muted); line-height:1.5; margin-bottom:10px;" data-i18n-html="ui.kb.processDesc">
-          Po uzupełnieniu plików uruchom przetwarzanie — program automatycznie zaimportuje listy połączeń i BOM (XLSX) do bazy, zaindeksuje schematy PDF i dokumenty projektu, wygeneruje zestawienia Asystenta (spis złączy z pinoutem, bezpieczniki, przekaźniki) oraz pobierze w tle brakujące zdjęcia komponentów.
-        </div>
-        <button type="button" class="btn-primary-action" id="btn-kb-process" style="background:linear-gradient(135deg,#10b981,#059669); border:none; font-size:12.5px; display:inline-flex; align-items:center; gap:6px;" onclick="kbProcessFiles()" data-i18n-title="ui.kb.processBtnTitle" title="Importuje XLSX, indeksuje PDF i generuje zestawienia Asystenta madA">
-          <span data-i18n="ui.kb.processBtn">⚡ Przetwórz pliki projektu</span>
-        </button>
-        <div id="kb-process-log" style="display:none; margin-top:10px; font-size:12px; max-height:180px; overflow-y:auto;"></div>
-      </div>
+      <!-- Lista kontrolna typów plików (zwarte wiersze) -->
+      <div id="kb-checklist" style="display:flex; flex-direction:column; gap:5px; margin-bottom:10px;"></div>
 
-      <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:16px;">
-        <button type="button" class="btn-secondary-action" onclick="closeModal('modal-kb-files')" data-i18n="ui.common.close">Zamknij</button>
-      </div>
+      <!-- Wszystkie pliki projektu (podfoldery = kategorie) — zwinięte -->
+      <details id="kb-docs-details" style="border:1px solid var(--border); border-radius:var(--radius-md); background:var(--bg-card);">
+        <summary id="kb-docs-summary" style="cursor:pointer; padding:8px 12px; font-size:12.5px; font-weight:700;"></summary>
+        <div id="kb-docs" style="display:flex; flex-direction:column; gap:6px; padding:0 10px 10px 10px;"></div>
+      </details>
+      <div style="font-size:11px; color:var(--text-muted); margin-top:8px;" data-i18n="ui.kb.revisionsNote">Możesz dodać kilka rewizji każdego pliku — program rozpoznaje wersje po datach w nazwach.</div>
     </div>
   </div>
 </div>
@@ -3840,6 +3904,7 @@ function setupNavigation() {
   document.querySelectorAll('.sidebar-nav .nav-item').forEach(item => {
     item.addEventListener('click', () => {
       const view = item.dataset.view;
+      if (!view) return; // pozycje-akcje bez widoku (np. Asystent madA)
       if (view === 'new-defect') {
         switchToNewDefect();
       } else {
@@ -3849,15 +3914,22 @@ function setupNavigation() {
   });
 }
 
+// Widoki należące do Panelu projektu — pozycja „Panel projektu” w menu
+// pozostaje aktywna również w podwidokach (nie mają własnych pozycji w menu).
+const PROJECT_VIEWS = new Set(['project-hub', 'project-docs', 'zuken-summaries', 'schema-audit', 'reworks']);
+
 function switchView(viewName) {
   STATE.currentView = viewName;
   document.querySelectorAll('.sidebar-nav .nav-item').forEach(item => {
-    item.classList.toggle('active', item.dataset.view === viewName);
+    item.classList.toggle('active',
+      item.dataset.view === viewName ||
+      (item.dataset.view === 'project-hub' && PROJECT_VIEWS.has(viewName)));
   });
   document.querySelectorAll('.view-panel').forEach(panel => {
     panel.classList.toggle('active', panel.id === `view-${viewName}`);
   });
 
+  if (viewName === 'project-hub') renderProjectHub();
   if (viewName === 'projects') renderProjectsTable();
   if (viewName === 'dictionaries') renderDictionaries();
   if (viewName === 'users') renderUsersTable();
@@ -4689,6 +4761,7 @@ function loadUserPS() {
   STATE._defaultPsChecked = false;
   syncPsSelectors();
   refreshActivePsView();
+  refreshKbAlerts();
 }
 
 function setCurrentPS(ps, opts = {}) {
@@ -4702,6 +4775,7 @@ function setCurrentPS(ps, opts = {}) {
   try {
     syncPsSelectors();
     if (changed || opts.forceRefresh) refreshActivePsView();
+    if (changed && typeof renderKbAlerts === 'function') renderKbAlerts();
   } finally { STATE._psSyncing = false; }
 }
 
@@ -5961,15 +6035,207 @@ async function deleteProject(ps) {
 }
 
 /* ── BAZA WIEDZY PROJEKTU — PLIKI ASYSTENTA ZUKEN ── */
-const KB_STATE = { ps: '', _miniTimer: null };
+const KB_STATE = { ps: '', _miniTimer: null, busy: false, last: null };
+window.addEventListener('focus', () => {
+  const m = document.getElementById('modal-kb-files');
+  if (m && m.style.display === 'flex' && KB_STATE.ps && !KB_STATE.busy) kbRefreshStatus();
+});
 const KB_TYPES = [
   { key: 'conn', nameKey: 'ui.kb.typeConnName', descKey: 'ui.kb.typeConnDesc', accept: '.xlsx' },
   { key: 'wires', nameKey: 'ui.kb.typeWiresName', descKey: 'ui.kb.typeWiresDesc', accept: '.xlsx' },
   { key: 'bom',  nameKey: 'ui.kb.typeBomName',  descKey: 'ui.kb.typeBomDesc',  accept: '.xlsx' },
   { key: 'pdf',  nameKey: 'ui.kb.typePdfName',  descKey: 'ui.kb.typePdfDesc',  accept: '.pdf' },
+  { key: 'manual', nameKey: 'ui.kb.typeManualName', descKey: 'ui.kb.typeManualDesc', accept: '.pdf', subdir: 'Dokumentacje urzadzen' },
   { key: 'e3s',  nameKey: 'ui.kb.typeE3sName',  descKey: 'ui.kb.typeE3sDesc',  accept: '.e3s' },
   { key: 'ctrl', nameKey: 'ui.kb.typeCtrlName', descKey: 'ui.kb.typeCtrlDesc', accept: '.html,.htm,.xml,.json,.csv,.txt,.pdf' }
 ];
+
+/* ── Globalny status Bazy wiedzy: kropka przy wyborze projektu + baner ── */
+const KB_ALERT = { data: {}, lastFetch: 0 };
+
+async function refreshKbAlerts() {
+  if (!STATE.authToken) return;
+  KB_ALERT.lastFetch = Date.now();
+  try {
+    const res = await apiCall('/api/zuken/kb/status-all');
+    KB_ALERT.data = res.projects || {};
+  } catch (e) { return; }
+  renderKbAlerts();
+}
+
+function kbAlertNeedsAttention(p) {
+  return !!p && (p.needs_processing || (p.required_missing || []).length > 0);
+}
+
+function kbAlertSig(entries) {
+  return entries.map(([ps, p]) => `${ps}:${p.new}/${p.changed}/${p.removed}/${p.relocated}/${(p.required_missing || []).join(',')}`).join(';');
+}
+
+function kbAlertDismiss() {
+  const ps = STATE.lastSelectedPS || '';
+  const entries = Object.entries(KB_ALERT.data).filter(([, p]) => kbAlertNeedsAttention(p));
+  sessionStorage.setItem('ru_kb_alert_dismissed', kbAlertSig(entries));
+  const box = document.getElementById('kb-alert-banner');
+  if (box) box.style.display = 'none';
+}
+
+async function kbAlertProcess() {
+  // Tylko otwiera menedżer KB — przetwarzanie startuje wyłącznie przyciskiem
+  // „Przetwórz” wewnątrz modala (ochrona przed przypadkowym kliknięciem).
+  const ps = STATE.lastSelectedPS || '';
+  if (!ps) return;
+  await openKbManager(ps);
+}
+
+function kbAlertSwitch(ps) {
+  setCurrentPS(ps);
+  renderKbAlerts();
+}
+
+/* ── Panel projektu (hub) ── */
+function hubOpenKb() {
+  const ps = STATE.lastSelectedPS || '';
+  if (ps) openKbManager(ps);
+  else switchView('projects');
+}
+
+function renderProjectHub() {
+  const ps = STATE.lastSelectedPS || '';
+  const nameEl = document.getElementById('hub-ps-name');
+  const stEl = document.getElementById('hub-kb-status');
+  const banner = document.getElementById('hub-process-banner');
+  if (nameEl) nameEl.textContent = ps || t('hub.noProject');
+  if (!ps) {
+    if (stEl) stEl.textContent = t('hub.selectProject');
+    if (banner) banner.style.display = 'none';
+    return;
+  }
+  const cur = KB_ALERT.data[ps];
+  if (!cur) {
+    if (stEl) stEl.textContent = t('hub.statusChecking');
+    if (banner) banner.style.display = 'none';
+    refreshKbAlerts();
+    return;
+  }
+  const attn = kbAlertNeedsAttention(cur);
+  if (stEl) {
+    const miss = (cur.required_missing || []).length > 0;
+    stEl.textContent = miss ? t('ui.kb.dotMissing')
+      : (cur.needs_processing ? t('ui.kb.dotNeeds') : t('ui.kb.dotOk'));
+    stEl.style.color = miss ? '#dc2626' : (cur.needs_processing ? '#b45309' : '#059669');
+    stEl.style.fontWeight = '700';
+  }
+  if (banner) {
+    if (!attn) { banner.style.display = 'none'; banner.innerHTML = ''; }
+    else {
+      const parts = [];
+      if (cur.new) parts.push(t('ui.kb.chipNew', { n: cur.new }));
+      if (cur.changed) parts.push(t('ui.kb.chipChanged', { n: cur.changed }));
+      if (cur.removed) parts.push(t('ui.kb.chipRemoved', { n: cur.removed }));
+      if (cur.relocated) parts.push(t('ui.kb.chipRelocated', { n: cur.relocated }));
+      if ((cur.required_missing || []).length) {
+        const names = cur.required_missing.map(k => { const tp = KB_TYPES.find(x => x.key === k); return tp ? t(tp.nameKey) : k; }).join(', ');
+        parts.push(t('ui.kb.bannerMissing', { v: names }));
+      }
+      const needsProc = !!cur.needs_processing;
+      banner.innerHTML = `
+        <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap; padding:10px 16px; background:rgba(245,158,11,0.10); border:1.5px solid rgba(245,158,11,0.4); border-radius:var(--radius-md);">
+          <span style="font-size:17px;">${needsProc ? '🟠' : '🔴'}</span>
+          <div style="flex:1; min-width:220px;">
+            <div style="font-size:12.5px; font-weight:800; color:var(--text-main);">${escapeHtml(t('ui.kb.alertTitle', { ps }))}</div>
+            ${parts.length ? `<div style="font-size:11.5px; color:var(--text-muted);">${escapeHtml(parts.join(' · '))}</div>` : ''}
+          </div>
+          <button type="button" class="btn-primary-action" style="background:linear-gradient(135deg,#f59e0b,#d97706); border:none; font-size:12px; padding:6px 14px;" onclick="hubOpenKb()">${t('ui.kb.alertOpen')}</button>
+        </div>`;
+      banner.style.display = 'block';
+    }
+  }
+}
+
+function renderKbAlerts() {
+  const ps = STATE.lastSelectedPS || '';
+  const cur = KB_ALERT.data[ps];
+
+  const dot = document.getElementById('ps-status-dot');
+  if (dot) {
+    if (!cur) {
+      dot.style.display = 'none';
+    } else {
+      const miss = (cur.required_missing || []).length > 0;
+      const color = miss ? '#dc2626' : (cur.needs_processing ? '#f59e0b' : '#10b981');
+      const txt = miss ? t('ui.kb.dotMissing') : (cur.needs_processing ? t('ui.kb.dotNeeds') : t('ui.kb.dotOk'));
+      dot.style.display = 'inline-block';
+      dot.style.background = color;
+      dot.title = txt;
+    }
+  }
+
+  const quick = document.getElementById('ps-quick-open');
+  if (quick) {
+    const remote = typeof isRemoteServer === 'function' && isRemoteServer();
+    const showE3s = !!(cur && cur.has_e3s) && !remote;
+    const showPdf = !!(cur && cur.has_pdf) && !remote;
+    document.getElementById('btn-open-e3s').style.display = showE3s ? '' : 'none';
+    document.getElementById('btn-open-pdf').style.display = showPdf ? '' : 'none';
+    quick.style.display = (showE3s || showPdf) ? 'flex' : 'none';
+  }
+
+  const box = document.getElementById('kb-alert-banner');
+  const entries = Object.entries(KB_ALERT.data).filter(([, p]) => kbAlertNeedsAttention(p));
+  renderKbAlerts_done(entries);
+  if (!box) return;
+  if (!entries.length || sessionStorage.getItem('ru_kb_alert_dismissed') === kbAlertSig(entries)) {
+    box.style.display = 'none';
+    return;
+  }
+
+  const others = entries.filter(([k]) => k !== ps);
+  const curAttn = kbAlertNeedsAttention(cur);
+  const parts = [];
+  if (curAttn) {
+    if (cur.new) parts.push(t('ui.kb.chipNew', { n: cur.new }));
+    if (cur.changed) parts.push(t('ui.kb.chipChanged', { n: cur.changed }));
+    if (cur.removed) parts.push(t('ui.kb.chipRemoved', { n: cur.removed }));
+    if (cur.relocated) parts.push(t('ui.kb.chipRelocated', { n: cur.relocated }));
+    if ((cur.required_missing || []).length) {
+      const names = cur.required_missing.map(k => { const tp = KB_TYPES.find(x => x.key === k); return tp ? t(tp.nameKey) : k; }).join(', ');
+      parts.push(t('ui.kb.bannerMissing', { v: names }));
+    }
+  }
+  const title = curAttn ? t('ui.kb.alertTitle', { ps }) : t('ui.kb.alertTitleOthers');
+  const othersHtml = others.length
+    ? `<div style="font-size:11.5px; margin-top:3px;">${t('ui.kb.alertOthers')} ${others.map(([k, p]) => `<a href="#" onclick="event.preventDefault(); kbAlertSwitch('${escapeHtml(k)}')" style="font-weight:700; color:inherit; text-decoration:underline;">${escapeHtml(k)}</a>`).join(', ')}</div>`
+    : '';
+  const missingOnly = curAttn && !cur.needs_processing;
+  const btnProc = curAttn && !missingOnly
+    ? `<button type="button" class="btn-primary-action" style="background:linear-gradient(135deg,#f59e0b,#d97706); border:none; font-size:12px; padding:5px 12px;" onclick="kbAlertProcess()">${t('ui.kb.alertOpen')}</button>`
+    : '';
+  box.innerHTML = `
+    <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap; padding:9px 18px; background:rgba(245,158,11,0.13); border-bottom:1px solid rgba(245,158,11,0.45); color:var(--text-main);">
+      <span style="font-size:18px;">🟠</span>
+      <div style="flex:1; min-width:240px;">
+        <div style="font-size:13px; font-weight:800;">${escapeHtml(title)}</div>
+        ${parts.length ? `<div style="font-size:12px;">${escapeHtml(parts.join(' · '))}</div>` : ''}
+        <div style="font-size:11px; color:var(--text-muted);">${t('ui.kb.alertWhy')}</div>
+        ${othersHtml}
+      </div>
+      ${btnProc}
+      ${curAttn && missingOnly ? `<button type="button" class="btn-secondary-action" style="font-size:12px; padding:5px 12px;" onclick="openKbManager('${escapeHtml(ps)}')">${t('ui.kb.alertOpen')}</button>` : ''}
+      <button type="button" class="btn-secondary-action" style="font-size:12px; padding:5px 12px;" onclick="kbAlertDismiss()" title="${escapeHtml(t('ui.kb.alertLaterTitle'))}">${t('ui.kb.alertLater')}</button>
+    </div>`;
+  box.style.display = 'block';
+}
+
+function renderKbAlerts_done(entries) {
+  // Wykrzyknik przy „Panel projektu” w menu, gdy cokolwiek wymaga uwagi.
+  const navBadge = document.getElementById('nav-badge-kb');
+  if (navBadge) navBadge.style.display = entries.length ? '' : 'none';
+  if (STATE.currentView === 'project-hub') renderProjectHub();
+}
+
+window.addEventListener('focus', () => {
+  if (STATE.authToken && Date.now() - KB_ALERT.lastFetch > 1500) refreshKbAlerts();
+});
 
 async function openKbManager(ps) {
   ps = (ps || '').trim().toUpperCase();
@@ -6003,13 +6269,201 @@ async function kbRefreshStatus() {
   if (!ps || !box) return;
   try {
     const res = await apiCall(`/api/zuken/kb/${encodeURIComponent(ps)}/files`);
-    const pathEl = document.getElementById('kb-folder-path');
-    if (pathEl) pathEl.textContent = res.folder_path || '—';
+    KB_STATE.last = res;
+    renderKbBanner(res);
     renderKbChecklist(res);
+    refreshKbAlerts();
   } catch(err) {
     box.innerHTML = `<div style="color:var(--red); font-size:12px;">${escapeHtml(err.message)}</div>`;
   }
   kbRefreshMiniChecklist();
+}
+
+function kbBaseName(rel) {
+  return String(rel || '').split(/[\\/]/).pop();
+}
+
+function kbStateBadge(state) {
+  if (state === 'new') return ` <span style="font-size:9.5px; font-weight:700; color:#2563eb; background:rgba(37,99,235,0.12); padding:0 6px; border-radius:6px;">${t('ui.kb.stateNew')}</span>`;
+  if (state === 'changed') return ` <span style="font-size:9.5px; font-weight:700; color:#d97706; background:rgba(245,158,11,0.15); padding:0 6px; border-radius:6px;">${t('ui.kb.stateChanged')}</span>`;
+  return '';
+}
+
+function kbUploadMissing() {
+  const missing = (KB_STATE.last?.sync?.required_missing) || [];
+  const tp = KB_TYPES.find(x => x.key === missing[0]);
+  kbTriggerUpload(tp ? tp.accept : undefined, tp ? tp.subdir : '');
+}
+
+function renderKbBanner(res) {
+  const box = document.getElementById('kb-banner');
+  if (!box) return;
+  const sy = res.sync || {};
+  const cnt = { new: (sy.new || []).length, changed: (sy.changed || []).length, removed: (sy.removed || []).length, relocated: (sy.relocated || []).length };
+  const total = cnt.new + cnt.changed + cnt.removed + cnt.relocated;
+  const missing = sy.required_missing || [];
+  const missNames = missing.map(k => { const tp = KB_TYPES.find(x => x.key === k); return tp ? t(tp.nameKey) : k; }).join(', ');
+  const needs = !!sy.needs_processing;
+  let tone, icon, title;
+  if (!res.folder_exists) { tone = '#d97706'; icon = '📂'; title = t('ui.kb.bannerNoFolder'); }
+  else if (missing.length) { tone = '#dc2626'; icon = '🔴'; title = t('ui.kb.bannerMissing', { v: missNames }); }
+  else if (needs) { tone = '#d97706'; icon = '🟠'; title = t('ui.kb.bannerNeedsProcessing'); }
+  else { tone = '#059669'; icon = '🟢'; title = t('ui.kb.bannerOk'); }
+
+  const chip = (txt, color) => `<span style="font-size:11px; font-weight:700; color:${color}; background:${color}1f; padding:1px 8px; border-radius:10px;">${txt}</span>`;
+  const chips = [
+    cnt.new ? chip(t('ui.kb.chipNew', { n: cnt.new }), '#2563eb') : '',
+    cnt.changed ? chip(t('ui.kb.chipChanged', { n: cnt.changed }), '#d97706') : '',
+    cnt.removed ? chip(t('ui.kb.chipRemoved', { n: cnt.removed }), '#dc2626') : '',
+    cnt.relocated ? chip(t('ui.kb.chipRelocated', { n: cnt.relocated }), '#64748b') : ''
+  ].filter(Boolean).join(' ');
+
+  const names = [].concat(
+    (sy.new || []).map(f => '+ ' + kbBaseName(f)),
+    (sy.changed || []).map(f => '~ ' + kbBaseName(f)),
+    (sy.removed || []).map(f => '- ' + kbBaseName(f))
+  );
+  const namesHtml = names.length
+    ? `<div style="font-size:11px; color:var(--text-muted); margin-top:4px; word-break:break-all;">${escapeHtml(names.slice(0, 6).join('  ·  '))}${names.length > 6 ? ` <b>${t('ui.kb.andMore', { n: names.length - 6 })}</b>` : ''}</div>`
+    : '';
+
+  const stepTxt = {
+    add_files: () => t('ui.kb.stepAddFiles'),
+    upload_required: () => t('ui.kb.stepUploadRequired', { v: missNames }),
+    process: () => t('ui.kb.stepProcess'),
+    done: () => t('ui.kb.stepDone')
+  };
+  const steps = (res.next_steps || []).map(st => (stepTxt[st.key] || (() => ''))()).filter(Boolean);
+  const stepsHtml = steps.length
+    ? `<ol style="margin:6px 0 0 18px; padding:0; font-size:12px; color:var(--text-main); line-height:1.5;">${steps.map(x => `<li>${escapeHtml(x)}</li>`).join('')}</ol>`
+    : '';
+
+  const summLine = res.has_summaries
+    ? t('ui.kb.statusSummaries', { c: res.counts?.connectors || 0, f: res.counts?.fuses || 0, r: res.counts?.relays || 0, d: res.generated_at || '—' })
+    : (res.folder_exists && (res.documents || []).length ? t('ui.kb.statusNoSummaries') : '');
+
+  const pdfSlot = (res.types || []).find(x => x.key === 'pdf');
+  const multiWarn = pdfSlot && (pdfSlot.files || []).length > 1
+    ? `<div style="font-size:12px; font-weight:700; color:#b45309; margin-top:5px;">⚠️ ${escapeHtml(t('ui.kb.bannerMultiPdf', { n: pdfSlot.files.length }))}</div>`
+    : '';
+  const busy = !!KB_STATE.busy;
+  const canProcess = !!res.folder_exists && (res.documents || []).length > 0;
+  const procPrimary = needs && !missing.length;
+  const procLabel = needs && total ? t('ui.kb.btnProcessN', { n: total }) : t('ui.kb.processBtn');
+  const btnProc = canProcess
+    ? `<button type="button" class="${procPrimary ? 'btn-primary-action' : 'btn-secondary-action'}" style="${procPrimary ? 'background:linear-gradient(135deg,#10b981,#059669); border:none; ' : ''}font-size:12.5px;" id="btn-kb-process" onclick="kbProcessFiles()" title="${escapeHtml(t('ui.kb.processBtnTitle'))}" ${busy ? 'disabled' : ''}>${escapeHtml(procLabel)}</button>`
+    : '';
+  const btnUp = missing.length
+    ? `<button type="button" class="btn-primary-action" style="font-size:12.5px;" onclick="kbUploadMissing()" ${busy ? 'disabled' : ''}>${t('ui.kb.btnUploadMissing')}</button>`
+    : '';
+  const btnFolder = `<button type="button" class="btn-secondary-action" style="font-size:12.5px;" onclick="kbOpenFolder()" title="${escapeHtml(t('ui.kb.openFolderTitle'))}">${t('ui.kb.openFolder')}</button>`;
+  const btnRefresh = `<button type="button" class="btn-secondary-action" style="font-size:12.5px;" onclick="kbRefreshStatus()" title="${escapeHtml(t('ui.kb.btnRefreshTitle'))}" ${busy ? 'disabled' : ''}>${t('ui.kb.btnRefresh')}</button>`;
+
+  box.innerHTML = `
+    <div style="display:flex; gap:10px; align-items:flex-start;">
+      <span style="font-size:20px; line-height:1.2;">${icon}</span>
+      <div style="flex:1; min-width:0;">
+        <div style="font-size:14px; font-weight:800; color:${tone};">${escapeHtml(title)}</div>
+        ${chips ? `<div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:5px;">${chips}</div>` : ''}
+        ${namesHtml}
+        ${multiWarn}
+        ${stepsHtml}
+        ${summLine ? `<div style="font-size:11px; color:var(--text-muted); margin-top:5px;">${escapeHtml(summLine)}</div>` : ''}
+      </div>
+    </div>
+    <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:10px;">
+      ${btnUp}${btnProc}${btnRefresh}${btnFolder}
+      <code style="font-size:10.5px; color:var(--text-muted); margin-left:auto; word-break:break-all; max-width:45%;" title="${escapeHtml(res.folder_path || '')}">${escapeHtml(res.folder_path || '—')}</code>
+    </div>`;
+}
+
+function kbFileRow(d, i, kind, res) {
+  if (!d) return '';
+  const mb = d.size ? (d.size / 1048576).toFixed(1) + ' MB' : '';
+  const meta = [d.pages ? t('ui.kb.pagesShort', { n: d.pages }) : '', mb, d.mtime || ''].filter(Boolean).join(' · ');
+  const isCtrl = kind === 'ctrl';
+  const badgeCss = 'font-size:9.5px; font-weight:700; color:#059669; background:rgba(16,185,129,0.15); padding:0 6px; border-radius:6px;';
+  const mainBadge = d.is_main
+    ? ` <span style="${badgeCss}">${isCtrl ? '🧠 ' + t('ui.kb.badgeUsed') : '⭐ ' + t('ui.kb.badgeMain')}</span>`
+    : '';
+  const cands = (res && res.controller && res.controller.candidates) || [];
+  const canUse = !isCtrl || cands.includes(String(d.rel).replace(/\\/g, '/'));
+  const mainFn = { pdf: 'kbSetMain', e3s: 'kbSetMainE3s', ctrl: 'kbSetCtrlFile' }[kind];
+  const mainLbl = isCtrl ? t('ui.kb.btnUseCtrl') : t('ui.kb.btnMakeMain');
+  const btnMain = (d.is_main || !canUse) ? '' : `<button type="button" class="btn-secondary-action" style="padding:2px 9px; font-size:11px; white-space:nowrap;" onclick="${mainFn}(${i})">${mainLbl}</button>`;
+  return `<div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:5px 0; border-top:1px solid var(--border);">
+    <div style="flex:1; min-width:220px;">
+      <div style="font-size:12px; font-weight:600; color:var(--text-main); word-break:break-all;">${kbDocIcon(d.name)} ${escapeHtml(d.rel)}${mainBadge}${kbStateBadge(d.state)}</div>
+      <div style="font-size:10.5px; color:var(--text-muted);">${escapeHtml(meta)}</div>
+    </div>
+    ${btnMain}
+    <button type="button" class="btn-secondary-action" style="padding:2px 9px; font-size:11px; white-space:nowrap;" onclick="kbMoveToManual(${i})">${t('ui.kb.btnMoveToDocs')}</button>
+    <button type="button" class="btn-secondary-action" style="padding:2px 9px; font-size:11px; white-space:nowrap;" onclick="kbOpenDocByRel(${i})">${t('ui.kb.docOpen')}</button>
+  </div>`;
+}
+
+async function kbSetMainE3s(i) {
+  const d = ((KB_STATE.last && KB_STATE.last.documents) || [])[i];
+  if (!d || !KB_STATE.ps) return;
+  try {
+    await apiCall(`/api/zuken/kb/${encodeURIComponent(KB_STATE.ps)}/main-e3s`, 'POST', { path: d.rel });
+    showToast(t('ui.kb.mainE3sSet', { f: d.name }), 'success');
+    await kbRefreshStatus();
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+}
+
+async function kbSetCtrlFile(i) {
+  const d = ((KB_STATE.last && KB_STATE.last.documents) || [])[i];
+  if (!d || !KB_STATE.ps) return;
+  try {
+    await apiCall(`/api/zuken/kb/${encodeURIComponent(KB_STATE.ps)}/controller`, 'POST', { controller_file: String(d.rel).replace(/\\/g, '/') });
+    showToast(t('ui.kb.ctrlFileSaved'), 'success');
+    await kbRefreshStatus();
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+}
+
+async function openMainFile(kind) {
+  const ps = STATE.lastSelectedPS || '';
+  if (!ps) return;
+  try {
+    await apiCall(`/api/zuken/kb/${encodeURIComponent(ps)}/open-main`, 'POST', { kind });
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+}
+
+async function kbOpenDocByRel(i) {
+  KB_STATE.docs = (KB_STATE.last && KB_STATE.last.documents) || [];
+  await kbOpenDoc(i);
+}
+
+async function kbMoveToManual(i) {
+  const d = ((KB_STATE.last && KB_STATE.last.documents) || [])[i];
+  if (!d || !KB_STATE.ps) return;
+  if (!confirm(t('ui.kb.moveConfirm', { f: d.name }))) return;
+  try {
+    await apiCall(`/api/zuken/kb/${encodeURIComponent(KB_STATE.ps)}/move`, 'POST', { path: d.rel });
+    showToast(t('ui.kb.moveDone', { f: d.name }), 'success');
+    await kbRefreshStatus();
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+}
+
+async function kbSetMain(i) {
+  const d = ((KB_STATE.last && KB_STATE.last.documents) || [])[i];
+  if (!d || !KB_STATE.ps) return;
+  try {
+    await apiCall(`/api/zuken/kb/${encodeURIComponent(KB_STATE.ps)}/main-schematic`, 'POST', { path: d.rel });
+    showToast(t('ui.kb.mainSet', { f: d.name }), 'success');
+    await kbRefreshStatus();
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
 }
 
 function renderKbChecklist(res) {
@@ -6017,40 +6471,53 @@ function renderKbChecklist(res) {
   if (!box) return;
   const tmap = {};
   (res.types || []).forEach(x => { tmap[x.key] = x; });
+  const stateByRel = {};
+  (res.documents || []).forEach(d => { stateByRel[d.rel] = d.state; });
 
   box.innerHTML = KB_TYPES.map(tp => {
     const st = tmap[tp.key] || { found: false, files: [], required: true };
-    const icon = st.found ? '✅' : (st.required ? '🔴' : '⚪');
+    const files = st.files || [];
+    const pending = files.filter(f => stateByRel[f] === 'new' || stateByRel[f] === 'changed').length;
+    const icon = st.found ? (pending ? '🟠' : '✅') : (st.required ? '🔴' : '⚪');
     const badge = st.required
-      ? `<span style="font-size:10px; font-weight:700; color:#dc2626; background:rgba(220,38,38,0.1); padding:1px 6px; border-radius:8px; margin-left:6px;">${t('ui.kb.requiredBadge')}</span>`
-      : `<span style="font-size:10px; font-weight:700; color:var(--text-muted); background:var(--bg-card-subtle); padding:1px 6px; border-radius:8px; margin-left:6px;">${t('ui.kb.optionalBadge')}</span>`;
-    const filesHtml = st.found
-      ? st.files.map(f => `<div style="font-size:11px; color:#059669; font-weight:600; margin-top:2px; word-break:break-all;">📄 ${escapeHtml(f)}</div>`).join('')
-      : `<div style="font-size:11px; color:${st.required ? '#dc2626' : 'var(--text-muted)'}; margin-top:2px;">${t('ui.kb.noFile')}</div>`;
+      ? `<span style="font-size:9.5px; font-weight:700; color:#dc2626; background:rgba(220,38,38,0.1); padding:0 6px; border-radius:8px; margin-left:6px;">${t('ui.kb.requiredBadge')}</span>`
+      : '';
+    const multiPdf = tp.key === 'pdf' && files.length > 1;
+    const rowKinds = { pdf: multiPdf, e3s: files.length > 1, ctrl: files.length > 0 };
+    const withRows = !!rowKinds[tp.key];
+    const eff = (res.controller && res.controller.effective) || {};
+    const viaConn = (st.via_conn || []);
+    let summary;
+    if (!files.length && tp.key === 'wires' && viaConn.length) summary = `<span style="color:#059669; font-weight:600;">📄 ${escapeHtml(kbBaseName(viaConn[0]))}</span> <span style="font-size:10px; color:var(--text-muted);">${t('ui.kb.wiresViaConn')}</span>`;
+    else if (!files.length) summary = `<span style="color:${st.required ? '#dc2626' : 'var(--text-muted)'};">${t('ui.kb.noFile')}</span>`;
+    else if (tp.key === 'e3s' && res.main_e3s) summary = `<span style="color:#059669; font-weight:600;">⭐ ${escapeHtml(kbBaseName(res.main_e3s))}</span>${files.length > 1 ? ` <span style="font-size:10px; color:var(--text-muted);">(${t('ui.kb.otherCount', { n: files.length - 1 })})</span>` : ''}`;
+    else if (tp.key === 'ctrl' && eff.file) summary = `<span style="color:#059669; font-weight:600;">🧠 ${escapeHtml(eff.file)}</span> <span style="font-size:10px; color:var(--text-muted);">(${t('ui.kb.filesCount', { n: files.length })})</span>${pending ? ` <span style="font-size:10px; font-weight:700; color:#d97706;">(${t('ui.kb.pendingCount', { n: pending })})</span>` : ''}`;
+    else if (files.length === 1) summary = `<span style="color:#059669; font-weight:600;">📄 ${escapeHtml(kbBaseName(files[0]))}</span>${kbStateBadge(stateByRel[files[0]])}`;
+    else if (multiPdf) summary = `<span style="color:#d97706; font-weight:700;">⚠️ ${t('ui.kb.multiPdfWarn', { n: files.length })}</span>`;
+    else summary = `<span style="color:#059669; font-weight:600;">📄 ${t('ui.kb.filesCount', { n: files.length })}</span>${pending ? ` <span style="font-size:10px; font-weight:700; color:#d97706;">(${t('ui.kb.pendingCount', { n: pending })})</span>` : ''}`;
+    const docIdx = {};
+    (res.documents || []).forEach((d, i) => { docIdx[d.rel] = i; });
+    const hintKey = { pdf: 'ui.kb.multiPdfHint', e3s: 'ui.kb.e3sHint', ctrl: 'ui.kb.ctrlHint' }[tp.key];
+    const detail = withRows
+      ? `<div style="font-size:11.5px; color:${multiPdf ? '#b45309' : 'var(--text-muted)'}; margin:4px 0;">${escapeHtml(t(hintKey))}</div>` + files.map(f => kbFileRow(res.documents[docIdx[f]], docIdx[f], tp.key, res)).join('')
+      : (files.map(f => `<div style="font-size:11px; color:var(--text-main); margin-top:2px; word-break:break-all;">📄 ${escapeHtml(f)}${kbStateBadge(stateByRel[f])}</div>`).join('')
+         + (tp.key === 'wires' && viaConn.length && !files.length
+            ? `<div style="font-size:11px; color:var(--text-muted); margin-top:2px;">ℹ️ ${escapeHtml(t('ui.kb.wiresViaConnDetail', { v: viaConn[0] }))}</div>`
+            : ''));
     return `
-      <div style="display:flex; gap:10px; align-items:flex-start; padding:9px 11px; border:1px solid var(--border); border-radius:var(--radius-md); background:var(--bg-card);">
-        <span style="font-size:15px; line-height:1.4; flex-shrink:0;">${icon}</span>
-        <div style="flex:1; min-width:0;">
-          <div style="font-size:12.5px; font-weight:700; color:var(--text-main);">${escapeHtml(t(tp.nameKey))}${badge}</div>
-          <div style="font-size:11.5px; color:var(--text-muted); line-height:1.4; margin-top:1px;">${escapeHtml(t(tp.descKey))}</div>
-          ${filesHtml}
+      <details ${multiPdf ? 'open' : ''} style="border:1px solid ${multiPdf ? '#d97706' : 'var(--border)'}; border-radius:var(--radius-md); background:var(--bg-card);">
+        <summary style="display:flex; align-items:center; gap:8px; cursor:pointer; padding:6px 10px;" title="${escapeHtml(t(tp.descKey))}">
+          <span style="font-size:14px; flex-shrink:0;">${icon}</span>
+          <span style="font-size:12.5px; font-weight:700; color:var(--text-main); white-space:nowrap;">${escapeHtml(t(tp.nameKey))}${badge}</span>
+          <span style="flex:1; min-width:0; font-size:11.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${summary}</span>
+          <button type="button" class="btn-secondary-action" style="padding:3px 10px; font-size:11.5px; white-space:nowrap; flex-shrink:0;" onclick="event.preventDefault(); event.stopPropagation(); kbTriggerUpload('${tp.accept}', '${tp.subdir || ''}')">${t('ui.kb.uploadBtn')}</button>
+        </summary>
+        <div style="padding:0 10px 8px 32px;">
+          <div style="font-size:11.5px; color:var(--text-muted); line-height:1.4;">${escapeHtml(t(tp.descKey))}</div>
+          ${detail}
         </div>
-        <button type="button" class="btn-secondary-action" style="padding:4px 10px; font-size:11.5px; white-space:nowrap; flex-shrink:0;" onclick="kbTriggerUpload('${tp.accept}')">${t('ui.kb.uploadBtn')}</button>
-      </div>`;
+      </details>`;
   }).join('');
-
-  // Wiersz podsumowania: gotowość + stan zestawień
-  const ready = res.ready;
-  const summLine = res.has_summaries
-    ? `<span style="color:#059669;">${t('ui.kb.statusSummaries', { c: res.counts?.connectors || 0, f: res.counts?.fuses || 0, r: res.counts?.relays || 0, d: res.generated_at || '—' })}</span>`
-    : `<span style="color:#d97706;">${t('ui.kb.statusNoSummaries')}</span>`;
-  box.innerHTML += `
-    <div style="display:flex; gap:8px; align-items:center; padding:8px 11px; border-radius:var(--radius-md); font-size:12px; background:${ready ? 'rgba(16,185,129,0.08)' : 'rgba(245,158,11,0.08)'}; border:1px solid ${ready ? 'rgba(16,185,129,0.35)' : 'rgba(245,158,11,0.35)'};">
-      <span>${ready ? '🟢' : '🟠'}</span>
-      <span style="font-weight:600;">${ready ? t('ui.kb.statusReady') : t('ui.kb.statusIncomplete')}</span>
-      <span style="color:var(--text-muted);">·</span>
-      ${summLine}
-    </div>`;
 
   // Wybór pliku logiki sterownika (typ ustawia się w edycji projektu)
   const ctrl = res.controller || {};
@@ -6063,9 +6530,10 @@ function renderKbChecklist(res) {
       opts.push(`<option value="${escapeHtml(curFile)}" selected>${escapeHtml(curFile)} ⚠️</option>`);
     }
     box.innerHTML += `
-      <div style="display:flex; gap:8px; align-items:center; padding:8px 11px; border-radius:var(--radius-md); font-size:12px; background:var(--bg-card); border:1px solid var(--border);">
+      <div style="display:flex; gap:8px; align-items:center; padding:6px 10px; border-radius:var(--radius-md); font-size:12px; background:var(--bg-card); border:1px solid var(--border);">
         <span style="font-weight:700; color:var(--text-main); white-space:nowrap;">🧠 ${t('ui.kb.ctrlFileLabel')}:</span>
         <select style="flex:1; min-width:0; font-size:12px;" onchange="kbSaveControllerFile('${escapeHtml(res.ps_code)}', this.value)">${opts.join('')}</select>
+        ${(ctrl.effective && ctrl.effective.file) ? `<span style="font-size:11px; color:#059669; font-weight:600; white-space:nowrap;" title="${escapeHtml(ctrl.effective.rel || '')}">${t('ui.kb.usedFile')} ${escapeHtml(ctrl.effective.file)}</span>` : ''}
       </div>`;
   }
 
@@ -6091,8 +6559,11 @@ function kbDocIcon(name) {
 
 function renderKbDocuments(docs) {
   const box = document.getElementById('kb-docs');
+  const sum = document.getElementById('kb-docs-summary');
   if (!box) return;
   KB_STATE.docs = docs;
+  const pend = docs.filter(d => d.state === 'new' || d.state === 'changed').length;
+  if (sum) sum.innerHTML = `📄 ${t('ui.kb.docsDetails', { n: docs.length })}${pend ? ` <span style="font-size:11px; font-weight:700; color:#d97706;">· ${t('ui.kb.pendingCount', { n: pend })}</span>` : ''}`;
   if (!docs.length) {
     box.innerHTML = `<div style="font-size:11.5px; color:var(--text-muted); padding:6px 2px;">${t('ui.kb.docsEmpty')}</div>`;
     return;
@@ -6108,9 +6579,9 @@ function renderKbDocuments(docs) {
       const d = docs[i];
       const sizeKb = d.size ? ` <span style="color:var(--text-muted); font-size:10px;">(${Math.max(1, Math.round(d.size / 1024))} KB)</span>` : '';
       const indexedBadge = d.indexed ? ` <span style="font-size:9.5px; font-weight:700; color:#059669; background:rgba(16,185,129,0.12); padding:0 5px; border-radius:6px;" title="${t('ui.kb.docIndexedTitle')}">✓ AI</span>` : '';
-      return `<div style="display:flex; align-items:center; gap:8px; padding:3px 4px; border-radius:6px;" onmouseover="this.style.background='var(--bg-card-subtle)'" onmouseout="this.style.background=''">
+      return `<div style="display:flex; align-items:center; gap:8px; padding:3px 4px; border-radius:6px;${d.state ? '' : ' opacity:.6;'}" onmouseover="this.style.background='var(--bg-card-subtle)'" onmouseout="this.style.background=''">
         <span style="flex-shrink:0;">${kbDocIcon(d.name)}</span>
-        <span style="flex:1; min-width:0; font-size:12px; color:var(--text-main); word-break:break-all;" title="${escapeHtml(d.rel)}">${escapeHtml(d.name)}${indexedBadge}${sizeKb}</span>
+        <span style="flex:1; min-width:0; font-size:12px; color:var(--text-main); word-break:break-all;" title="${escapeHtml(d.rel)}">${escapeHtml(d.name)}${kbStateBadge(d.state)}${indexedBadge}${sizeKb}</span>
         <button type="button" class="btn-secondary-action" style="padding:2px 9px; font-size:11px; white-space:nowrap; flex-shrink:0;" onclick="kbOpenDoc(${i})">${t('ui.kb.docOpen')}</button>
       </div>`;
     }).join('');
@@ -7230,23 +7701,26 @@ async function showReworkConnFace(connector, reworkId) {
   document.body.appendChild(overlay);
 }
 
-function kbTriggerUpload(accept) {
+function kbTriggerUpload(accept, subdir) {
   const inp = document.getElementById('kb-file-input');
   if (!inp) return;
   inp.value = '';
   inp.accept = accept || '.xlsx,.pdf,.e3s,.html,.htm,.xml,.json,.csv,.txt,.msg,.png,.jpg,.jpeg,.actp';
+  KB_STATE.uploadSubdir = subdir || '';
   inp.click();
 }
 
 async function kbHandleFileInput(inp) {
   const files = Array.from(inp.files || []);
-  if (!files.length) return;
+  if (!files.length) { KB_STATE.uploadSubdir = ''; return; }
   await kbUploadFiles(files);
 }
 
 async function kbUploadFiles(files) {
   const ps = KB_STATE.ps;
   if (!ps) return;
+  const subdir = KB_STATE.uploadSubdir || '';
+  KB_STATE.uploadSubdir = '';
   const log = document.getElementById('kb-upload-log');
   if (!log) return;
   log.style.display = 'block';
@@ -7258,6 +7732,7 @@ async function kbUploadFiles(files) {
     try {
       const fd = new FormData();
       fd.append('file', file, file.name);
+      if (subdir) fd.append('subdir', subdir);
       const res = await fetch(`/api/zuken/kb/${encodeURIComponent(ps)}/upload`, {
         method: 'POST',
         headers: {
@@ -7280,10 +7755,10 @@ async function kbUploadFiles(files) {
 
 async function kbProcessFiles() {
   const ps = KB_STATE.ps;
-  if (!ps) return;
-  const btn = document.getElementById('btn-kb-process');
+  if (!ps || KB_STATE.busy) return;
   const log = document.getElementById('kb-process-log');
-  if (btn) btn.disabled = true;
+  KB_STATE.busy = true;
+  if (KB_STATE.last) renderKbBanner(KB_STATE.last);
   if (log) {
     log.style.display = 'block';
     log.innerHTML = `<div style="color:var(--text-muted);">⏳ ${t('ui.kb.processing')}</div>`;
@@ -7295,18 +7770,22 @@ async function kbProcessFiles() {
       const isErr = r.type === 'error';
       html += `<div style="padding:2px 0; color:${isErr ? 'var(--red)' : 'var(--text-main)'};">${isErr ? '❌' : '✓'} <b>${escapeHtml(r.file || '')}</b> — ${escapeHtml(r.message || '')}</div>`;
     });
+    const c = res.cleanup || {};
+    const gone = [].concat(c.pdfs || [], c.projects || []);
+    if (gone.length) html += `<div style="padding:2px 0; color:#dc2626;">🧹 ${escapeHtml(t('ui.kb.cleanupLog', { v: gone.join(', ') }))}</div>`;
+    if ((c.relocated || []).length) html += `<div style="padding:2px 0; color:var(--text-muted);">🔗 ${escapeHtml(t('ui.kb.relocatedLog', { n: c.relocated.length }))}</div>`;
     if (res.summaries) {
       const s = res.summaries;
       const sMsg = (s.message_key ? t('js.zuken.' + s.message_key, s.message_params || {}) : '') || s.message || '';
       html += `<div style="margin-top:6px; padding-top:6px; border-top:1px solid var(--border); font-weight:700; color:${s.status === 'success' ? '#059669' : 'var(--red)'};">⚡ ${escapeHtml(sMsg)}</div>`;
     }
     if (res.controller) {
-      const c = res.controller;
-      if (c.status === 'ok') {
-        html += `<div style="padding:2px 0; color:#4f46e5;">🧠 ${t('ui.kb.ctrlDetected', { n: c.name, f: c.file || '' })}</div>`;
-      } else if (c.status === 'declared') {
-        html += `<div style="padding:2px 0; color:#d97706;">⚠️ ${t('ui.kb.ctrlDeclaredWarn', { n: c.name })}</div>`;
-      } else if (c.status === 'none') {
+      const ct = res.controller;
+      if (ct.status === 'ok') {
+        html += `<div style="padding:2px 0; color:#4f46e5;">🧠 ${t('ui.kb.ctrlDetected', { n: ct.name, f: ct.file || '' })}</div>`;
+      } else if (ct.status === 'declared') {
+        html += `<div style="padding:2px 0; color:#d97706;">⚠️ ${t('ui.kb.ctrlDeclaredWarn', { n: ct.name })}</div>`;
+      } else if (ct.status === 'none') {
         html += `<div style="padding:2px 0; color:var(--text-muted);">🧠 ${t('ui.kb.ctrlNoneMsg')}</div>`;
       }
     }
@@ -7315,6 +7794,7 @@ async function kbProcessFiles() {
     }
     if (log) log.innerHTML = html || `<div>${t('ui.kb.processDone')}</div>`;
     showToast(t('ui.kb.processDone'), res.status === 'success' ? 'success' : 'warning');
+    KB_STATE.busy = false;
     await kbRefreshStatus();
     if (STATE.currentView === 'zuken-summaries' && typeof loadZukenSummariesView === 'function') {
       loadZukenSummariesView(ps);
@@ -7323,7 +7803,8 @@ async function kbProcessFiles() {
     if (log) log.innerHTML = `<div style="color:var(--red);">❌ ${escapeHtml(err.message)}</div>`;
     showToast(err.message, 'error');
   } finally {
-    if (btn) btn.disabled = false;
+    KB_STATE.busy = false;
+    if (KB_STATE.last) renderKbBanner(KB_STATE.last);
   }
 }
 
@@ -9698,6 +10179,30 @@ function renderDiagnosisResults(data) {
                 <li><strong>${escapeHtml(r.rule)}</strong> — ${t('js.zuken.actions')} <code>${escapeHtml((r.actions || []).join('; ') || t('js.zuken.outputDefault'))}</code></li>
               `).join('')}
             </ul>
+          </div>
+        ` : ''}
+
+        ${cl.panel_functions && cl.panel_functions.length > 0 ? `
+          <div style="display:flex; flex-direction:column; gap:6px; font-size:12.5px;">
+            <div style="font-weight:700; color:var(--text-main);">${t('js.zuken.panelFuncs')}
+              ${cl.panel_file ? `<span style="font-weight:400; color:var(--text-muted); font-size:11px;">(${escapeHtml(cl.panel_file)})</span>` : ''}
+            </div>
+            ${cl.panel_functions.map(pf => `
+              <div style="padding:5px 10px; background:var(--bg-card); border:1px solid var(--border); border-radius:6px;">
+                <div>
+                  <strong style="color:#7c3aed;">${escapeHtml(pf.function)}</strong>
+                  <span style="color:var(--text-muted); font-size:11px;"> — ${escapeHtml(pf.panel || '')}${pf.tab ? ' · ' + escapeHtml(pf.tab) : ''}</span>
+                </div>
+                ${pf.outputs && pf.outputs.length ? `
+                  <div style="margin-top:2px; font-family:var(--font-mono, monospace); font-size:11.5px;">
+                    ${pf.outputs.map(o => `<span style="margin-right:8px;"><strong style="color:#4f46e5;">${escapeHtml(o.code)}</strong>${o.function ? ' ' + escapeHtml(o.function) : ''}${o.module ? ` <span style="color:var(--text-muted);">(${escapeHtml(o.module)}${o.plug ? ', ' + escapeHtml(o.plug) : ''})</span>` : ''}</span>`).join('')}
+                  </div>
+                ` : ''}
+                ${pf.condition && pf.condition !== '—' ? `
+                  <div style="margin-top:2px; color:#b45309; font-size:11.5px;">⚠ ${t('js.zuken.panelCond')} ${escapeHtml(pf.condition)}</div>
+                ` : ''}
+              </div>
+            `).join('')}
           </div>
         ` : ''}
 
